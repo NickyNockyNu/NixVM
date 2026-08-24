@@ -70,7 +70,9 @@ type
 
     IDHelper = record helper for ID
     const
-      DebugBreak = 0;
+      Debug = $00;
+      DebugBreak = Debug + 0;
+      DebugPrint = Debug + 1;
 
       Memory = %10;
       MemoryFill    = Memory + 0;
@@ -92,6 +94,7 @@ type
       StringConcat  = &String + 4;
       StringCopy    = &String + 5;
       StringCompare = &String + 6;
+      StringFormat  = &String + 7;
     public
       function ToString: String;
     end;
@@ -259,6 +262,9 @@ end;
 function TSysCalls.IDHelper.ToString: String;
 begin
   case Self of
+    DebugBreak: Result := Prefix + 'DebugBreak';
+    DebugPrint: Result := Prefix + 'DebugPrint';
+
     MemoryFill:    Result := Prefix + 'MemoryFill';
     MemoryCopy:    Result := Prefix + 'MemoryCopy';
     MemoryCompare: Result := Prefix + 'MemoryCompare';
@@ -276,6 +282,7 @@ begin
     StringConcat:  Result := Prefix + 'StringConcat';
     StringCopy:    Result := Prefix + 'StringCopy';
     StringCompare: Result := Prefix + 'StringCompare';
+    StringFormat:  Result := Prefix + 'StringFormat';
   else
     Result := Prefix + IntToStr(Self);
   end;

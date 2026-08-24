@@ -26,6 +26,7 @@ unit NixVM.Core.Memory;
 interface
 
 uses
+  NixVM.Core.Registers,
   NixVM.Core.System;
 
 type
@@ -105,10 +106,14 @@ type
 
     {$REGION 'StringManager'}
     TStringManager = class
+    type
+      TFormatArgs = array[0..15] of Cardinal;
     private
       FHeap: THeap;
     public
       constructor Create(AHeap: THeap);
+
+      function Format(AFormat: AnsiString; const AArgs: TFormatArgs; AArgsStart: Integer = 0): AnsiString; overload;
 
       function  New(ALength: Integer): TString; overload;
       function  New(const AString: AnsiString): TString; overload;
@@ -117,6 +122,7 @@ type
       function  Concat(ALeft, ARight: TString): TString;
       function  Copy(AString: TString; AStart, ACount: Integer): TString;
       function  Compare(ALeft, ARight: TString): Integer;
+      function  Format(AString: TString; const AArgs: TFormatArgs; AArgsStart: Integer = 0): TString; overload;
 
       property Heap: THeap read FHeap;
     end;
@@ -171,6 +177,8 @@ type
   end;
   {$ENDREGION}
 
+  TArgs = array of Cardinal;
+
   {$REGION 'Memory'}
   TMemory = class(TCustomMemory)
   private
@@ -207,6 +215,8 @@ type
     function  StringConcat(ALeft, ARight: TString): TString; inline;
     function  StringCopy(AString: TString; AStart, ACount: Integer): TString; inline;
     function  StringCompare(ALeft, ARight: TString): Integer; inline;
+    function  StringFormat(AString: TString; AArgs: THeap.TStringManager.TFormatArgs; AArgsStart: Integer = 0): TString; inline;
+
 
     property Heap:  THeap  read FHeap;
     property Stack: TStack read FStack;
@@ -241,6 +251,9 @@ type
   {$ENDREGION}
 
 implementation
+
+uses
+  NixVM.Core.Strings;
 
 {$REGION 'CustomMemory'}
 constructor TCustomMemory.Create(ASize: Cardinal);
@@ -563,6 +576,111 @@ begin
   FHeap := AHeap;
 end;
 
+function THeap.TStringManager.Format(AFormat: AnsiString; const AArgs: TFormatArgs; AArgsStart: Integer = 0): AnsiString;
+var
+  ArgIdx: Integer;
+  i:      Integer;
+  C:      AnsiChar;
+begin
+  Result := '';
+  ArgIdx := AArgsStart;
+  i      := 1;
+
+  while i <= System.Length(AFormat) do
+  begin
+    C := AFormat[i];
+
+    if (C = '%') and (i + 1 <= System.Length(AFormat)) then
+    begin
+      Inc(i);
+
+      var Spec := AFormat[i];
+
+      case Spec of
+        '%': Result := Result + '%';
+
+        'd', 'i':
+        begin
+          if ArgIdx < System.Length(AArgs) then
+          begin
+            Result := Result + AnsiString(IntToStr(Integer(AArgs[ArgIdx])));
+            Inc(ArgIdx);
+          end;
+        end;
+
+        'u':
+        begin
+          if ArgIdx < System.Length(AArgs) then
+          begin
+            Result := Result + AnsiString(IntToStr(AArgs[ArgIdx]));
+            Inc(ArgIdx);
+          end;
+        end;
+
+        'x':
+        begin
+          if ArgIdx < System.Length(AArgs) then
+          begin
+            Result := Result + AnsiString(IntToHex(AArgs[ArgIdx], 0));
+            Inc(ArgIdx);
+          end;
+        end;
+
+        'X':
+        begin
+          if ArgIdx < System.Length(AArgs) then
+          begin
+            Result := Result + AnsiString(IntToHex(AArgs[ArgIdx], 8));
+            Inc(ArgIdx);
+          end;
+        end;
+
+        's':
+        begin
+          if ArgIdx < System.Length(AArgs) then
+          begin
+            Result := Result + FHeap.FMemory.ReadString(AArgs[ArgIdx]);
+            Inc(ArgIdx);
+          end;
+        end;
+
+        'f':
+        begin
+          if ArgIdx < System.Length(AArgs) then
+          begin
+            Result := Result + AnsiString(FloatToStr(PSingle(@AArgs[ArgIdx])^, 2));
+            Inc(ArgIdx);
+          end;
+        end;
+
+        'F':
+        begin
+          if ArgIdx < System.Length(AArgs) then
+          begin
+            Result := Result + AnsiString(FloatToStr(PSingle(@AArgs[ArgIdx])^, 7));
+            Inc(ArgIdx);
+          end;
+        end;
+
+        'c':
+        begin
+          if ArgIdx < System.Length(AArgs) then
+          begin
+            Result := Result + AnsiChar(AArgs[ArgIdx] and $FF);
+            Inc(ArgIdx);
+          end;
+        end;
+      else
+        Result := Result + '%' + Spec;
+      end;
+    end
+    else
+      Result := Result + AnsiString(C);
+
+    Inc(i);
+  end;
+end;
+
 function THeap.TStringManager.New(ALength: Integer): TString;
 begin
   if ALength < 0 then
@@ -649,6 +767,11 @@ begin
     Result := 1
   else
     Result := 0;
+end;
+
+function THeap.TStringManager.Format(AString: TString; const AArgs: TFormatArgs; AArgsStart: Integer = 0): TString;
+begin
+  Result := New(Format(FHeap.FMemory.ReadString(AString), AArgs, AArgsStart));
 end;
 {$ENDREGION}
 
@@ -1021,6 +1144,12 @@ function TMemory.StringCompare(ALeft, ARight: TString): Integer;
 begin
   Result := FHeap.Strings.Compare(ALeft, ARight);
 end;
+
+function TMemory.StringFormat(AString: TString; AArgs: THeap.TStringManager.TFormatArgs; AArgsStart: Integer): TString;
+begin
+  Result := FHeap.Strings.Format(AString, AArgs, AArgsStart);
+end;
+
 {$ENDREGION}
 
 {$REGION 'TMemory<TSystemMemory>'}

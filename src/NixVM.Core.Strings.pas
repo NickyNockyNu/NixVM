@@ -32,6 +32,8 @@ function IntToHex(AValue: Cardinal; ASize: Integer = 8): String;
 
 function StrToInt(const AString: String; ADefault: Integer = 0): Integer;
 
+function FloatToStr(AValue: Single; APrec: Integer = 2): String;
+
 function TrimWhitespace(const AString: String): String;
 
 implementation
@@ -101,6 +103,14 @@ begin
 
   if Code <> 0 then
     Result := ADefault;
+end;
+
+function FloatToStr(AValue: Single; APrec: Integer): String;
+var
+  S: ShortString;
+begin
+  Str(AValue:APrec:APrec, S);
+  Result := String(S);
 end;
 
 function TrimWhitespace(const AString: String): String;

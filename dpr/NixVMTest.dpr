@@ -1,11 +1,5 @@
 program NixVMTest;
 
-{
-  TODO:
-    DivZero enable/disable instruction
-    ...or extend set/get instructions to support interrupts and divz flags
-}
-
 {$APPTYPE CONSOLE}
 {$R *.res}
 
@@ -50,14 +44,15 @@ call @SayHello
 halt
 
 @SayHello:
-  mov r0, _strconst_hello
-  syscall 255
+  mov r0, _strconst_format
+  mov r1, _strconst_hello
+  mov r2, _strconst_world
+  syscall 1
   ret
 
-_strconst_hello:
-db 2
-ds "Hello, World!"
-db 1, 2, 3, 4
+_strconst_format: ds "%s, %s!\n"
+_strconst_hello:  ds "Hello"
+_strconst_world:  ds "World"
 
 ''';
 var
@@ -78,13 +73,13 @@ begin
     Exit;
   end;
 
-  Writeln('=== IR ===');
-  Writeln(IR.ToString);
+//  Writeln('=== IR ===');
+//  Writeln(IR.ToString);
 
   CodeBytes := IR.Emit(Memory, Memory.UserAddress);
 
-  Writeln('=== DISASM ===');
-  Writeln(TDisassembler.DisassembleToString(Memory, Memory.UserAddress, CodeBytes));
+//  Writeln('=== DISASM ===');
+//  Writeln(TDisassembler.DisassembleToString(Memory, Memory.UserAddress, CodeBytes));
 
   Writeln('=== RUNNING ===');
 end;

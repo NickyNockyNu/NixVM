@@ -96,7 +96,7 @@ type
     FDataPool: TList<TBytes>;
 
     function StoreData(const AData: Pointer; ASize: Cardinal): Pointer; overload;
-    function StoreData(const ABytes: TBytes): Pointer; overload;
+//  function StoreData(const ABytes: TBytes):                  Pointer; overload;
   public
     constructor Create;
     destructor  Destroy; override;
@@ -141,6 +141,8 @@ type
     function Emit(AStream: TStream):                           Cardinal; overload;
 
     function EmitToBytes: TBytes;
+
+    function Size: Cardinal;
 
     function ToString: String; override;
   end;
@@ -317,18 +319,21 @@ end;
 constructor TIRList.Create;
 begin
   inherited Create;
+
   FDataPool := TList<TBytes>.Create;
 end;
 
 destructor TIRList.Destroy;
 begin
   FDataPool.Free;
+
   inherited;
 end;
 
 procedure TIRList.Clear;
 begin
   inherited Clear;
+
   FDataPool.Clear;
 end;
 
@@ -346,14 +351,14 @@ begin
   Result := @FDataPool.Last[0];
 end;
 
-function TIRList.StoreData(const ABytes: TBytes): Pointer;
-begin
-  if Length(ABytes) = 0 then
-    Exit(nil);
-
-  FDataPool.Add(Copy(ABytes));
-  Result := @FDataPool.Last[0];
-end;
+//function TIRList.StoreData(const ABytes: TBytes): Pointer;
+//begin
+//  if Length(ABytes) = 0 then
+//    Exit(nil);
+//
+//  FDataPool.Add(Copy(ABytes));
+//  Result := @FDataPool.Last[0];
+//end;
 
 function TIRList.AddBlankLine: Integer;
 var
@@ -834,6 +839,14 @@ begin
   finally
     Stream.Free;
   end;
+end;
+
+function TIRList.Size: Cardinal;
+begin
+  Result := 0;
+
+  for var i := 0 to Count - 1 do
+    Inc(Result, Items[i].Size);
 end;
 
 function TIRList.ToString: String;

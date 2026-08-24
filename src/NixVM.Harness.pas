@@ -86,6 +86,7 @@ type
     procedure Stop;
 
     procedure DebugBreak; virtual;
+    procedure DebugPrint(const AString: AnsiString); virtual;
 
     property Memory: TMemory<TSystemMemory> read FMemory;
     property CPU:    TCPU                   read FCPU;
@@ -267,6 +268,7 @@ begin
   with FCPU.Registers do
     case ASysCall of
       TSysCalls.ID.DebugBreak: DebugBreak;
+      TSysCalls.ID.DebugPrint: DebugPrint(FMemory.Heap.Strings.Format(FMemory.ReadString(R0), THeap.TStringManager.TFormatArgs(R), 1));
 
       TSysCalls.ID.MemoryFill:          FMemory.Fill(R0, R1, R2);
       TSysCalls.ID.MemoryCopy:          FMemory.Copy(R0, R1, R2);
@@ -285,6 +287,7 @@ begin
       TSysCalls.ID.StringConcat:  R0 := FMemory.StringConcat(R0, R1);
       TSysCalls.ID.StringCopy:    R0 := FMemory.StringCopy(R0, R1, R2);
       TSysCalls.ID.StringCompare: R0 := FMemory.StringCompare(R0, R1);
+      TSysCalls.ID.StringFormat:  R0 := FMemory.StringFormat(R0, THeap.TStringManager.TFormatArgs(R), 1);
     else
       Result := False;
     end;
@@ -398,6 +401,12 @@ begin
 
     Writeln;
   end;
+end;
+
+procedure TCustomHarness<TSystemMemory>.DebugPrint(const AString: AnsiString);
+begin
+  if IsConsole then
+    Write(AString);
 end;
 
 class procedure TCustomHarness<TSystemMemory>.Run;
