@@ -67,14 +67,14 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
-        <DCCReference Include="NixVM.CPU.pas"/>
-        <DCCReference Include="NixVM.Harness.pas"/>
-        <DCCReference Include="NixVM.Instructions.pas"/>
-        <DCCReference Include="NixVM.Memory.pas"/>
-        <DCCReference Include="NixVM.Registers.pas"/>
-        <DCCReference Include="NixVM.Strings.pas"/>
-        <DCCReference Include="NixVM.System.pas"/>
-        <DCCReference Include="NixVM.Timing.pas"/>
+        <DCCReference Include="..\src\NixVM.CPU.pas"/>
+        <DCCReference Include="..\src\NixVM.Harness.pas"/>
+        <DCCReference Include="..\src\NixVM.Instructions.pas"/>
+        <DCCReference Include="..\src\NixVM.Memory.pas"/>
+        <DCCReference Include="..\src\NixVM.Registers.pas"/>
+        <DCCReference Include="..\src\NixVM.Strings.pas"/>
+        <DCCReference Include="..\src\NixVM.System.pas"/>
+        <DCCReference Include="..\src\NixVM.Timing.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
