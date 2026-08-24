@@ -1,5 +1,5 @@
 {
-  NixVM.Strings.pas
+  NixVM.Core.Strings.pas
     Common string routines
 
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)

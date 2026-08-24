@@ -178,9 +178,6 @@ type
     procedure DoPUSHR;
     procedure DoPOPR;
 
-    procedure DoEI;
-    procedure DoDI;
-
     procedure DoFADD;
     procedure DoFSUB;
     procedure DoFMUL;
@@ -206,6 +203,13 @@ type
     procedure DoSETLE; inline;
     procedure DoSETG;  inline;
     procedure DoSETGE; inline;
+
+    procedure DoBSET;  inline;
+    procedure DoBCLR;  inline;
+    procedure DoBTST;  inline;
+    procedure DoBSETF; inline;
+    procedure DoBCLRF; inline;
+    procedure DoBTSTF; inline;
 
     procedure DoNOP; inline;
     {$ENDREGION}
@@ -387,9 +391,6 @@ begin
     TCPUInstruction.TOpCode.PUSHR: DoPUSHR;
     TCPUInstruction.TOpCode.POPR:  DoPOPR;
 
-    TCPUInstruction.TOpCode.EI: DoEI;
-    TCPUInstruction.TOpCode.DI: DoDI;
-
     TCPUInstruction.TOpCode.FADD: DoFADD;
     TCPUInstruction.TOpCode.FSUB: DoFSUB;
     TCPUInstruction.TOpCode.FMUL: DoFMUL;
@@ -414,6 +415,13 @@ begin
     TCPUInstruction.TOpCode.SETLE: DoSETLE;
     TCPUInstruction.TOpCode.SETG:  DoSETG;
     TCPUInstruction.TOpCode.SETGE: DoSETGE;
+
+    TCPUInstruction.TOpCode.BSET:  DoBSET;
+    TCPUInstruction.TOpCode.BCLR:  DoBCLR;
+    TCPUInstruction.TOpCode.BTST:  DoBTST;
+    TCPUInstruction.TOpCode.BSETF: DoBSETF;
+    TCPUInstruction.TOpCode.BCLRF: DoBCLRF;
+    TCPUInstruction.TOpCode.BTSTF: DoBTSTF;
 
     TCPUInstruction.TOpCode.NOP: DoNOP;
     {$ENDREGION}
@@ -1337,18 +1345,6 @@ begin
 end;
 {$ENDREGION}
 
-{$REGION 'Flags'}
-procedure TCPU.DoEI;
-begin
-  Registers.Flags.InterruptsEnabled := True;
-end;
-
-procedure TCPU.DoDI;
-begin
-  Registers.Flags.InterruptsEnabled := False;
-end;
-{$ENDREGION}
-
 {$REGION 'Floating point'}
 procedure TCPU.DoFADD;
 var
@@ -1585,6 +1581,40 @@ end;
 procedure TCPU.DoSETGE;
 begin
   if Registers.Flags.Negative = Registers.Flags.Overflow then Registers.r[FCurrentCPUInstruction.RegA] := 1 else Registers.r[FCurrentCPUInstruction.RegA] := 0;
+end;
+{$ENDREGION}
+
+{$REGION 'Bit set/clear/test'}
+procedure TCPU.DoBSET;
+begin
+  Registers.r[FCurrentCPUInstruction.RegA] := Registers.r[FCurrentCPUInstruction.RegA] or Registers.r[FCurrentCPUInstruction.RegB];
+  Registers.Flags.UpdateZN(Registers.r[FCurrentCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoBCLR;
+begin
+  Registers.r[FCurrentCPUInstruction.RegA] := Registers.r[FCurrentCPUInstruction.RegA] and not Registers.r[FCurrentCPUInstruction.RegB];
+  Registers.Flags.UpdateZN(Registers.r[FCurrentCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoBTST;
+begin
+  Registers.Flags.UpdateZN(Registers.r[FCurrentCPUInstruction.RegA] and Registers.r[FCurrentCPUInstruction.RegB]);
+end;
+
+procedure TCPU.DoBSETF;
+begin
+  Registers.Flags := TRegisters.TFlags(Byte(Registers.Flags) or (Registers.r[FCurrentCPUInstruction.RegB] and $FF));
+end;
+
+procedure TCPU.DoBCLRF;
+begin
+  Registers.Flags := TRegisters.TFlags(Byte(Registers.Flags) and not (Registers.r[FCurrentCPUInstruction.RegB] and $FF));
+end;
+
+procedure TCPU.DoBTSTF;
+begin
+  Registers.Flags.UpdateZN(Byte(Registers.Flags) and (Registers.r[FCurrentCPUInstruction.RegB] and $FF));
 end;
 {$ENDREGION}
 

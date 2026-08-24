@@ -44,8 +44,6 @@ type
       NMI      = 1;
       SysRq    = 1;
       FPUError = 2;
-      Refresh  = 3;
-      Scanline = 4;
       Timer0   = 14;
       Timer1   = 15;
     public
@@ -243,10 +241,9 @@ begin
     Panic:    Result := Prefix + 'Panic';
     SysRq:    Result := Prefix + 'SysRq';
     FPUError: Result := Prefix + 'FPUError';
-    Refresh:  Result := Prefix + 'Refresh';
-    Scanline: Result := Prefix + 'Scanline';
-    Timer0:   Result := Prefix + 'Timer0';
-    Timer1:   Result := Prefix + 'Timer1';
+
+    Timer0..Timer0 + (TTimers.Count - 1):
+      Result := Prefix + 'Timer' + IntToStr(Self - Timer0);
   else
     Result := Prefix + IntToStr(Self);
   end;

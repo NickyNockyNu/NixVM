@@ -130,9 +130,6 @@ type
       pushr = $94;
       popr  = $95;
 
-      ei = $A0;
-      di = $A1;
-
       fadd  = $B0;
       fsub  = $B1;
       fmul  = $B2;
@@ -156,6 +153,13 @@ type
       setle = $C3;
       setg  = $C4;
       setge = $C5;
+
+      bset  = $D0;
+      bclr  = $D1;
+      btst  = $D2;
+      bsetf = $D3;
+      bclrf = $D4;
+      btstf = $D5;
 
       nop = $FF;
       {$ENDREGION}
@@ -339,8 +343,8 @@ type
       {9E}(),
       {9F}(),
 
-      {A0}(Mnemonic:'ei'),
-      {A1}(Mnemonic:'di'),
+      {A0}(),
+      {A1}(),
       {A2}(),
       {A3}(),
       {A4}(),
@@ -390,12 +394,12 @@ type
       {CE}(),
       {CF}(),
 
-      {D0}(),
-      {D1}(),
-      {D2}(),
-      {D3}(),
-      {D4}(),
-      {D5}(),
+      {D0}(Mnemonic:'bset';   Params:TParameters.R1R2),
+      {D1}(Mnemonic:'bclr';   Params:TParameters.R1R2),
+      {D2}(Mnemonic:'btst';   Params:TParameters.R1R2),
+      {D3}(Mnemonic:'bsetf';  Params:TParameters.RImm),
+      {D4}(Mnemonic:'bclrf';  Params:TParameters.RImm),
+      {D5}(Mnemonic:'btstf';  Params:TParameters.RImm),
       {D6}(),
       {D7}(),
       {D8}(),
