@@ -1,6 +1,7 @@
 {
-  NixVM.Timing.pas
-    NixVM - System tick provider and stopwatch (should be moved to a general purpose library)
+  NixVM.Harness.Timing.pas
+    System tick provider and stopwatch (should be moved to a general purpose library)
+
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM
 
@@ -18,7 +19,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 }
 
-unit NixVM.Timing;
+unit NixVM.Harness.Timing;
 
 {$INCLUDE 'NixVM.Options.inc'}
 

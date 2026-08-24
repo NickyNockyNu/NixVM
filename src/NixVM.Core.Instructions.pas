@@ -1,6 +1,7 @@
 {
-  NixVM.Instructions.pas
-    NixVM - CPU instructions
+  NixVM.Core.Instructions.pas
+    CPU instructions
+
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM
 
@@ -18,16 +19,17 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 }
 
-unit NixVM.Instructions;
+unit NixVM.Core.Instructions;
 
 {$INCLUDE 'NixVM.Options.inc'}
 
 interface
 
 uses
-  NixVM.Registers;
+  NixVM.Core.Registers;
 
 type
+  {$REGION 'TCPUInstruction'}
   TCPUInstruction = record
   type
     TParameters = (None, Imm, R1, R1R2, R1Imm, RImm, R1R2Imm);
@@ -43,8 +45,8 @@ type
     TOpCodeHelper = record helper for TOpCode
     const
       {$REGION 'OpCodes'}
-      halt = $00;
-      wait = $01;
+      halt  = $00;
+      yield = $01;
 
       mov   = $10;
       swap  = $11;
@@ -168,7 +170,7 @@ type
     Definitions: array[TOpCode] of TDefinition = (
       {$REGION 'Definitions'}
       {00}(Mnemonic:'halt'),
-      {01}(Mnemonic:'wait'),
+      {01}(Mnemonic:'yield'),
       {02}(),
       {03}(),
       {04}(),
@@ -451,12 +453,14 @@ type
     function ToString: String;
     class function FromString(const S: String; out AValid: Boolean): TCPUInstruction; static;
   end;
+  {$ENDREGION}
 
 implementation
 
 uses
-  NixVM.Strings;
+  NixVM.Core.Strings;
 
+{$REGION 'TCPUInstruction'}
 {$REGION 'OpCode'}
 function TCPUInstruction.TOpCodeHelper.Definition: TDefinition;
 begin
@@ -570,6 +574,7 @@ begin
   if not AValid then
     Exit;
 end;
+{$ENDREGION}
 
 end.
 

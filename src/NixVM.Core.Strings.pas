@@ -1,6 +1,7 @@
 {
   NixVM.Strings.pas
-    NixVM - Common string routines
+    Common string routines
+
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM
 
@@ -18,58 +19,22 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 }
 
-unit NixVM.Strings;
+unit NixVM.Core.Strings;
 
 {$INCLUDE 'NixVM.Options.inc'}
 
 interface
 
-function PosNQ(const ASubString, AString: String; AStart: Integer = 1; const AQuotes: String = '''"'): Integer;
-
-function Uppercase(const AString: String): String;
 function Lowercase(const AString: String): String;
 
 function IntToStr(AValue: Integer):                      String;
 function IntToHex(AValue: Cardinal; ASize: Integer = 8): String;
 
-function StrToInt(const AString: String; ADefault: Integer = 0):  Integer;
+function StrToInt(const AString: String; ADefault: Integer = 0): Integer;
 
-function LTrimWhitespace(const AString: String): String;
-function RTrimWhitespace(const AString: String): String;
-function  TrimWhitespace(const AString: String): String; inline;
+function TrimWhitespace(const AString: String): String;
 
 implementation
-
-function PosNQ(const ASubString, AString: String; AStart: Integer = 1; const AQuotes: String = '''"'): Integer;
-var
-  q: Char;
-begin
-  q := #0;
-
-  for var i := AStart to Length(AString) do
-    if q <> #0 then
-    begin
-      if AString[i] = q then
-        q := #0;
-    end
-    else if Pos(AString[i], AQuotes) > 0 then
-      q  := AString[i]
-    else if Copy(AString, i, Length(ASubString)) = ASubString then // TODO: a substring compare so we don't have to use Copy
-      Exit(i);
-
-  Result := 0;
-end;
-
-function Uppercase(const AString: String): String;
-begin
-  SetLength(Result, Length(AString));
-
-  for var i := 1 to Length(AString) do
-    if (AString[i] >= 'a') and (AString[i] <= 'z') then
-      Result[i] := Chr(Ord(AString[i]) - 32)
-    else
-      Result[i] := AString[i];
-end;
 
 function Lowercase(const AString: String): String;
 begin
@@ -138,9 +103,9 @@ begin
     Result := ADefault;
 end;
 
-function LTrimWhitespace(const AString: String): String;
+function TrimWhitespace(const AString: String): String;
 const
-  Whitespace = #32#9;//#13#10;
+  Whitespace = #32#9;
 begin
   Result := AString;
 
@@ -150,13 +115,6 @@ begin
       Result := Copy(Result, i, Length(Result));
       Break;
     end;
-end;
-
-function RTrimWhitespace(const AString: String): String;
-const
-  Whitespace = #32#9;//#13#10;
-begin
-  Result := AString;
 
   for var i := Length(Result) downto 1 do
     if Pos(Result[i], Whitespace) = 0 then
@@ -164,11 +122,6 @@ begin
       Result := Copy(Result, 1, i);
       Break;
     end;
-end;
-
-function TrimWhitespace(const AString: String): String;
-begin
-  Result := LTrimWhitespace(RTrimWhitespace(AString));
 end;
 
 end.

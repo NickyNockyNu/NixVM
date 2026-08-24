@@ -1,6 +1,7 @@
 {
-  NixVM.Registers.pas
-    NixVM - CPU registers
+  NixVM.Core.Registers.pas
+    CPU registers
+
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM
 
@@ -18,13 +19,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 }
 
-unit NixVM.Registers;
+unit NixVM.Core.Registers;
 
 {$INCLUDE 'NixVM.Options.inc'}
 
 interface
 
 type
+  {$REGION 'Registers'}
   PRegisters = ^TRegisters;
   TRegisters = packed record
   type
@@ -33,6 +35,23 @@ type
 
     IDHelper = record helper for ID
     const
+      R0  =  0;
+      R1  =  1;
+      R2  =  2;
+      R3  =  3;
+      R4  =  4;
+      R5  =  5;
+      R6  =  6;
+      R7  =  7;
+      R8  =  8;
+      R9  =  9;
+      R10 = 10;
+      R11 = 11;
+      R12 = 12;
+      R13 = 13;
+      R14 = 14;
+      R15 = 15;
+
       Ret = 0;
 
       Param1 = 0;
@@ -96,11 +115,12 @@ type
       2: (P1, P2, P3, P4, _4, _5, _6, _7, _8, _9, _10, _11, _12, Imm, BP,  SP:  Cardinal);
       3: (Ret: Cardinal);
   end;
+  {$ENDREGION}
 
 implementation
 
 uses
-  NixVM.Strings;
+  NixVM.Core.Strings;
 
 {$REGION 'ID'}
 function TRegisters.IDHelper.ToString: String;

@@ -1,6 +1,7 @@
 {
   NixVM.Harness.pas
-    NixVM - The root class that hold everything together.
+    The root class that hold everything together.
+
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM
 
@@ -25,12 +26,12 @@ unit NixVM.Harness;
 interface
 
 uses
-  NixVM.Memory,
-  NixVM.Registers,
-  NixVM.Instructions,
-  NixVM.CPU,
-  NixVM.System,
-  NixVM.Timing;
+  NixVM.Core.Memory,
+  NixVM.Core.Registers,
+  NixVM.Core.Instructions,
+  NixVM.Core.CPU,
+  NixVM.Core.System,
+  NixVM.Harness.Timing;
 
 type
   {$REGION 'CustomHarness'}
@@ -107,7 +108,7 @@ type
 implementation
 
 uses
-  NixVM.Strings;
+  NixVM.Core.Strings;
 
 {$REGION 'CustomHarness'}
 function TCustomHarness<TSystemMemory>.GetElapsed: Double;
@@ -160,8 +161,8 @@ begin
     DeltaTicks := FUpdateTimer.Update;
     DeltaTime  := DeltaTicks.InSeconds;
 
-    FMemory.CoreSystem.Registers.Elapsed   := Cardinal(UInt64(FElapsedTimer.Elapsed.InMilliseconds) and $FFFFFFFF);
-    FMemory.CoreSystem.Registers.WaitDelta := DeltaTime;
+    FMemory.CoreSystem.Registers.Elapsed := Cardinal(UInt64(FElapsedTimer.Elapsed.InMilliseconds) and $FFFFFFFF);
+    FMemory.CoreSystem.Registers.Delta   := DeltaTime;
 
     UpdateTimers(Cardinal(DeltaTicks.InMilliseconds));
     Update(DeltaTicks);
@@ -209,7 +210,7 @@ begin
       FCPU.Execute(FCPUBatchSize);
       Inc(FCPUBatchCount);
 
-      if FCPU.WaitState or FCPU.HaltState then
+      if FCPU.YieldState or FCPU.HaltState then
       begin
         FFrameTimer.WaitUntil(ExecuteTime);
         Break;
@@ -256,8 +257,7 @@ end;
 
 procedure TCustomHarness<TSystemMemory>.EverySecond;
 begin
-  // TODO: Debug - remove this
-  DebugBreak;
+  //DebugBreak;
 end;
 
 function TCustomHarness<TSystemMemory>.HandleSysCall(ASysCall: TSysCalls.ID): Boolean;
@@ -393,7 +393,7 @@ begin
               #9#8);
 
     if FCPU.HaltState  then Write(' HALT');
-    if FCPU.WaitState  then Write(' WAIT');
+    if FCPU.YieldState then Write(' YIELD');
     if FCPU.PanicState then Write(' PANIC');
 
     Writeln;

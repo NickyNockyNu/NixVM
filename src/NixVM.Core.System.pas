@@ -1,6 +1,7 @@
 {
-  NixVM.System.pas
-    NixVM - Core system memory layout
+  NixVM.Core.System.pas
+    System memory layout
+
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM
 
@@ -18,14 +19,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 }
 
-unit NixVM.System;
+unit NixVM.Core.System;
 
 {$INCLUDE 'NixVM.Options.inc'}
 
 interface
 
 uses
-  NixVM.Registers;
+  NixVM.Core.Registers;
 
 type
   {$REGION 'Interrupts'}
@@ -201,7 +202,7 @@ type
   TSystemRegisters = packed record
     RefreshRate: Cardinal;
     Elapsed:     Cardinal;
-    WaitDelta:   Single;
+    Delta:       Single;
     Reserved:    Cardinal;
 
     procedure Reset;
@@ -233,7 +234,7 @@ type
 implementation
 
 uses
-  NixVM.Strings;
+  NixVM.Core.Strings;
 
 {$REGION 'Interrupts'}
 function TInterrupts.IDHelper.ToString: String;
@@ -399,6 +400,7 @@ begin
   FillChar(Self, SizeOf(Self), 0);
 
   RefreshRate := 60;
+  Delta       := 1.0 / RefreshRate;
 end;
 {$ENDREGION}
 

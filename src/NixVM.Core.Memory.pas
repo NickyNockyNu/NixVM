@@ -1,6 +1,7 @@
 {
-  NixVM.Memory.pas
-    NixVM - System memory/heap/stack
+  NixVM.Core.Memory.pas
+    System memory/heap/stack
+
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM
 
@@ -18,14 +19,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 }
 
-unit NixVM.Memory;
+unit NixVM.Core.Memory;
 
 {$INCLUDE 'NixVM.Options.inc'}
 
 interface
 
 uses
-  NixVM.System;
+  NixVM.Core.System;
 
 type
   TString = type Cardinal;

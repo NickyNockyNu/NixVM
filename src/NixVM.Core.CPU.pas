@@ -1,6 +1,7 @@
 {
-  NixVM.CPU.pas
-    NixVM - Central Processor Unit
+  NixVM.Core.CPU.pas
+    Central Processor Unit
+
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM
 
@@ -18,18 +19,19 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 }
 
-unit NixVM.CPU;
+unit NixVM.Core.CPU;
 
 {$INCLUDE 'NixVM.Options.inc'}
 {.$DEFINE CHECK_MEM_BOUNDS}
+{.$DEFINE DEBUG}
 
 interface
 
 uses
-  NixVM.Registers,
-  NixVM.Instructions,
-  NixVM.System,
-  NixVM.Memory;
+  NixVM.Core.Registers,
+  NixVM.Core.Instructions,
+  NixVM.Core.System,
+  NixVM.Core.Memory;
 
 type
   {$REGION 'CPU'}
@@ -40,7 +42,7 @@ type
     FMemory: TMemory;
 
     FHalt:  Boolean;
-    FWait:  Boolean;
+    FYield: Boolean;
     FPanic: Boolean;
 
     FStepCount: Integer;
@@ -84,7 +86,7 @@ type
     property Memory: TMemory read FMemory;
 
     property HaltState:  Boolean read FHalt;
-    property WaitState:  Boolean read FWait;
+    property YieldState: Boolean read FYield;
     property PanicState: Boolean read FPanic;
 
     property SysCallHandler: TSysCalls.THandler read FSysCallHandler write FSysCallHandler;
@@ -96,8 +98,8 @@ type
 
   private
     {$REGION 'Instructions'}
-    procedure DoHALT; inline;
-    procedure DoWAIT; inline;
+    procedure DoHALT;  inline;
+    procedure DoYIELD; inline;
 
     procedure DoMOV;   inline;
     procedure DoSWAP;  inline;
@@ -280,7 +282,7 @@ end;
 procedure TCPU.Reset;
 begin
   FHalt  := False;
-  FWait  := False;
+  FYield := False;
   FPanic := False;
 
   Registers := Default(TRegisters);
@@ -294,7 +296,7 @@ end;
 
 procedure TCPU.Step;
 begin
-  FWait := False;
+  FYield := False;
 
   Inc(FStepCount);
 
@@ -305,8 +307,8 @@ begin
 
   case FCurrentCPUInstruction.OpCode of
     {$REGION 'Instruction dispatch'}
-    TCPUInstruction.TOpCode.HALT: DoHALT;
-    TCPUInstruction.TOpCode.WAIT: DoWAIT;
+    TCPUInstruction.TOpCode.HALT:  DoHALT;
+    TCPUInstruction.TOpCode.YIELD: DoYIELD;
 
     TCPUInstruction.TOpCode.MOV:   DoMOV;
     TCPUInstruction.TOpCode.SWAP:  DoSWAP;
@@ -418,6 +420,10 @@ begin
   else
     Panic(TSystemState.TPanicCode.InvalidOperation, FCurrentCPUInstruction.OpCode);
   end;
+
+{$IF DEFINED(DEBUG)}
+  SysCall(TSysCalls.ID.DebugBreak);
+{$ENDIF}
 end;
 
 procedure TCPU.Execute(AMaxInstructions: Integer; AAbortOp: TCPUInstruction.TOpCode);
@@ -434,7 +440,7 @@ begin
     Step;
     Inc(Count);
 
-    if FHalt or FWait or (FCurrentCPUInstruction.OpCode = AAbortOp) then
+    if FHalt or FYield or (FCurrentCPUInstruction.OpCode = AAbortOp) then
       Break;
   end;
 end;
@@ -568,9 +574,9 @@ begin
   Self.Halt;
 end;
 
-procedure TCPU.DoWAIT;
+procedure TCPU.DoYIELD;
 begin
-  FWait := True;
+  FYield := True;
 end;
 
 procedure TCPU.DoMOV;
@@ -782,7 +788,7 @@ var
   Left:  Integer;
   Right: Integer;
 begin
-  Right := Registers.r[FCurrentCPUInstruction.RegB];
+  Right := Integer(Registers.r[FCurrentCPUInstruction.RegB]);
 
   if Right = 0 then
   begin
@@ -797,7 +803,7 @@ begin
     Exit;
   end;
 
-  Left  := Registers.r[FCurrentCPUInstruction.RegA];
+  Left := Integer(Registers.r[FCurrentCPUInstruction.RegA]);
 
   if (Left = Low(Integer)) and (Right = -1) then
   begin
@@ -1219,11 +1225,7 @@ end;
 
 procedure TCPU.DoJMP;
 begin
-  if FCurrentCPUInstruction.RegA = TRegisters.ID.Imm then
-    Registers.PC := NextDWord
-  else
-    Registers.PC := Registers.r[FCurrentCPUInstruction.RegA];
-
+  Registers.PC := Registers.r[FCurrentCPUInstruction.RegB];
   CheckPC;
 end;
 
@@ -1246,34 +1248,20 @@ end;
 {$REGION 'Call/Return'}
 procedure TCPU.DoCALL;
 begin
-if FCurrentCPUInstruction.RegA = TRegisters.ID.Imm then
-  begin
-    Push(Registers.PC + 4);
-    Registers.PC := NextDWord;
-  end
-  else
-  begin
-    Push(Registers.PC);
-    Registers.PC := Registers.r[FCurrentCPUInstruction.RegA];
-  end;
+  Push(Registers.PC);
+  Registers.PC := Registers.r[FCurrentCPUInstruction.RegB];
 
   CheckPC;
 end;
 
 procedure TCPU.DoSYSCALL;
 begin
-  if FCurrentCPUInstruction.RegA = TRegisters.ID.Imm then
-    Registers.r[TRegisters.ID.Imm] := NextDWord;
-
-  SysCall(Registers.r[FCurrentCPUInstruction.RegA]);
+  SysCall(Registers.r[FCurrentCPUInstruction.RegB]);
 end;
 
 procedure TCPU.DoINT;
 begin
-  if FCurrentCPUInstruction.RegA = TRegisters.ID.Imm then
-    Registers.r[TRegisters.ID.Imm] := NextDWord;
-
-  Interrupt(Registers.r[FCurrentCPUInstruction.RegA]);
+  Interrupt(Registers.r[FCurrentCPUInstruction.RegB]);
 end;
 
 procedure TCPU.DoRET;
@@ -1285,7 +1273,7 @@ end;
 procedure TCPU.DoIRET;
 begin
   Registers.PC    := Pop;
-  Registers.Flags := Pop and $FF;
+  Registers.Flags := TRegisters.TFlags(Pop and $FF);
   CheckPC;
 end;
 
@@ -1306,10 +1294,7 @@ end;
 {$REGION 'Push/Pop'}
 procedure TCPU.DoPUSH;
 begin
-  if FCurrentCPUInstruction.RegA = TRegisters.ID.Imm then
-    Registers.r[TRegisters.ID.Imm] := NextDWord;
-
-  Push(Registers.R[FCurrentCPUInstruction.RegA]);
+  Push(Registers.R[FCurrentCPUInstruction.RegB]);
 end;
 
 procedure TCPU.DoPOP;
@@ -1324,7 +1309,7 @@ end;
 
 procedure TCPU.DoPOPF;
 begin
-  Registers.Flags := Pop and $FF;
+  Registers.Flags := TRegisters.TFlags(Pop and $FF);
 end;
 
 procedure TCPU.DoPUSHR;
