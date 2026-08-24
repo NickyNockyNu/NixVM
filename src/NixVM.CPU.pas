@@ -1,0 +1,1612 @@
+{
+  NixVM.CPU.pas
+    NixVM - Central Processor Unit
+    Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
+    https://github.com/NickyNockyNu/NixVM
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+}
+
+unit NixVM.CPU;
+
+{$INCLUDE 'NixVM.Options.inc'}
+{.$DEFINE CHECK_MEM_BOUNDS}
+
+interface
+
+uses
+  NixVM.Registers,
+  NixVM.Instructions,
+  NixVM.System,
+  NixVM.Memory;
+
+type
+  {$REGION 'CPU'}
+  TCPU = class
+  type
+    TPanicHandler = procedure of object;
+  private
+    FMemory: TMemory;
+
+    FHalt:  Boolean;
+    FWait:  Boolean;
+    FPanic: Boolean;
+
+    FStepCount: Integer;
+
+    FCurrenTCPUInstruction: TCPUInstruction;
+
+    FSysCallHandler: TSysCalls.THandler;
+    FPanicHandler:   TPanicHandler;
+
+    function NextWord:  Word;     inline;
+    function NextDWord: Cardinal; inline;
+
+    procedure CheckPC; inline;
+    {$IFDEF CHECK_MEM_BOUNDS}
+    procedure CheckAddress(AAddress: Cardinal; APanicCode: TSystemState.TPanicCode); inline;
+    {$ENDIF}
+
+    procedure FPUError;
+  protected
+    procedure InternalPanic; virtual;
+  public
+    constructor Create(AMemory: TMemory);
+
+    procedure Reset;
+
+    procedure Step; inline;
+    procedure Execute(AMaxInstructions: Integer; AAbortOp: TCPUInstruction.TOpCode = TCPUInstruction.TOpCode.HALT); inline;
+
+    procedure Push(AValue: Cardinal);
+    function  Pop: Cardinal;
+
+    procedure SaveState;
+    procedure RestoreState;
+
+    procedure Panic(APanicCode: TSystemState.TPanicCode; AUserCode: Cardinal = 0);
+    procedure Halt;
+
+    function SysCall  (ASysCallID:   TSysCalls.ID;   AMaxInstructions: Integer = 0): Boolean;
+    function Interrupt(AInterruptID: TInterrupts.ID; AMaxInstructions: Integer = 0): Boolean;
+
+    property Memory: TMemory read FMemory;
+
+    property HaltState:  Boolean read FHalt;
+    property WaitState:  Boolean read FWait;
+    property PanicState: Boolean read FPanic;
+
+    property SysCallHandler: TSysCalls.THandler read FSysCallHandler write FSysCallHandler;
+    property PanicHandler:   TPanicHandler      read FPanicHandler   write FPanicHandler;
+
+    property StepCount: Integer read FStepCount write FStepCount;
+  public
+    Registers: TRegisters;
+
+  private
+    {$REGION 'Instructions'}
+    procedure DoHALT; inline;
+    procedure DoWAIT; inline;
+
+    procedure DoMOV;   inline;
+    procedure DoSWAP;  inline;
+    procedure DoCMP;   inline;
+    procedure DoLEA;   inline;
+    procedure DoZEXTB; inline;
+    procedure DoZEXTW; inline;
+
+    procedure DoADD; inline;
+    procedure DoSUB; inline;
+    procedure DoMUL; inline;
+    procedure DoDIV; inline;
+    procedure DoMOD; inline;
+
+    procedure DoIMUL;  inline;
+    procedure DoIDIV;  inline;
+    procedure DoIMOD;  inline;
+    procedure DoISAR;  inline;
+    procedure DoINEG;  inline;
+    procedure DoIEXTB; inline;
+    procedure DoIEXTW; inline;
+
+    procedure DoAND; inline;
+    procedure DoOR;  inline;
+    procedure DoXOR; inline;
+    procedure DoSHL; inline;
+    procedure DoSHR; inline;
+    procedure DoNOT; inline;
+
+    procedure DoLDB; inline;
+    procedure DoLDW; inline;
+    procedure DoLD;  inline;
+    procedure DoSTB;  inline;
+    procedure DoSTW;  inline;
+    procedure DoST;   inline;
+    procedure DoLDIB; inline;
+    procedure DoLDIW; inline;
+    procedure DoLDI;  inline;
+    procedure DoSTIB; inline;
+    procedure DoSTIW; inline;
+    procedure DoSTI;  inline;
+    procedure DoSTSB; inline;
+    procedure DoSTSW; inline;
+    procedure DoSTS;  inline;
+    procedure DoLDOB; inline;
+    procedure DoLDOW; inline;
+    procedure DoLDO;  inline;
+    procedure DoSTOB; inline;
+    procedure DoSTOW; inline;
+    procedure DoSTO;  inline;
+
+    procedure DoJNZ;
+    procedure DoJE;
+    procedure DoJL;
+    procedure DoJLE;
+    procedure DoJG;
+    procedure DoJGE;
+    procedure DoJB;
+    procedure DoJAE;
+    procedure DoJMP;
+    procedure DoLOOP;
+
+    procedure DoCALL;
+    procedure DoSYSCALL;
+    procedure DoINT;
+    procedure DoRET;
+    procedure DoIRET;
+
+    procedure DoENTER;
+    procedure DoLEAVE;
+
+    procedure DoPUSH;
+    procedure DoPOP;
+    procedure DoPUSHF;
+    procedure DoPOPF;
+    procedure DoPUSHR;
+    procedure DoPOPR;
+
+    procedure DoEI;
+    procedure DoDI;
+
+    procedure DoFADD;
+    procedure DoFSUB;
+    procedure DoFMUL;
+    procedure DoFDIV;
+
+    procedure DoITOF;
+    procedure DoFTOI;
+    procedure DoFRND;
+
+    procedure DoFSIN;
+    procedure DoFCOS;
+    procedure DoFTAN;
+    procedure DoFATAN;
+    procedure DoFLN;
+    procedure DoFEXP;
+    procedure DoFSQRT;
+    procedure DoFCE;
+    procedure DoFCMP;
+
+    procedure DoSETE;  inline;
+    procedure DoSETNE; inline;
+    procedure DoSETL;  inline;
+    procedure DoSETLE; inline;
+    procedure DoSETG;  inline;
+    procedure DoSETGE; inline;
+
+    procedure DoNOP; inline;
+    {$ENDREGION}
+  end;
+  {$ENDREGION}
+
+function SingleToDWord(AValue: Single):   Cardinal; inline;
+function DWordToSingle(AValue: Cardinal): Single;   inline;
+
+implementation
+
+function SingleToDWord(AValue: Single): Cardinal;
+begin
+  Result := PCardinal(@AValue)^;
+end;
+
+function DWordToSingle(AValue: Cardinal): Single;
+begin
+  Result := PSingle(@AValue)^;
+end;
+
+{$REGION 'CPU'}
+function TCPU.NextWord: Word;
+begin
+  Result := FMemory.ReadWord(Registers.PC);
+  Inc(Registers.PC, SizeOf(Result));
+end;
+
+function TCPU.NextDWord: Cardinal;
+begin
+  Result := FMemory.ReadDWord(Registers.PC);
+  Inc(Registers.PC, SizeOf(Result));
+end;
+
+procedure TCPU.CheckPC;
+begin
+  if not FMemory.IsAddressExecutable(Registers.PC) then
+    Panic(TSystemState.TPanicCode.AccessViolationExec, Registers.PC);
+end;
+
+{$IF DEFINDED(CHECK_MEM_BOUNDS)}
+procedure TCPU.CheckAddress(AAddress: Cardinal; APanicCode: TSystemState.TPanicCode);
+begin
+  if AAddress >= FMemory.Size then
+    Panic(APanicCode, AAddress);
+end;
+{$ENDIF}
+
+procedure TCPU.FPUError;
+begin
+  Registers.Flags.FPUException := True;
+
+  Interrupt(TInterrupts.ID.FPUError);
+end;
+
+procedure TCPU.InternalPanic;
+begin
+  if Assigned(FPanicHandler) then
+    FPanicHandler
+  else
+  begin
+    SysCall(TSysCalls.ID.DebugBreak);
+    Self.Halt;
+  end;
+end;
+
+constructor TCPU.Create(AMemory: TMemory);
+begin
+  inherited Create;
+
+  FMemory := AMemory;
+end;
+
+procedure TCPU.Reset;
+begin
+  FHalt  := False;
+  FWait  := False;
+  FPanic := False;
+
+  Registers := Default(TRegisters);
+
+  Registers.PC    := FMemory.UserAddress;
+  Registers.SP    := FMemory.Stack.Address;
+  Registers.Flags := TRegisters.TFlags.Default;
+
+  FStepCount := 0;
+end;
+
+procedure TCPU.Step;
+begin
+  FWait := False;
+
+  Inc(FStepCount);
+
+  FCurrenTCPUInstruction := NextWord;
+
+  if FCurrenTCPUInstruction.RegB = TRegisters.ID.Imm then
+    Registers.r[TRegisters.ID.Imm] := NextDWord;
+
+  case FCurrenTCPUInstruction.OpCode of
+    {$REGION 'Instruction dispatch'}
+    TCPUInstruction.TOpCode.HALT: DoHALT;
+    TCPUInstruction.TOpCode.WAIT: DoWAIT;
+
+    TCPUInstruction.TOpCode.MOV:   DoMOV;
+    TCPUInstruction.TOpCode.SWAP:  DoSWAP;
+    TCPUInstruction.TOpCode.CMP:   DoCMP;
+    TCPUInstruction.TOpCode.LEA:   DoLEA;
+    TCPUInstruction.TOpCode.ZEXTB: DoZEXTB;
+    TCPUInstruction.TOpCode.ZEXTW: DoZEXTW;
+
+    TCPUInstruction.TOpCode.ADD: DoADD;
+    TCPUInstruction.TOpCode.SUB: DoSUB;
+    TCPUInstruction.TOpCode.MUL: DoMUL;
+    TCPUInstruction.TOpCode.DIV: DoDIV;
+    TCPUInstruction.TOpCode.MOD: DoMOD;
+
+    TCPUInstruction.TOpCode.IMUL:  DoIMUL;
+    TCPUInstruction.TOpCode.IDIV:  DoIDIV;
+    TCPUInstruction.TOpCode.IMOD:  DoIMOD;
+    TCPUInstruction.TOpCode.ISAR:  DoISAR;
+    TCPUInstruction.TOpCode.INEG:  DoINEG;
+    TCPUInstruction.TOpCode.IEXTB: DoIEXTB;
+    TCPUInstruction.TOpCode.IEXTW: DoIEXTW;
+
+    TCPUInstruction.TOpCode.AND: DoAND;
+    TCPUInstruction.TOpCode.OR:  DoOR;
+    TCPUInstruction.TOpCode.XOR: DoXOR;
+    TCPUInstruction.TOpCode.SHL: DoSHL;
+    TCPUInstruction.TOpCode.SHR: DoSHR;
+    TCPUInstruction.TOpCode.NOT: DoNOT;
+
+    TCPUInstruction.TOpCode.LDB:  DoLDB;
+    TCPUInstruction.TOpCode.LDW:  DoLDW;
+    TCPUInstruction.TOpCode.LD:   DoLD;
+    TCPUInstruction.TOpCode.STB:  DoSTB;
+    TCPUInstruction.TOpCode.STW:  DoSTW;
+    TCPUInstruction.TOpCode.ST:   DoST;
+    TCPUInstruction.TOpCode.LDIB: DoLDIB;
+    TCPUInstruction.TOpCode.LDIW: DoLDIW;
+    TCPUInstruction.TOpCode.LDI:  DoLDI;
+    TCPUInstruction.TOpCode.STIB: DoSTIB;
+    TCPUInstruction.TOpCode.STIW: DoSTIW;
+    TCPUInstruction.TOpCode.STI:  DoSTI;
+    TCPUInstruction.TOpCode.STSB: DoSTSB;
+    TCPUInstruction.TOpCode.STSW: DoSTSW;
+    TCPUInstruction.TOpCode.STS:  DoSTS;
+    TCPUInstruction.TOpCode.LDOB: DoLDOB;
+    TCPUInstruction.TOpCode.LDOW: DoLDOW;
+    TCPUInstruction.TOpCode.LDO:  DoLDO;
+    TCPUInstruction.TOpCode.STOB: DoSTOB;
+    TCPUInstruction.TOpCode.STOW: DoSTOW;
+    TCPUInstruction.TOpCode.STO:  DoSTO;
+
+    TCPUInstruction.TOpCode.JNZ:  DoJNZ;
+    TCPUInstruction.TOpCode.JE:   DoJE;
+    TCPUInstruction.TOpCode.JL:   DoJL;
+    TCPUInstruction.TOpCode.JLE:  DoJLE;
+    TCPUInstruction.TOpCode.JG:   DoJG;
+    TCPUInstruction.TOpCode.JGE:  DoJGE;
+    TCPUInstruction.TOpCode.JB:   DoJB;
+    TCPUInstruction.TOpCode.JAE:  DoJAE;
+    TCPUInstruction.TOpCode.JMP:  DoJMP;
+    TCPUInstruction.TOpCode.LOOP: DoLOOP;
+
+    TCPUInstruction.TOpCode.CALL:    DoCALL;
+    TCPUInstruction.TOpCode.SYSCALL: DoSYSCALL;
+    TCPUInstruction.TOpCode.INT:     DoINT;
+    TCPUInstruction.TOpCode.RET:     DoRET;
+    TCPUInstruction.TOpCode.IRET:    DoIRET;
+
+    TCPUInstruction.TOpCode.ENTER: DoENTER;
+    TCPUInstruction.TOpCode.LEAVE: DoLEAVE;
+
+    TCPUInstruction.TOpCode.PUSH:  DoPUSH;
+    TCPUInstruction.TOpCode.POP:   DoPOP;
+    TCPUInstruction.TOpCode.PUSHF: DoPUSHF;
+    TCPUInstruction.TOpCode.POPF:  DoPOPF;
+    TCPUInstruction.TOpCode.PUSHR: DoPUSHR;
+    TCPUInstruction.TOpCode.POPR:  DoPOPR;
+
+    TCPUInstruction.TOpCode.EI: DoEI;
+    TCPUInstruction.TOpCode.DI: DoDI;
+
+    TCPUInstruction.TOpCode.FADD: DoFADD;
+    TCPUInstruction.TOpCode.FSUB: DoFSUB;
+    TCPUInstruction.TOpCode.FMUL: DoFMUL;
+    TCPUInstruction.TOpCode.FDIV: DoFDIV;
+
+    TCPUInstruction.TOpCode.ITOF:  DoITOF;
+    TCPUInstruction.TOpCode.FTOI:  DoFTOI;
+    TCPUInstruction.TOpCode.FRND:  DoFRND;
+    TCPUInstruction.TOpCode.FSIN:  DoFSIN;
+    TCPUInstruction.TOpCode.FCOS:  DoFCOS;
+    TCPUInstruction.TOpCode.FTAN:  DoFTAN;
+    TCPUInstruction.TOpCode.FATAN: DoFATAN;
+    TCPUInstruction.TOpCode.FEXP:  DoFEXP;
+    TCPUInstruction.TOpCode.FLN:   DoFLN;
+    TCPUInstruction.TOpCode.FSQRT: DoFSQRT;
+    TCPUInstruction.TOpCode.FCE:   DoFCE;
+    TCPUInstruction.TOpCode.FCMP:  DoFCMP;
+
+    TCPUInstruction.TOpCode.SETE:  DoSETE;
+    TCPUInstruction.TOpCode.SETNE: DoSETNE;
+    TCPUInstruction.TOpCode.SETL:  DoSETL;
+    TCPUInstruction.TOpCode.SETLE: DoSETLE;
+    TCPUInstruction.TOpCode.SETG:  DoSETG;
+    TCPUInstruction.TOpCode.SETGE: DoSETGE;
+
+    TCPUInstruction.TOpCode.NOP: DoNOP;
+    {$ENDREGION}
+  else
+    Panic(TSystemState.TPanicCode.InvalidOperation, FCurrenTCPUInstruction.OpCode);
+  end;
+end;
+
+procedure TCPU.Execute(AMaxInstructions: Integer; AAbortOp: TCPUInstruction.TOpCode);
+var
+  Count: Integer;
+begin
+  if AMaxInstructions <= 0 then
+    Exit;
+
+  Count := 0;
+
+  while Count < AMaxInstructions do
+  begin
+    Step;
+    Inc(Count);
+
+    if FHalt or FWait or (FCurrenTCPUInstruction.OpCode = AAbortOp) then
+      Break;
+  end;
+end;
+
+procedure TCPU.Push(AValue: Cardinal);
+begin
+  if Registers.SP < (FMemory.Stack.Address - FMemory.Stack.Size) + SizeOf(Cardinal) then
+  begin
+    Panic(TSystemState.TPanicCode.StackOverflow);
+    Exit;
+  end;
+
+  Dec(Registers.SP, SizeOf(Cardinal));
+
+  FMemory.WriteDWord(Registers.SP, AValue);
+end;
+
+function TCPU.Pop: Cardinal;
+begin
+  if Registers.SP >= FMemory.Stack.Address then
+  begin
+    Panic(TSystemState.TPanicCode.StackUnderflow);
+    Exit(0);
+  end;
+
+  Result := FMemory.ReadDWord(Registers.SP);
+
+  Inc(Registers.SP, SizeOf(Cardinal));
+end;
+
+procedure TCPU.SaveState;
+begin
+  FMemory.CoreSystem.SystemState.Registers := Registers;
+end;
+
+procedure TCPU.RestoreState;
+begin
+  Registers := FMemory.CoreSystem.SystemState.Registers;
+end;
+
+procedure TCPU.Panic(APanicCode: TSystemState.TPanicCode; AUserCode: Cardinal);
+var
+  HandlerAddr: Cardinal;
+begin
+  SaveState;
+
+  FMemory.CoreSystem.SystemState.PanicCode := APanicCode;
+  FMemory.CoreSystem.SystemState.UserCode  := AUserCode;
+
+  if FPanic then
+  begin
+    InternalPanic;
+    Exit;
+  end;
+
+  FPanic := True;
+
+  HandlerAddr := FMemory.CoreSystem.Interrupts.Vectors[TInterrupts.ID.Panic];
+
+  if (HandlerAddr = 0) or not FMemory.IsAddressExecutable(HandlerAddr) then
+    InternalPanic
+  else
+    Interrupt(TInterrupts.ID.Panic);
+end;
+
+function TCPU.SysCall(ASysCallID: TSysCalls.ID; AMaxInstructions: Integer): Boolean;
+var
+  TargetPC: Cardinal;
+begin
+  if ASysCallID < 256 then
+  begin
+    TargetPC := FMemory.CoreSystem.SysCalls.Vectors[ASysCallID];
+
+    if not FMemory.IsAddressExecutable(TargetPC) then
+    begin
+      if Assigned(FSysCallHandler) then
+        Exit(FSysCallHandler(ASysCallID))
+      else
+        Exit(False);
+    end;
+
+    Push(Registers.PC);
+
+    Registers.PC := TargetPC;
+
+    Result := True;
+
+    if AMaxInstructions > 0 then
+      Execute(AMaxInstructions, TCPUInstruction.TOpCode.RET);
+  end
+  else if Assigned(FSysCallHandler) then
+    Result := FSysCallHandler(ASysCallID)
+  else
+    Result := False;
+end;
+
+procedure TCPU.Halt;
+begin
+  FHalt := True;
+end;
+
+function TCPU.Interrupt(AInterruptID: TInterrupts.ID; AMaxInstructions: Integer): Boolean;
+var
+  TargetPC: Cardinal;
+begin
+  if (not Registers.Flags.InterruptsEnabled) and (AInterruptID <> TInterrupts.ID.Panic) and (AInterruptID <> TInterrupts.ID.NMI) then
+    Exit(False);
+
+  TargetPC := FMemory.CoreSystem.Interrupts.Vectors[AInterruptID];
+
+  if not FMemory.IsAddressExecutable(TargetPC) then
+    Exit(False);
+
+  Push(Registers.Flags);
+  Push(Registers.PC);
+
+  Registers.Flags.InterruptsEnabled := False;
+
+  Registers.PC := TargetPC;
+
+  Result := True;
+
+  if AMaxInstructions > 0 then
+    Execute(AMaxInstructions, TCPUInstruction.TOpCode.IRET);
+end;
+{$ENDREGION}
+
+{$REGION 'Instructions'}
+procedure TCPU.DoHALT;
+begin
+  Self.Halt;
+end;
+
+procedure TCPU.DoWAIT;
+begin
+  FWait := True;
+end;
+
+procedure TCPU.DoMOV;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := Registers.r[FCurrenTCPUInstruction.RegB];
+end;
+
+procedure TCPU.DoSWAP;
+var
+  Temp: Cardinal;
+begin
+  Temp := Registers.r[FCurrenTCPUInstruction.RegA];
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Registers.r[FCurrenTCPUInstruction.RegB];
+  Registers.r[FCurrenTCPUInstruction.RegB] := Temp;
+end;
+
+procedure TCPU.DoCMP;
+var
+  Save: Cardinal;
+begin
+  Save := Registers.r[FCurrenTCPUInstruction.RegA];
+  DoSUB;
+  Registers.r[FCurrenTCPUInstruction.RegA] := Save;
+end;
+
+procedure TCPU.DoLEA;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := Registers.r[FCurrenTCPUInstruction.RegB] + NextDWord;
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoZEXTB;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := Registers.r[FCurrenTCPUInstruction.RegB] and $FF;
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoZEXTW;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := Registers.r[FCurrenTCPUInstruction.RegB] and $FFFF;
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+{$REGION 'Arithmetic'}
+procedure TCPU.DoADD;
+var
+  Left, Right: Cardinal;
+  Result32:    Cardinal;
+  Result64:    UInt64;
+begin
+  Left  := Registers.r[FCurrenTCPUInstruction.RegA];
+  Right := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  Result64 := Left + Right;
+  Result32 := Result64 and $FFFFFFFF;
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Result32;
+
+  Registers.Flags.UpdateZN(Result32);
+
+  Registers.Flags.Carry    := (Result64 > $FFFFFFFF);
+  Registers.Flags.Overflow := ((Left xor Result32) and (Right xor Result32) and $80000000) <> 0;
+end;
+
+procedure TCPU.DoSUB;
+var
+  Left, Right: Cardinal;
+  Result32:    Cardinal;
+  Result64:    UInt64;
+begin
+  Left  := Registers.r[FCurrenTCPUInstruction.RegA];
+  Right := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  Result64 := Left - Right;
+  Result32 := Result64 and $FFFFFFFF;
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Result32;
+
+  Registers.Flags.UpdateZN(Result32);
+
+  //Registers.Flags.Carry    := Int64(Result64) < 0;
+  Registers.Flags.Carry := Left < Right;
+  Registers.Flags.Overflow := ((Left xor Right) and (Left xor Result32) and $80000000) <> 0;
+end;
+
+procedure TCPU.DoMUL;
+var
+  Left, Right: Cardinal;
+  Result32:    Cardinal;
+  Result64:    UInt64;
+begin
+  Left  := Registers.r[FCurrenTCPUInstruction.RegA];
+  Right := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  Result64 := UInt64(Left) * Right;
+  Result32 := Result64 and $FFFFFFFF;
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Result32;
+
+  Registers.Flags.UpdateZN(Result32);
+
+  Registers.Flags.Carry    := (Result64 > $FFFFFFFF);
+  Registers.Flags.Overflow := Registers.Flags.Carry;
+end;
+
+procedure TCPU.DoDIV;
+var
+  Left:  Cardinal;
+  Right: Cardinal;
+begin
+  Right := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  if Right = 0 then
+  begin
+    Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+
+    Registers.Flags.Carry := True;
+    Registers.Flags.Zero  := True;
+
+    if Registers.Flags.DivZPanicEnabled then
+      Panic(TSystemState.TPanicCode.DivideByZero);
+
+    Exit;
+  end;
+
+  Left  := Registers.r[FCurrenTCPUInstruction.RegA];
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Left div Right;
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoMOD;
+var
+  Left:  Cardinal;
+  Right: Cardinal;
+begin
+  Right := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  if Right = 0 then
+  begin
+    Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+
+    Registers.Flags.Carry := True;
+    Registers.Flags.Zero  := True;
+
+    if Registers.Flags.DivZPanicEnabled then
+      Panic(TSystemState.TPanicCode.DivideByZero);
+
+    Exit;
+  end;
+
+  Left  := Registers.r[FCurrenTCPUInstruction.RegA];
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Left mod Right;
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+{$ENDREGION}
+
+{$REGION 'Signed/Integer Arithmetic'}
+procedure TCPU.DoIMUL;
+var
+  Left, Right: Integer;
+  Result32:    Integer;
+  Result64:    Int64;
+begin
+  Left  := Integer(Registers.r[FCurrenTCPUInstruction.RegA]);
+  Right := Integer(Registers.r[FCurrenTCPUInstruction.RegB]);
+
+  Result64 := Int64(Left) * Right;
+  Result32 := Result64 and $FFFFFFFF;
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal(Result32);
+
+  Registers.Flags.UpdateZN(Cardinal(Result32));
+
+  Registers.Flags.Overflow := (Result64 < -(Int64(MaxInt) + 1)) or (Result64 > MaxInt);
+  Registers.Flags.Carry    := Registers.Flags.Overflow;
+end;
+
+procedure TCPU.DoIDIV;
+var
+  Left:  Integer;
+  Right: Integer;
+begin
+  Left  := Integer(Registers.r[FCurrenTCPUInstruction.RegA]);
+  Right := Integer(Registers.r[FCurrenTCPUInstruction.RegB]);
+
+  if (Right = 0) or ((Left = Low(Integer)) and (Right = -1)) then
+  begin
+    Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+
+    Registers.Flags.Carry := True;
+    Registers.Flags.Zero  := True;
+
+    if Registers.Flags.DivZPanicEnabled then
+      Panic(TSystemState.TPanicCode.DivideByZero);
+
+    Exit;
+  end;
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal(Left div Right);
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoIMOD;
+var
+  Left:  Integer;
+  Right: Integer;
+begin
+  Right := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  if Right = 0 then
+  begin
+    Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+
+    Registers.Flags.Carry := True;
+    Registers.Flags.Zero  := True;
+
+    if Registers.Flags.DivZPanicEnabled then
+      Panic(TSystemState.TPanicCode.DivideByZero);
+
+    Exit;
+  end;
+
+  Left  := Registers.r[FCurrenTCPUInstruction.RegA];
+
+  if (Left = Low(Integer)) and (Right = -1) then
+  begin
+    Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+    Registers.Flags.UpdateZN(0);
+
+    Exit;
+  end;
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal(Left mod Right);
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoISAR;
+var
+  ShiftCount: Cardinal;
+  Value:      Int64;
+begin
+  ShiftCount := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  if ShiftCount = 0 then
+    Exit;
+
+  Value := Integer(Registers.r[FCurrenTCPUInstruction.RegA]);
+
+  if ShiftCount < 32 then
+  begin
+    if Value < 0 then
+      Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal((Value shr ShiftCount) or ($FFFFFFFF shl (32 - ShiftCount)))
+    else
+      Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal(Value shr ShiftCount);
+  end
+  else
+  begin
+    if Value < 0 then
+      Registers.r[FCurrenTCPUInstruction.RegA] := $FFFFFFFF
+    else
+      Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+  end;
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoINEG;
+var
+  Value: Cardinal;
+begin
+  Value := Registers.r[FCurrenTCPUInstruction.RegB];
+  Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal(-Int32(Value));
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+
+  Registers.Flags.Overflow := (Value = $80000000);
+  Registers.Flags.Carry    := (Value <> 0);
+end;
+
+procedure TCPU.DoIEXTB;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal(Int32(Int8(Registers.r[FCurrenTCPUInstruction.RegB])));
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoIEXTW;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal(Int32(Int16(Registers.r[FCurrenTCPUInstruction.RegB])));
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+{$ENDREGION}
+
+{$REGION 'Bitwise'}
+procedure TCPU.DoAND;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := Registers.r[FCurrenTCPUInstruction.RegA] and Registers.r[FCurrenTCPUInstruction.RegB];
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoOR;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := Registers.r[FCurrenTCPUInstruction.RegA] or Registers.r[FCurrenTCPUInstruction.RegB];
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoXOR;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := Registers.r[FCurrenTCPUInstruction.RegA] xor Registers.r[FCurrenTCPUInstruction.RegB];
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoSHL;
+var
+  ShiftCount: Word;
+begin
+  ShiftCount := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  if ShiftCount < 32 then
+    Registers.r[FCurrenTCPUInstruction.RegA] := (Registers.r[FCurrenTCPUInstruction.RegA] shl ShiftCount) and $FFFFFFFF
+  else
+    Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoSHR;
+var
+  ShiftCount: Word;
+begin
+  ShiftCount := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  if ShiftCount < 32 then
+    Registers.r[FCurrenTCPUInstruction.RegA] := (Registers.r[FCurrenTCPUInstruction.RegA] shr ShiftCount) and $FFFFFFFF
+  else
+    Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoNOT;
+begin
+  Registers.r[FCurrenTCPUInstruction.RegA] := not Registers.r[FCurrenTCPUInstruction.RegB];
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+{$ENDREGION}
+
+{$REGION 'Load/Store'}
+procedure TCPU.DoLDB;
+begin
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}CheckAddress(Registers.r[FCurrenTCPUInstruction.RegB], TSystemState.TPanicCode.AccessViolationRead);{$ENDIF}
+  Registers.R[FCurrenTCPUInstruction.RegA] := FMemory.ReadByte(Registers.r[FCurrenTCPUInstruction.RegB]);
+end;
+
+procedure TCPU.DoLDW;
+begin
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}CheckAddress(Registers.r[FCurrenTCPUInstruction.RegB] + 1, TSystemState.TPanicCode.AccessViolationRead);{$ENDIF}
+  Registers.R[FCurrenTCPUInstruction.RegA] := FMemory.ReadWord(Registers.r[FCurrenTCPUInstruction.RegB]);
+end;
+
+procedure TCPU.DoLD;
+begin
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}CheckAddress(Registers.r[FCurrenTCPUInstruction.RegB] + 3, TSystemState.TPanicCode.AccessViolationRead);{$ENDIF}
+  Registers.R[FCurrenTCPUInstruction.RegA] := FMemory.ReadDWord(Registers.r[FCurrenTCPUInstruction.RegB]);
+end;
+
+procedure TCPU.DoSTB;
+begin
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}CheckAddress(Registers.r[FCurrenTCPUInstruction.RegA], TSystemState.TPanicCode.AccessViolationWrite);{$ENDIF}
+  FMemory.WriteByte(Registers.r[FCurrenTCPUInstruction.RegA], Registers.R[FCurrenTCPUInstruction.RegB] and $FF);
+end;
+
+procedure TCPU.DoSTW;
+begin
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}CheckAddress(Registers.r[FCurrenTCPUInstruction.RegA] + 1, TSystemState.TPanicCode.AccessViolationWrite);{$ENDIF}
+  FMemory.WriteWord(Registers.r[FCurrenTCPUInstruction.RegA], Registers.R[FCurrenTCPUInstruction.RegB] and $FFFF);
+end;
+
+procedure TCPU.DoST;
+begin
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}CheckAddress(Registers.r[FCurrenTCPUInstruction.RegA] + 3, TSystemState.TPanicCode.AccessViolationWrite);{$ENDIF}
+  FMemory.WriteDWord(Registers.r[FCurrenTCPUInstruction.RegA], Registers.R[FCurrenTCPUInstruction.RegB]);
+end;
+
+procedure TCPU.DoLDIB;
+begin
+  DoLDB;
+  Inc(Registers.r[FCurrenTCPUInstruction.RegB]);
+end;
+
+procedure TCPU.DoLDIW;
+begin
+  DoLDW;
+  Inc(Registers.r[FCurrenTCPUInstruction.RegB], 2);
+end;
+
+procedure TCPU.DoLDI;
+begin
+  DoLD;
+  Inc(Registers.r[FCurrenTCPUInstruction.RegB], 4);
+end;
+
+procedure TCPU.DoSTIB;
+begin
+  DoSTB;
+  Inc(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoSTIW;
+begin
+  DoSTW;
+  Inc(Registers.r[FCurrenTCPUInstruction.RegA], 2);
+end;
+
+procedure TCPU.DoSTI;
+begin
+  DoST;
+  Inc(Registers.r[FCurrenTCPUInstruction.RegA], 4);
+end;
+
+procedure TCPU.DoSTSB;
+begin
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}
+    CheckAddress(Registers.r[FCurrenTCPUInstruction.RegA], TSystemState.TPanicCode.AccessViolationWrite);
+    CheckAddress(Registers.r[FCurrenTCPUInstruction.RegB], TSystemState.TPanicCode.AccessViolationRead);
+  {$ENDIF}
+
+  FMemory.WriteByte(Registers.r[FCurrenTCPUInstruction.RegA], FMemory.ReadByte(Registers.r[FCurrenTCPUInstruction.RegB]));
+
+  Inc(Registers.r[FCurrenTCPUInstruction.RegA]);
+  Inc(Registers.r[FCurrenTCPUInstruction.RegB]);
+end;
+
+procedure TCPU.DoSTSW;
+begin
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}
+    CheckAddress(Registers.r[FCurrenTCPUInstruction.RegA] + 1, TSystemState.TPanicCode.AccessViolationWrite);
+    CheckAddress(Registers.r[FCurrenTCPUInstruction.RegB] + 1, TSystemState.TPanicCode.AccessViolationRead);
+  {$ENDIF}
+
+  FMemory.WriteWord(Registers.r[FCurrenTCPUInstruction.RegA], FMemory.ReadWord(Registers.r[FCurrenTCPUInstruction.RegB]));
+
+  Inc(Registers.r[FCurrenTCPUInstruction.RegA], 2);
+  Inc(Registers.r[FCurrenTCPUInstruction.RegB], 2);
+end;
+
+procedure TCPU.DoSTS;
+begin
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}
+    CheckAddress(Registers.r[FCurrenTCPUInstruction.RegA] + 3, TSystemState.TPanicCode.AccessViolationWrite);
+    CheckAddress(Registers.r[FCurrenTCPUInstruction.RegB] + 3, TSystemState.TPanicCode.AccessViolationRead);
+  {$ENDIF}
+
+  FMemory.WriteDWord(Registers.r[FCurrenTCPUInstruction.RegA], FMemory.ReadDWord(Registers.r[FCurrenTCPUInstruction.RegB]));
+
+  Inc(Registers.r[FCurrenTCPUInstruction.RegA], 4);
+  Inc(Registers.r[FCurrenTCPUInstruction.RegB], 4);
+end;
+
+procedure TCPU.DoLDOB;
+var
+  TargetAddr: Cardinal;
+begin
+  TargetAddr := Registers.R[FCurrenTCPUInstruction.RegB] + NextDWord;
+
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}
+    CheckAddress(TargetAddr, TSystemState.TPanicCode.AccessViolationRead);
+  {$ENDIF}
+
+  Registers.R[FCurrenTCPUInstruction.RegA] := FMemory.ReadByte(TargetAddr);
+end;
+
+procedure TCPU.DoLDOW;
+var
+  TargetAddr: Cardinal;
+begin
+  TargetAddr := Registers.R[FCurrenTCPUInstruction.RegB] + NextDWord;
+
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}
+    CheckAddress(TargetAddr + 1, TSystemState.TPanicCode.AccessViolationRead);
+  {$ENDIF}
+
+  Registers.R[FCurrenTCPUInstruction.RegA] := FMemory.ReadWord(TargetAddr);
+end;
+
+procedure TCPU.DoLDO;
+var
+  TargetAddr: Cardinal;
+begin
+  TargetAddr := Registers.R[FCurrenTCPUInstruction.RegB] + NextDWord;
+
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}
+    CheckAddress(TargetAddr + 3, TSystemState.TPanicCode.AccessViolationRead);
+  {$ENDIF}
+
+  Registers.R[FCurrenTCPUInstruction.RegA] := FMemory.ReadDWord(TargetAddr);
+end;
+
+procedure TCPU.DoSTOB;
+var
+  TargetAddr: Cardinal;
+begin
+  TargetAddr := Registers.R[FCurrenTCPUInstruction.RegA] + NextDWord;
+
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}
+    CheckAddress(TargetAddr, TSystemState.TPanicCode.AccessViolationWrite);
+  {$ENDIF}
+
+  FMemory.WriteByte(TargetAddr, Registers.R[FCurrenTCPUInstruction.RegB] and $FF);
+end;
+
+procedure TCPU.DoSTOW;
+var
+  TargetAddr: Cardinal;
+begin
+  TargetAddr := Registers.R[FCurrenTCPUInstruction.RegA] + NextDWord;
+
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}
+    CheckAddress(TargetAddr + 1, TSystemState.TPanicCode.AccessViolationWrite);
+  {$ENDIF}
+
+  FMemory.WriteWord(TargetAddr, Registers.R[FCurrenTCPUInstruction.RegB] and $FFFF);
+end;
+
+procedure TCPU.DoSTO;
+var
+  TargetAddr: Cardinal;
+begin
+  TargetAddr := Registers.R[FCurrenTCPUInstruction.RegA] + NextDWord;
+
+  {$IF DEFINDED(CHECK_MEM_BOUNDS)}
+    CheckAddress(TargetAddr + 3, TSystemState.TPanicCode.AccessViolationWrite);
+  {$ENDIF}
+
+  FMemory.WriteDWord(TargetAddr, Registers.R[FCurrenTCPUInstruction.RegB]);
+end;
+{$ENDREGION}
+
+{$REGION 'Jump'}
+procedure TCPU.DoJNZ;
+var
+  TargetAddress: Cardinal;
+begin
+  TargetAddress := NextDWord;
+
+  if not Registers.Flags.Zero then
+  begin
+    Registers.PC := TargetAddress;
+    CheckPC;
+  end;
+end;
+
+procedure TCPU.DoJE;
+var
+  TargetAddress: Cardinal;
+begin
+  TargetAddress := NextDWord;
+
+  if Registers.Flags.Zero then
+  begin
+    Registers.PC := TargetAddress;
+    CheckPC;
+  end;
+end;
+
+procedure TCPU.DoJL;
+var
+  TargetAddress: Cardinal;
+begin
+  TargetAddress := NextDWord;
+
+  if Registers.Flags.Negative <> Registers.Flags.Overflow then
+  begin
+    Registers.PC := TargetAddress;
+    CheckPC;
+  end;
+end;
+
+procedure TCPU.DoJLE;
+var
+  TargetAddress: Cardinal;
+begin
+  TargetAddress := NextDWord;
+
+  if Registers.Flags.Zero or (Registers.Flags.Negative <> Registers.Flags.Overflow) then
+  begin
+    Registers.PC := TargetAddress;
+    CheckPC;
+  end;
+end;
+
+procedure TCPU.DoJG;
+var
+  TargetAddress: Cardinal;
+begin
+  TargetAddress := NextDWord;
+
+  if not (Registers.Flags.Negative <> Registers.Flags.Overflow) and not Registers.Flags.Zero then
+  begin
+    Registers.PC := TargetAddress;
+    CheckPC;
+  end;
+end;
+
+procedure TCPU.DoJGE;
+var
+  TargetAddress: Cardinal;
+begin
+  TargetAddress := NextDWord;
+
+  if Registers.Flags.Negative = Registers.Flags.Overflow then
+  begin
+    Registers.PC := TargetAddress;
+    CheckPC;
+  end;
+end;
+
+procedure TCPU.DoJB;
+var
+  TargetAddress: Cardinal;
+begin
+  TargetAddress := NextDWord;
+
+  if Registers.Flags.Carry then
+  begin
+    Registers.PC := TargetAddress;
+    CheckPC;
+  end;
+end;
+
+procedure TCPU.DoJAE;
+var
+  TargetAddress: Cardinal;
+begin
+  TargetAddress := NextDWord;
+
+  if not Registers.Flags.Carry then
+  begin
+    Registers.PC := TargetAddress;
+    CheckPC;
+  end;
+end;
+
+procedure TCPU.DoJMP;
+begin
+  if FCurrenTCPUInstruction.RegA = TRegisters.ID.Imm then
+    Registers.PC := NextDWord
+  else
+    Registers.PC := Registers.r[FCurrenTCPUInstruction.RegA];
+
+  CheckPC;
+end;
+
+procedure TCPU.DoLOOP;
+var
+  TargetAddress: Cardinal;
+begin
+  TargetAddress := NextDWord;
+
+  Dec(Registers.r[FCurrenTCPUInstruction.RegA]);
+
+  if Registers.r[FCurrenTCPUInstruction.RegA] > 0 then
+  begin
+    Registers.PC := TargetAddress;
+    CheckPC;
+  end;
+end;
+{$ENDREGION}
+
+{$REGION 'Call/Return'}
+procedure TCPU.DoCALL;
+begin
+if FCurrenTCPUInstruction.RegA = TRegisters.ID.Imm then
+  begin
+    Push(Registers.PC + 4);
+    Registers.PC := NextDWord;
+  end
+  else
+  begin
+    Push(Registers.PC);
+    Registers.PC := Registers.r[FCurrenTCPUInstruction.RegA];
+  end;
+
+  CheckPC;
+end;
+
+procedure TCPU.DoSYSCALL;
+begin
+  if FCurrenTCPUInstruction.RegA = TRegisters.ID.Imm then
+    Registers.r[TRegisters.ID.Imm] := NextDWord;
+
+  SysCall(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoINT;
+begin
+  if FCurrenTCPUInstruction.RegA = TRegisters.ID.Imm then
+    Registers.r[TRegisters.ID.Imm] := NextDWord;
+
+  Interrupt(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoRET;
+begin
+  Registers.PC := Pop;
+  CheckPC;
+end;
+
+procedure TCPU.DoIRET;
+begin
+  Registers.PC    := Pop;
+  Registers.Flags := Pop and $FF;
+  CheckPC;
+end;
+
+procedure TCPU.DoENTER;
+begin
+  Push(Registers.BP);
+  Registers.BP := Registers.SP;
+  Registers.SP := Registers.BP - NextDWord;
+end;
+
+procedure TCPU.DoLEAVE;
+begin
+  Registers.SP := Registers.BP;
+  Registers.BP := Pop;
+end;
+{$ENDREGION}
+
+{$REGION 'Push/Pop'}
+procedure TCPU.DoPUSH;
+begin
+  if FCurrenTCPUInstruction.RegA = TRegisters.ID.Imm then
+    Registers.r[TRegisters.ID.Imm] := NextDWord;
+
+  Push(Registers.R[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoPOP;
+begin
+  Registers.R[FCurrenTCPUInstruction.RegA] := Pop;
+end;
+
+procedure TCPU.DoPUSHF;
+begin
+  Push(Registers.Flags);
+end;
+
+procedure TCPU.DoPOPF;
+begin
+  Registers.Flags := Pop and $FF;
+end;
+
+procedure TCPU.DoPUSHR;
+var
+  Count: Cardinal;
+begin
+  Count := NextDWord;
+  if Count > 16 then
+    Count := 16;
+
+  for var i := Integer(Count) - 1 downto 0 do
+    Push(Registers.R[i]);
+end;
+
+procedure TCPU.DoPOPR;
+var
+  Count: Cardinal;
+begin
+  Count := NextDWord;
+  if Count > 16 then
+    Count := 16;
+
+  for var i := 0 to Integer(Count) - 1 do
+    Registers.R[i] := Pop;
+end;
+{$ENDREGION}
+
+{$REGION 'Flags'}
+procedure TCPU.DoEI;
+begin
+  Registers.Flags.InterruptsEnabled := True;
+end;
+
+procedure TCPU.DoDI;
+begin
+  Registers.Flags.InterruptsEnabled := False;
+end;
+{$ENDREGION}
+
+{$REGION 'Floating point'}
+procedure TCPU.DoFADD;
+var
+  F1, F2: Single;
+begin
+  F1 := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegA]);
+  F2 := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(F1 + F2);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoFSUB;
+var
+  F1, F2: Single;
+begin
+  F1 := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegA]);
+  F2 := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(F1 - F2);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoFMUL;
+var
+  F1, F2: Single;
+begin
+  F1 := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegA]);
+  F2 := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(F1 * F2);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoFDIV;
+var
+  Right:  Cardinal;
+  F1, F2: Single;
+begin
+  Right := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  if (Right and $7FFFFFFF) = 0 then
+  begin
+    Registers.r[FCurrenTCPUInstruction.RegA] := $7F800000;
+
+    if Registers.Flags.DivZPanicEnabled then
+      FPUError;
+
+    Exit;
+  end;
+
+  F1 := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegA]);
+  F2 := DWordToSingle(Right);
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(F1 / F2);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoITOF;
+var
+  I: Integer;
+  F: Single;
+begin
+  I := Integer(Registers.r[FCurrenTCPUInstruction.RegB]);
+  F := I;
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(F);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoFTOI;
+var
+  F: Single;
+  I: Integer;
+begin
+  F := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+  I := Trunc(F);
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal(I);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoFRND;
+var
+  F: Single;
+  I: Integer;
+begin
+  F := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+  I := Round(F);
+
+  Registers.r[FCurrenTCPUInstruction.RegA] := Cardinal(I);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoFSIN;
+var
+  F: Single;
+begin
+  F := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(Sin(F));
+end;
+
+procedure TCPU.DoFCOS;
+var
+  F: Single;
+begin
+  F := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(Cos(F));
+end;
+
+procedure TCPU.DoFTAN;
+var
+  F: Single;
+begin
+  F := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(Tangent(F));
+end;
+
+procedure TCPU.DoFATAN;
+var
+  F: Single;
+begin
+  F := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(ArcTan(F));
+end;
+
+procedure TCPU.DoFLN;
+var
+  Right: Cardinal;
+  F:     Single;
+begin
+  Right := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  if ((Right and $7FFFFFFF) = 0) or ((Right and $80000000) <> 0) then
+  begin
+    Registers.r[FCurrenTCPUInstruction.RegA] := $7FC00000;
+
+    if Registers.Flags.DivZPanicEnabled then
+      FPUError;
+
+    Exit;
+  end;
+
+  F := DWordToSingle(Right);
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(Ln(F));
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoFEXP;
+var
+  F: Single;
+begin
+  F := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(Exp(F));
+end;
+
+procedure TCPU.DoFSQRT;
+var
+  Right: Cardinal;
+  F:     Single;
+begin
+  Right := Registers.r[FCurrenTCPUInstruction.RegB];
+
+  if ((Right and $80000000) <> 0) and ((Right and $7FFFFFFF) <> 0) then
+  begin
+    Registers.r[FCurrenTCPUInstruction.RegA] := $7FC00000;
+
+    if Registers.Flags.DivZPanicEnabled then
+      FPUError;
+
+    Exit;
+  end;
+
+  F := DWordToSingle(Right);
+  Registers.r[FCurrenTCPUInstruction.RegA] := SingleToDWord(Sqrt(F));
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrenTCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoFCE;
+begin
+  Registers.Flags.FPUException := False;
+end;
+
+procedure TCPU.DoFCMP;
+var
+  F1, F2: Single;
+begin
+  F1 := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegA]);
+  F2 := DWordToSingle(Registers.r[FCurrenTCPUInstruction.RegB]);
+
+  Registers.Flags.Zero     := (F1 = F2);
+  Registers.Flags.Negative := (F1 < F2);
+
+  Registers.Flags.Overflow := False;
+  Registers.Flags.Carry    := False;
+end;
+{$ENDREGION}
+
+{$REGION 'Set condition'}
+procedure TCPU.DoSETE;
+begin
+  if Registers.Flags.Zero then Registers.r[FCurrenTCPUInstruction.RegA] := 1 else Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+end;
+
+procedure TCPU.DoSETNE;
+begin
+  if not Registers.Flags.Zero then Registers.r[FCurrenTCPUInstruction.RegA] := 1 else Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+end;
+
+procedure TCPU.DoSETL;
+begin
+  if Registers.Flags.Negative <> Registers.Flags.Overflow then Registers.r[FCurrenTCPUInstruction.RegA] := 1 else Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+end;
+
+procedure TCPU.DoSETLE;
+begin
+  if Registers.Flags.Zero or (Registers.Flags.Negative <> Registers.Flags.Overflow) then Registers.r[FCurrenTCPUInstruction.RegA] := 1 else Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+end;
+
+procedure TCPU.DoSETG;
+begin
+  if not Registers.Flags.Zero and (Registers.Flags.Negative = Registers.Flags.Overflow) then Registers.r[FCurrenTCPUInstruction.RegA] := 1 else Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+end;
+
+procedure TCPU.DoSETGE;
+begin
+  if Registers.Flags.Negative = Registers.Flags.Overflow then Registers.r[FCurrenTCPUInstruction.RegA] := 1 else Registers.r[FCurrenTCPUInstruction.RegA] := 0;
+end;
+{$ENDREGION}
+
+procedure TCPU.DoNOP;
+begin
+  {}
+end;
+{$ENDREGION}
+
+end.
