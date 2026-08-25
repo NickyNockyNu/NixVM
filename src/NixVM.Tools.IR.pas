@@ -49,7 +49,10 @@ type
       DataBytes,
       DataWords,
       DataDWords,
-      DataString
+      DataString,
+      DataReserved,
+      Embed,
+      Align
     );
     {$ENDREGION}
 
@@ -57,6 +60,8 @@ type
       Value:  Cardinal;
       &Label: TLabelString;
     end;
+  private
+
   public
     function ToString: String;
 
@@ -83,9 +88,21 @@ type
       TKind.DataBytes,
       TKind.DataWords,
       TKind.DataDWords,
-      TKind.DataString: (
+      TKind.DataString,
+      TKind.DataReserved: (
         DataPtr:  Pointer;
         DataSize: Cardinal;
+      );
+
+      TKind.Embed: (
+        EmbedPtr:  Pointer;
+        EmbedSize: Cardinal;
+        EmbedFile: ShortString;
+      );
+
+      TKind.Align: (
+        AlignBoundary: Cardinal;
+        AlignPadByte:  Byte;
       );
   end;
   {$ENDREGION}
@@ -132,7 +149,14 @@ type
     function AddDataWords (const AWords:  array of Word):     Integer;
     function AddDataDWords(const ADWords: array of Cardinal): Integer;
 
-    function AddDataString(const AString: AnsiString; ANullTerminated: Boolean = True): Integer;
+    function AddDataString(const AString: AnsiString; ANullTerminated: Boolean = True): Integer; overload;
+    function AddDataString(const AData: TBytes): Integer; overload;
+
+    function AddDataReserved(ASize: Cardinal): Integer;
+
+    function AddEmbed(const AFileName: String; const AData: TBytes): Integer;
+
+    function AddAlign(ABoundary: Cardinal; APadByte: Byte = 0): Integer;
 
     function ComputeAddresses(AStartAddress: Cardinal = 0):                          Cardinal;
     function ResolveLabels   (AStartAddress: Cardinal = 0; AErrors: TStrings = nil): Boolean;
@@ -152,18 +176,99 @@ implementation
 
 {$REGION 'IRItem'}
 function TIRItem.ToString: String;
-var
-  Mnemonic: String;
+  {$REGION 'String Formatter'}
+  function FormatDataString(const AData: Pointer; ASize: Cardinal; const ADirective: String = '.str'): String;
+  var
+    P:       PByte;
+    InQuote: Boolean;
+    CurStr:  String;
+    Parts:   TList<String>;
+    B:       Byte;
+  begin
+    if (AData = nil) or (ASize = 0) then
+      Exit(ADirective + #9'""');
+
+    P       := PByte(AData);
+    Parts   := TList<String>.Create;
+    InQuote := False;
+    CurStr  := '';
+
+    try
+      for var i := 0 to ASize - 1 do
+      begin
+        B := P^;
+        Inc(P);
+
+        if (B in [32..126]) and (B <> Ord('"')) then
+        begin
+          if not InQuote then
+          begin
+            InQuote := True;
+            CurStr  := '"';
+          end;
+
+          CurStr := CurStr + Char(B);
+        end
+        else if B = Ord('"') then
+        begin
+          if not InQuote then
+          begin
+            InQuote := True;
+            CurStr  := '"';
+          end;
+
+          CurStr := CurStr + '""';
+        end
+        else
+        begin
+          if InQuote then
+          begin
+            CurStr := CurStr + '"';
+
+            Parts.Add(CurStr);
+
+            InQuote := False;
+            CurStr  := '';
+          end;
+
+          Parts.Add(IntToStr(B));
+        end;
+      end;
+
+      if InQuote then
+      begin
+        CurStr := CurStr + '"';
+        Parts.Add(CurStr);
+      end;
+
+      Result := ADirective + #9 + string.Join(', ', Parts.ToArray);
+    finally
+      Parts.Free;
+    end;
+  end;
+  {$ENDREGION}
 
   function FormatValue(const AVal: TValue; AHex: Boolean = False): String;
   begin
     if Length(AVal.&Label) > 0 then
-      Result := String(AVal.&Label)
+    begin
+      Result := String(AVal.&Label);
+
+      if AVal.Value <> 0 then
+      begin
+        if Integer(AVal.Value) > 0 then
+          Result := Result + ' + ' + IntToStr(Integer(AVal.Value))
+        else
+          Result := Result + ' - ' + IntToStr(Abs(Integer(AVal.Value)));
+      end;
+    end
     else if AHex then
       Result := '$' + IntToHex(AVal.Value, 0)
     else
       Result := IntToStr(Integer(AVal.Value));
   end;
+var
+  Mnemonic: String;
 begin
   case Kind of
     TKind.None: ;
@@ -218,7 +323,7 @@ begin
 
     TKind.DataBytes:
     begin
-      Result := 'db ';
+      Result := '.db'#9;
 
       var P := PByte(DataPtr);
 
@@ -235,7 +340,7 @@ begin
 
     TKind.DataWords:
     begin
-      Result := 'dw ';
+      Result := '.dw'#9;
 
       var P := PWord(DataPtr);
 
@@ -252,7 +357,7 @@ begin
 
     TKind.DataDWords:
     begin
-      Result := 'dd ';
+      Result := '.dd'#9;
 
       var P := PCardinal(DataPtr);
 
@@ -268,17 +373,22 @@ begin
     end;
 
     TKind.DataString:
+      Result := FormatDataString(DataPtr, DataSize, '.str');
+
+    TKind.DataReserved:
+      Result := '.res'#9 + IntToStr(DataSize);
+
+    TKind.Embed:
+      Result := '.embed'#9'"' + String(EmbedFile) + '"';
+
+    TKind.Align:
     begin
-      // TODO: Split string special characters. eg `Hello'#9'World'#13#10 -> "Hello", 9, "World", 13, 10
+      Result := '.align'#9 + IntToStr(AlignBoundary);
 
-      var S: AnsiString;
-      SetString(S, PAnsiChar(DataPtr), DataSize);
-
-      if (Length(S) > 0) and (S[Length(S)] = #0) then
-        SetLength(S, Length(S) - 1);
-
-      Result := 'ds "' + String(S) + '"';
+      if AlignPadByte <> 0 then
+        Result := Result + ', $' + IntToHex(AlignPadByte, 2);
     end;
+
   else
     Result := '';
   end;
@@ -307,8 +417,27 @@ begin
     TKind.DataBytes,
     TKind.DataWords,
     TKind.DataDWords,
-    TKind.DataString:
+    TKind.DataString,
+    TKind.DataReserved:
       Result := DataSize;
+
+    TKind.Embed:
+      Result := EmbedSize;
+
+    TKind.Align:
+    begin
+      if AlignBoundary > 1 then
+      begin
+        var Rem := Address mod AlignBoundary;
+
+        if Rem <> 0 then
+          Result := AlignBoundary - Rem
+        else
+          Result := 0;
+      end
+      else
+        Result := 0;
+    end;
   else
     Result := 0;
   end;
@@ -613,6 +742,7 @@ var
   Len:  Integer;
 begin
   Len := Length(AString);
+
   if ANullTerminated then
     Inc(Len);
 
@@ -627,6 +757,61 @@ begin
   Result := Add(Item);
 end;
 
+function TIRList.AddDataString(const AData: TBytes): Integer;
+var
+  Item: TIRItem;
+begin
+  Item := Default(TIRItem);
+  Item.Kind     := TIRItem.TKind.DataString;
+  Item.DataSize := Length(AData);
+
+  if Item.DataSize > 0 then
+    Item.DataPtr := StoreData(@AData[0], Item.DataSize);
+
+  Result := Add(Item);
+end;
+
+function TIRList.AddDataReserved(ASize: Cardinal): Integer;
+var
+  Item: TIRItem;
+begin
+  Item := Default(TIRItem);
+
+  Item.Kind     := TIRItem.TKind.DataReserved;
+  Item.DataSize := ASize;
+
+  Result := Add(Item);
+end;
+
+function TIRList.AddEmbed(const AFileName: String; const AData: TBytes): Integer;
+var
+  Item: TIRItem;
+begin
+  Item := Default(TIRItem);
+
+  Item.Kind      := TIRItem.TKind.Embed;
+  Item.EmbedFile := ShortString(AFileName);
+  Item.EmbedSize := Length(AData);
+
+  if Item.EmbedSize > 0 then
+    Item.EmbedPtr := StoreData(@AData[0], Item.EmbedSize);
+
+  Result := Add(Item);
+end;
+
+function TIRList.AddAlign(ABoundary: Cardinal; APadByte: Byte = 0): Integer;
+var
+  Item: TIRItem;
+begin
+  Item := Default(TIRItem);
+
+  Item.Kind          := TIRItem.TKind.Align;
+  Item.AlignBoundary := ABoundary;
+  Item.AlignPadByte  := APadByte;
+
+  Result := Add(Item);
+end;
+
 function TIRList.ComputeAddresses(AStartAddress: Cardinal): Cardinal;
 var
   CurrAddr: Cardinal;
@@ -636,8 +821,10 @@ begin
   for var i := 0 to Count - 1 do
   begin
     var Item := Items[i];
+
     Item.Address := CurrAddr;
     Inc(CurrAddr, Item.Size);
+
     Items[i] := Item;
   end;
 
@@ -651,7 +838,7 @@ var
 
   function Qualify(const AName, AScope: TLabelString): TLabelString; inline;
   begin
-    if (Length(AName) > 0) and (AName[1] = '.') then
+    if (Length(AName) > 0) and (AName[1] = '@') then
       Result := AScope + AName
     else
       Result := AName;
@@ -670,7 +857,7 @@ begin
       begin
         var RawName := Items[i].Name;
 
-        if (Length(RawName) > 0) and (RawName[1] <> '.') then
+        if (Length(RawName) > 0) and (RawName[1] <> '@') then
           CurrentScope := RawName;
 
         var FullName := Qualify(RawName, CurrentScope);
@@ -693,9 +880,10 @@ begin
     begin
       if Items[i].Kind = TIRItem.TKind.&Label then
       begin
-        if (Length(Items[i].Name) > 0) and (Items[i].Name[1] <> '.') then
+        if (Length(Items[i].Name) > 0) and (Items[i].Name[1] <> '@') then
           CurrentScope := Items[i].Name;
       end
+
       else if Items[i].Kind = TIRItem.TKind.Instruction then
       begin
         var Item     := Items[i];
@@ -708,7 +896,7 @@ begin
 
           if LabelMap.TryGetValue(FullName, TargetAddr) then
           begin
-            Item.Imm.Value := TargetAddr;
+            Item.Imm.Value := Cardinal(Integer(TargetAddr) + Integer(Item.Imm.Value));
             Modified := True;
           end
           else
@@ -727,7 +915,7 @@ begin
 
           if LabelMap.TryGetValue(FullName, TargetAddr) then
           begin
-            Item.Offset.Value := TargetAddr;
+            Item.Offset.Value := Cardinal(Integer(TargetAddr) + Integer(Item.Offset.Value));
             Modified := True;
           end
           else
@@ -793,6 +981,39 @@ begin
         begin
           AMemory.WriteData(CurrAddr, Item.DataPtr^, Item.DataSize);
           Inc(CurrAddr, Item.DataSize);
+        end;
+      end;
+
+      TIRItem.TKind.DataReserved:
+      begin
+        if Item.DataSize > 0 then
+        begin
+          AMemory.Fill(CurrAddr, Item.DataSize, 0);
+          Inc(CurrAddr, Item.DataSize);
+        end;
+      end;
+
+      TIRItem.TKind.Embed:
+      begin
+        if (Item.EmbedPtr <> nil) and (Item.EmbedSize > 0) then
+        begin
+          AMemory.WriteData(CurrAddr, Item.EmbedPtr^, Item.EmbedSize);
+          Inc(CurrAddr, Item.EmbedSize);
+        end;
+      end;
+
+      TIRItem.TKind.Align:
+      begin
+        if Item.AlignBoundary > 1 then
+        begin
+          var Rem := CurrAddr mod Item.AlignBoundary;
+
+          if Rem <> 0 then
+          begin
+            var Pad := Item.AlignBoundary - Rem;
+            AMemory.Fill(CurrAddr, Pad, Item.AlignPadByte);
+            Inc(CurrAddr, Pad);
+          end;
         end;
       end;
     end;

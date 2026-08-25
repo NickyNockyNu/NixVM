@@ -334,7 +334,7 @@ begin
   FCPU.SysCallHandler := HandleSysCall;
   FCPU.PanicHandler   := HandlePanic;
 
-  FCPUBatchSize := 256;
+  FCPUBatchSize := 16 * 1024;
 
   Initialize;
 end;

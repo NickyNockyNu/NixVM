@@ -27,40 +27,43 @@ type
   protected
     procedure Initialize; override;
     procedure Started;    override;
-
-    function HandleSysCall(ASysCall: TSysCalls.ID): Boolean; override;
   end;
 
 procedure TTest.Initialize;
 begin
   inherited;
 
-  Memory.Resize(1024 * 16, 1024 * 16, 1024 * 16);
+  Memory.Resize(1024, 1024, 1024);
 end;
 
 procedure TTest.Started;
 const SourceCode = '''
-call @SayHello
+call SayHello
+call remotefunc
 halt
 
-@SayHello:
-  mov r0, _strconst_format
-  mov r1, _strconst_hello
+.include "d:\test.asm"
+
+.align 8, 255
+SayHello:
+  mov r0, _strconst_format + 7
+  mov r1, _strconst_hello - 4
   mov r2, _strconst_world
-  syscall 1
+  syscall 1 ; DebugPrint
   ret
 
-_strconst_format: ds "%s, %s!\n"
-_strconst_hello:  ds "Hello"
-_strconst_world:  ds "World"
-
+.align 8
+_strconst_format: .ds "hidden %s, %s!", 13, 10, 0
+.ascii "Hell"
+_strconst_hello:  .ascii "o", 0
+_strconst_world:  .str "World", 0
 ''';
 var
-  Errors: TStrings;
+  Errors:    TStrings;
   CodeBytes: Cardinal;
-  IR: TIRList;
+  IR:        TIRList;
 begin
-  Writeln('=== ORIGINAL ===');
+  Writeln('=== SOURCE ===');
   Writeln(SourceCode);
 
   IR := TAssembler.Parse(SourceCode, Errors);
@@ -78,26 +81,10 @@ begin
 
   CodeBytes := IR.Emit(Memory, Memory.UserAddress);
 
-//  Writeln('=== DISASM ===');
-//  Writeln(TDisassembler.DisassembleToString(Memory, Memory.UserAddress, CodeBytes));
+  Writeln('=== DISASM ===');
+  Writeln(TDisassembler.DisassembleToString(Memory, Memory.UserAddress, CodeBytes));
 
   Writeln('=== RUNNING ===');
-end;
-
-function TTest.HandleSysCall(ASysCall: TSysCalls.ID): Boolean;
-begin
-  Result := inherited;
-
-  if Result then
-    Exit;
-
-  Result := True;
-
-  case ASysCall of
-    255: Writeln('Syscall: "', Memory.ReadString(CPU.Registers.R0), '"');
-  else
-    Result := False;
-  end;
 end;
 
 begin

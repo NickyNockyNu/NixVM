@@ -37,6 +37,7 @@ uses
   NixVM.Tools.IR;
 
 type
+  {$REGION 'Disassembler'}
   TDisassembler = class abstract
   private type
     {$REGION 'Symbol'}
@@ -48,33 +49,33 @@ type
     end;
     {$ENDREGION}
   private
-    class function TryReadPrintableString(AMemory: TCustomMemory; AAddr, AMaxAddr: Cardinal; out AString: AnsiString; out ATotalBytes: Cardinal): Boolean; static;
+    class function TryReadPrintableString(AMemory: TCustomMemory; AAddr, AMaxAddr: Cardinal; out ABytes: TBytes): Boolean;
   public
     class function Disassemble(AMemory:      TCustomMemory; AStartAddress, ALength: Cardinal): TIRList; overload;
     class function Disassemble(const ABytes: TBytes;        AStartAddress: Cardinal = 0):      TIRList; overload;
 
     class function DisassembleToString(AMemory: TCustomMemory; AStartAddress, ALength: Cardinal): String;
   end;
+  {$ENDREGION}
 
 implementation
 
-{$REGION 'TDisassembler'}
-class function TDisassembler.TryReadPrintableString(AMemory: TCustomMemory; AAddr, AMaxAddr: Cardinal; out AString: AnsiString; out ATotalBytes: Cardinal): Boolean;
+{$REGION 'Disassembler'}
+class function TDisassembler.TryReadPrintableString(AMemory: TCustomMemory; AAddr, AMaxAddr: Cardinal; out ABytes: TBytes): Boolean;
 var
-  Curr:  Cardinal;
-  B:     Byte;
-  Chars: TList<AnsiChar>;
+  Curr:           Cardinal;
+  B:              Byte;
+  Buffer:         TList<Byte>;
+  PrintableCount: Integer;
 begin
-  Result  := False;
-  AString := '';
-
-  ATotalBytes := 0;
+  Result         := False;
+  ABytes         := nil;
+  PrintableCount := 0;
 
   if AAddr >= AMaxAddr then
     Exit;
 
-  Chars := TList<AnsiChar>.Create;
-
+  Buffer := TList<Byte>.Create;
   try
     Curr := AAddr;
 
@@ -83,27 +84,29 @@ begin
       B := AMemory.ReadByte(Curr);
       Inc(Curr);
 
-      if B = 0 then
+      if B in [32..126] then
+        Inc(PrintableCount);
+
+      if (B in [32..126, 0, 8, 9, 10, 13]) then
       begin
-        if Chars.Count > 0 then
+        Buffer.Add(B);
+
+        if B = 0 then
         begin
-          SetString(AString, PAnsiChar(@Chars.ToArray[0]), Chars.Count);
+          if PrintableCount > 0 then
+          begin
+            ABytes := Buffer.ToArray;
+            Result := True;
+          end;
 
-          ATotalBytes := (Curr - AAddr);
-
-          Result := True;
+          Break;
         end;
-
-        Break;
-      end;
-
-      if (B in [32..126, 9, 10, 13]) then
-        Chars.Add(AnsiChar(B))
+      end
       else
         Break;
     end;
   finally
-    Chars.Free;
+    Buffer.Free;
   end;
 end;
 
@@ -124,9 +127,9 @@ var
     Info.Kind := AKind;
 
     case AKind of
-      TSymbolKind.Subroutine:  Info.Name := TLabelString('@sub_'  + IntToHex(AAddr, 8));
-      TSymbolKind.CodeLabel:   Info.Name := TLabelString('@loc_'  + IntToHex(AAddr, 8));
-      TSymbolKind.DataPointer: Info.Name := TLabelString('_data_' + IntToHex(AAddr, 8));
+      TSymbolKind.Subroutine:  Info.Name := TLabelString('sub_'  + IntToHex(AAddr, 8));
+      TSymbolKind.CodeLabel:   Info.Name := TLabelString('@loc_' + IntToHex(AAddr, 8));
+      TSymbolKind.DataPointer: Info.Name := TLabelString('data_' + IntToHex(AAddr, 8));
     end;
 
     SymbolMap.Add(AAddr, Info);
@@ -221,20 +224,52 @@ begin
 
       if not InCode then
       begin
-        var StrVal: AnsiString;
-        var StrBytes: Cardinal;
+        var ZeroCount: Cardinal := 0;
+        var ScanAddr:  Cardinal := CurrAddr;
 
-        if TryReadPrintableString(AMemory, CurrAddr, EndAddr, StrVal, StrBytes) then
+        while (ScanAddr < EndAddr) and (AMemory.ReadByte(ScanAddr) = 0) do
         begin
-          Result.AddDataString(StrVal, True);
-          Inc(CurrAddr, StrBytes);
-        end
-        else
-        begin
-          var B := AMemory.ReadByte(CurrAddr);
+          if (ZeroCount > 0) and SymbolMap.ContainsKey(ScanAddr) then
+            Break;
 
-          Result.AddDataBytes([B]);
-          Inc(CurrAddr, 1);
+          Inc(ZeroCount);
+          Inc(ScanAddr);
+        end;
+
+        if ZeroCount >= 8 then
+        begin
+          Result.AddDataReserved(ZeroCount);
+          Inc(CurrAddr, ZeroCount);
+
+          Continue;
+        end;
+
+        var StrBytes: TBytes;
+
+        if TryReadPrintableString(AMemory, CurrAddr, EndAddr, StrBytes) then
+        begin
+          Result.AddDataString(StrBytes);
+          Inc(CurrAddr, Length(StrBytes));
+
+          Continue;
+        end;
+
+        var RawBytes: TList<Byte> := TList<Byte>.Create;
+
+        try
+          while (CurrAddr < EndAddr) and (RawBytes.Count < 16) do
+          begin
+            if (RawBytes.Count > 0) and SymbolMap.ContainsKey(CurrAddr) then
+              Break;
+
+            RawBytes.Add(AMemory.ReadByte(CurrAddr));
+            Inc(CurrAddr);
+          end;
+
+          if RawBytes.Count > 0 then
+            Result.AddDataBytes(RawBytes.ToArray);
+        finally
+          RawBytes.Free;
         end;
 
         Continue;
@@ -263,7 +298,10 @@ begin
           var TargetSym: TSymbolInfo;
 
           if SymbolMap.TryGetValue(Item.Imm.Value, TargetSym) then
+          begin
             Item.Imm.&Label := TargetSym.Name;
+            Item.Imm.Value  := 0;
+          end;
 
           Inc(CurrAddr, 4);
         end;
@@ -278,7 +316,10 @@ begin
           var TargetSym: TSymbolInfo;
 
           if SymbolMap.TryGetValue(Item.Offset.Value, TargetSym) then
+          begin
             Item.Offset.&Label := TargetSym.Name;
+            Item.Offset.Value  := 0;
+          end;
 
           Inc(CurrAddr, 4);
         end;
@@ -286,14 +327,9 @@ begin
 
       Result.Add(Item);
 
-      if (Instr.OpCode = TCPUInstruction.TOpCode.ret)  or
-         (Instr.OpCode = TCPUInstruction.TOpCode.iret) or
-         (Instr.OpCode = TCPUInstruction.TOpCode.halt) then
-      begin
+      if (Instr.OpCode = TCPUInstruction.TOpCode.ret)  or (Instr.OpCode = TCPUInstruction.TOpCode.iret) or (Instr.OpCode = TCPUInstruction.TOpCode.halt) then
         InCode := False;
-      end;
     end;
-
   finally
     SymbolMap.Free;
   end;
@@ -307,8 +343,10 @@ begin
     Exit(TIRList.Create);
 
   Mem := TCustomMemory.Create(Length(ABytes));
+
   try
     Mem.WriteData(0, ABytes[0], Length(ABytes));
+
     Result := Disassemble(Mem, 0, Length(ABytes));
 
     if AStartAddress > 0 then
@@ -323,6 +361,7 @@ var
   List: TIRList;
 begin
   List := Disassemble(AMemory, AStartAddress, ALength);
+
   try
     Result := List.ToString;
   finally
