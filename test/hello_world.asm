@@ -1,4 +1,4 @@
-.include "target_test.inc"
+.include "target_nvmtest.inc"
 
 .heap  0
 .stack 128

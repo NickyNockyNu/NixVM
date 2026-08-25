@@ -48,6 +48,8 @@ type
 
     FRunning: Boolean;
 
+    FStopOnHalt: Boolean;
+
     FElapsedTimer: TStopwatch;
     FFrameTimer:   TStopwatch;
     FUpdateTimer:  TStopwatch;
@@ -103,6 +105,8 @@ type
 
     property Running: Boolean read FRunning;
 
+    property StopOnHalt: Boolean read FStopOnHalt write FStopOnHalt;
+
     property Elapsed: Double read GetElapsed;
 
     property FPS:  Cardinal read GetFPS;
@@ -114,6 +118,8 @@ type
 
     property ROMFile: String read FROMFile;
   public
+    class function GenTargetInc: String;
+
     class procedure Run(const AROMFile: String = '');
   end;
   {$ENDREGION}
@@ -198,6 +204,9 @@ begin
   while FRunning do
   begin
     CPUExecute;
+
+    if FStopOnHalt and FCPU.HaltState then
+      Stop;
 
     DeltaTicks := FUpdateTimer.Update;
     DeltaTime  := DeltaTicks.InSeconds;
@@ -419,7 +428,7 @@ begin
         if Header.Harness.Name <> HarnessName then
         begin
           DebugPrint('FAIL'#13#10);
-          DebugPrint('Requires harness: "' + AnsiString(Header.Harness.Name) + '" is "' + HarnessName + '"'#13#10);
+          DebugPrint(AnsiString('Requires harness: "' + Header.Harness.Name + '" is "' + HarnessName + '"'#13#10));
 
           Exit;
         end;
@@ -554,6 +563,18 @@ procedure TCustomHarness<TSystemMemory>.DebugPrint(const AString: AnsiString);
 begin
   if IsConsole then
     Write(AString);
+end;
+
+class function TCustomHarness<TSystemMemory>.GenTargetInc: String;
+var
+  ExpectedUserAddr: Cardinal;
+begin
+  ExpectedUserAddr := (SizeOf(TCoreSystemMemory) + SizeOf(TSystemMemory) + 3) and not Cardinal(3);
+
+  Result :=
+    '; Auto-generated target specification for ' + QualifiedClassName + #13#10 +
+    '.target "' + HarnessName + '", ' + IntToStr(HarnessMajor) + ', ' + IntToStr(HarnessMinor) + #13#10 +
+    '.base $' + IntToHex(ExpectedUserAddr, 0) + #13#10;
 end;
 
 class procedure TCustomHarness<TSystemMemory>.Run(const AROMFile: String = '');

@@ -334,20 +334,20 @@ end;
 
 class function TDisassembler.Disassemble(const ABytes: TBytes; AStartAddress: Cardinal): TIRList;
 var
-  Mem: TCustomMemory;
+  Mem:          TCustomMemory;
+  TotalMemSize: Cardinal;
 begin
   if Length(ABytes) = 0 then
     Exit(TIRList.Create);
 
-  Mem := TCustomMemory.Create(Length(ABytes));
+  TotalMemSize := AStartAddress + Cardinal(Length(ABytes));
+
+  Mem := TCustomMemory.Create(TotalMemSize);
 
   try
-    Mem.WriteData(0, ABytes[0], Length(ABytes));
+    Mem.WriteData(AStartAddress, ABytes[0], Length(ABytes));
 
-    Result := Disassemble(Mem, 0, Length(ABytes));
-
-    if AStartAddress > 0 then
-      Result.ComputeAddresses(AStartAddress);
+    Result := Disassemble(Mem, AStartAddress, Length(ABytes));
   finally
     Mem.Free;
   end;
