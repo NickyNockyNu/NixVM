@@ -49,13 +49,15 @@ type
   const
     Magic: TSignature = 'NVMX';
   public
-    Signature: TSignature;
-    Harness:   TVersion;
-    ROM:       TVersion;
-    UserSize:  Cardinal;
-    HeapSize:  Cardinal;
-    StackSize: Cardinal;
+    Signature:   TSignature;
+    Harness:     TVersion;
+    ROM:         TVersion;
+    UserAddress: Cardinal;
+    UserSize:    Cardinal;
+    HeapSize:    Cardinal;
+    StackSize:   Cardinal;
 
+    procedure Reset;
     function IsValid: Boolean; inline;
   end;
   {$ENDREGION}
@@ -83,6 +85,18 @@ begin
   Move(S[1], FName[0], Length(S));
 end;
 {$ENDREGION}
+
+procedure TROMHeader.Reset;
+begin
+  FillChar(Self, SizeOf(Self), 0);
+
+  Signature := Magic;
+
+  ROM.Major := 1;
+
+  HeapSize  := 64 * 1024;
+  StackSize := 16 * 1024;
+end;
 
 function TROMHeader.IsValid: Boolean;
 begin

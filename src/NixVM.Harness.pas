@@ -406,12 +406,20 @@ begin
         Exit;
       end;
 
+      if Header.UserAddress <> FMemory.UserAddress then
+      begin
+        DebugPrint('FAIL'#13#10);
+        DebugPrint('Incompatable memory layout'#13#10);
+
+        Exit;
+      end;
+
       if Length(Header.Harness.Name) > 0 then
       begin
         if Header.Harness.Name <> HarnessName then
         begin
           DebugPrint('FAIL'#13#10);
-          DebugPrint('Requires harness:' + AnsiString(Header.Harness.Name) + #13#10);
+          DebugPrint('Requires harness: "' + AnsiString(Header.Harness.Name) + '" is "' + HarnessName + '"'#13#10);
 
           Exit;
         end;

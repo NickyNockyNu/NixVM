@@ -1,4 +1,4 @@
-program NixVMTest;
+program nvmtest;
 
 {$APPTYPE CONSOLE}
 {$R *.res}
@@ -27,59 +27,13 @@ type
   TTest = class(TCustomHarness<TTestSystemMemory>)
   protected
     procedure Initialize; override;
-    procedure Started;    override;
   end;
 
 procedure TTest.Initialize;
 begin
   inherited;
-
-  Memory.Resize(1024, 1024, 1024);
-end;
-
-procedure TTest.Started;
-const SourceCode = '''
-ld r1, fltdata
-ld r2, fltdata + 4
-fadd r1, r2
-mov r2, r1
-mov r0, fmtstr
-syscall 1
-halt
-
-fmtstr:  .str   "%f %F", 13, 10, 0
-fltdata: .float 0.123, 0.21
-
-''';
-var
-  Errors:    TStrings;
-  CodeBytes: Cardinal;
-  IR:        TIRList;
-begin
-  Writeln('=== SOURCE ===');
-  Writeln(SourceCode);
-
-  IR := TAssembler.Parse(SourceCode, Errors);
-  IR.ResolveLabels(Memory.UserAddress, Errors);
-
-  if (Errors <> nil) and (Errors.Count > 0) then
-  begin
-    Writeln('=== ASSEMBLY ERRORS ===');
-    Writeln(Errors.Text);
-    Exit;
-  end;
-
-  Writeln('=== IR ===');
-  Writeln(IR.ToString);
-
-  CodeBytes := IR.Emit(Memory, Memory.UserAddress);
-
-  Writeln('=== DISASM ===');
-  Writeln(TDisassembler.DisassembleToString(Memory, Memory.UserAddress, CodeBytes));
-
-  Writeln('=== RUNNING ===');
 end;
 
 begin
-  TTest.Run;
+  TTest.Run(ParamStr(1));
 end.

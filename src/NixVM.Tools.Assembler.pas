@@ -64,9 +64,9 @@ type
       Col:      Integer;
     end;
     {$ENDREGION}
-  private
-    class function ParseNumber(const S: String; out AValue: Cardinal): Boolean; static;
   public
+    class function ParseNumber(const S: String; out AValue: Cardinal): Boolean; static;
+
     class function Parse(const ASource: String; out AErrors: TStrings; const AFileName: String = ''; const ABasePath: String = ''; AIncludeStack: TStrings = nil; ASharedErrors: TStringList = nil; AROMHeader: PROMHeader = nil): TIRList;
     class function ParseFile(const AFileName: String; out AErrors: TStrings; AROMHeader: PROMHeader = nil): TIRList; static;
 
@@ -79,17 +79,35 @@ implementation
 {$REGION 'Number Parser'}
 class function TAssembler.ParseNumber(const S: String; out AValue: Cardinal): Boolean;
 var
-  U:         String;
-  Code:      Integer;
-  SingleVal: Single;
+  U:          String;
+  Code:       Integer;
+  SingleVal:  Single;
+  Multiplier: Cardinal;
 begin
-  Result := False;
-  AValue := 0;
+  Result     := False;
+  AValue     := 0;
+  Multiplier := 1;
 
   if Length(S) = 0 then
     Exit;
 
   U := UpperCase(Trim(S));
+
+  if (Length(U) > 1) and (U[Length(U)] = 'K') then
+  begin
+    Multiplier := 1024;
+
+    U := Copy(U, 1, Length(U) - 1);
+  end
+  else if (Length(U) > 1) and (U[Length(U)] = 'M') then
+  begin
+    Multiplier := 1024 * 1024;
+
+    U := Copy(U, 1, Length(U) - 1);
+  end;
+
+  if Length(U) = 0 then
+    Exit;
 
   if (Length(U) > 2) and (U[1] = '0') and (U[2] = 'X') then
     U := '$' + Copy(U, 3, Length(U));
@@ -106,6 +124,8 @@ begin
       AValue := (AValue shl 1) or Cardinal(Ord(U[i]) - Ord('0'));
     end;
 
+    AValue := AValue * Multiplier;
+
     Exit(True);
   end
   else if (Length(U) > 2) and (U[1] = '0') and (U[2] = 'B') then
@@ -120,19 +140,29 @@ begin
       AValue := (AValue shl 1) or Cardinal(Ord(U[i]) - Ord('0'));
     end;
 
+    AValue := AValue * Multiplier;
+
     Exit(True);
   end;
 
   Val(U, AValue, Code);
 
   if Code = 0 then
+  begin
+    AValue := AValue * Multiplier;
+
     Exit(True);
+  end;
 
   Val(U, SingleVal, Code);
 
   if Code = 0 then
   begin
+    if Multiplier > 1 then
+      SingleVal := SingleVal * Multiplier;
+
     AValue := PCardinal(@SingleVal)^;
+
     Exit(True);
   end;
 end;
@@ -293,7 +323,7 @@ var
 
     if C = '$' then
     begin
-      var HexStr := '';
+      var HexStr: String := '$';
 
       Inc(SrcPos);
       Inc(CurCol);
@@ -306,17 +336,32 @@ var
         Inc(CurCol);
       end;
 
-      if Length(HexStr) = 0 then
+      if Length(HexStr) = 1 then
       begin
         Error('Expected hex digits after "$"', ATok);
         Exit(False);
       end;
 
+      if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['k', 'K', 'm', 'M']) then
+      begin
+        HexStr := HexStr + ASource[SrcPos];
+
+        Inc(SrcPos);
+        Inc(CurCol);
+
+        if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['a'..'z', 'A'..'Z', '0'..'9', '_']) then
+        begin
+          Error(Format('Invalid trailing character "%s" after number suffix', [ASource[SrcPos]]), ATok);
+          Exit(False);
+        end;
+      end;
+
       var NumVal: Cardinal;
-      if ParseNumber('$' + HexStr, NumVal) then
+
+      if ParseNumber(HexStr, NumVal) then
       begin
         ATok.Kind     := TTokenKind.Number;
-        ATok.ValueStr := '$' + HexStr;
+        ATok.ValueStr := HexStr;
         ATok.ValueNum := NumVal;
 
         Exit(True);
@@ -325,7 +370,7 @@ var
 
     if C = '%' then
     begin
-      var BinStr := '';
+      var BinStr: String := '%';
 
       Inc(SrcPos);
       Inc(CurCol);
@@ -338,17 +383,32 @@ var
         Inc(CurCol);
       end;
 
-      if Length(BinStr) = 0 then
+      if Length(BinStr) = 1 then
       begin
         Error('Expected binary digits (0 or 1) after "%"', ATok);
         Exit(False);
       end;
 
+      if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['k', 'K', 'm', 'M']) then
+      begin
+        BinStr := BinStr + ASource[SrcPos];
+
+        Inc(SrcPos);
+        Inc(CurCol);
+
+        if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['a'..'z', 'A'..'Z', '0'..'9', '_']) then
+        begin
+          Error(Format('Invalid trailing character "%s" after number suffix', [ASource[SrcPos]]), ATok);
+          Exit(False);
+        end;
+      end;
+
       var NumVal: Cardinal;
-      if ParseNumber('%' + BinStr, NumVal) then
+
+      if ParseNumber(BinStr, NumVal) then
       begin
         ATok.Kind     := TTokenKind.Number;
-        ATok.ValueStr := '%' + BinStr;
+        ATok.ValueStr := BinStr;
         ATok.ValueNum := NumVal;
 
         Exit(True);
@@ -420,30 +480,20 @@ var
             Inc(SrcPos);
             Inc(CurCol);
           end;
+        end;
+      end;
 
-          if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['e', 'E']) then
-          begin
-            NumStr := NumStr + ASource[SrcPos];
+      if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['k', 'K', 'm', 'M']) then
+      begin
+        NumStr := NumStr + ASource[SrcPos];
 
-            Inc(SrcPos);
-            Inc(CurCol);
+        Inc(SrcPos);
+        Inc(CurCol);
 
-            if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['+', '-']) then
-            begin
-              NumStr := NumStr + ASource[SrcPos];
-
-              Inc(SrcPos);
-              Inc(CurCol);
-            end;
-
-            while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9']) do
-            begin
-              NumStr := NumStr + ASource[SrcPos];
-
-              Inc(SrcPos);
-              Inc(CurCol);
-            end;
-          end;
+        if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['a'..'z', 'A'..'Z', '0'..'9', '_']) then
+        begin
+          Error(Format('Invalid trailing character "%s" after number suffix', [ASource[SrcPos]]), ATok);
+          Exit(False);
         end;
       end;
 
@@ -453,8 +503,8 @@ var
       begin
         ATok.Kind     := TTokenKind.Number;
         ATok.ValueStr := NumStr;
-
         ATok.ValueNum := NumVal;
+
         Exit(True);
       end
       else
@@ -923,7 +973,7 @@ begin
         Continue;
       end;
 
-            if LowerIdent = '.align' then
+      if LowerIdent = '.align' then
       begin
         if not NextToken(Tok) then
         begin
@@ -964,7 +1014,25 @@ begin
         Continue;
       end;
 
-      if LowerIdent = '.heap' then
+      if (LowerIdent = '.base') or (LowerIdent = '.org') then
+      begin
+        var Val: Cardinal;
+        var IsConst: Boolean;
+
+        if not NextToken(Tok) or not ResolveIdentOrNumber(Tok, Val, IsConst) or not IsConst then
+        begin
+          Error('Expected base address integer or constant in .base directive', Tok);
+          Continue;
+        end;
+
+        if Assigned(AROMHeader) then
+          AROMHeader^.UserAddress := Val;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
+      if (LowerIdent = '.heap') or (LowerIdent = '.heapsize') then
       begin
         var Val: Cardinal;
         var IsConst: Boolean;
@@ -982,7 +1050,7 @@ begin
         Continue;
       end;
 
-      if LowerIdent = '.stack' then
+      if (LowerIdent = '.stack') or (LowerIdent = '.stacksize') then
       begin
         var Val: Cardinal;
         var IsConst: Boolean;
