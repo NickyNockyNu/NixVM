@@ -32,7 +32,7 @@ function IntToHex(AValue: Cardinal; ASize: Integer = 8): String;
 
 function StrToInt(const AString: String; ADefault: Integer = 0): Integer;
 
-function FloatToStr(AValue: Single; APrec: Integer = 2): String;
+function FloatToStr(AValue: Single; APrec: Integer = 2; ATrim: Boolean = True): String;
 
 function TrimWhitespace(const AString: String): String;
 
@@ -105,12 +105,25 @@ begin
     Result := ADefault;
 end;
 
-function FloatToStr(AValue: Single; APrec: Integer): String;
+function FloatToStr(AValue: Single; APrec: Integer; ATrim: Boolean): String;
 var
   S: ShortString;
 begin
-  Str(AValue:APrec:APrec, S);
+  Str(AValue:0:APrec, S);
   Result := String(S);
+
+  if ATrim and (Pos('.', Result) > 0) then
+  begin
+    for var i := Length(Result) downto 1 do
+      if Result[i] <> '0' then
+      begin
+        Result := Copy(Result, 1, i);
+        Break;
+      end;
+
+    if (Length(Result) > 0) and (Result[Length(Result)] = '.') then
+      Delete(Result, Length(Result), 1);
+  end;
 end;
 
 function TrimWhitespace(const AString: String): String;

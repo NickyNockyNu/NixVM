@@ -34,6 +34,7 @@ uses
   NixVM.Core.Registers,
   NixVM.Core.Instructions,
   NixVM.Core.Memory,
+  NixVM.Core.ROM,
 
   NixVM.Tools.IR;
 
@@ -66,10 +67,10 @@ type
   private
     class function ParseNumber(const S: String; out AValue: Cardinal): Boolean; static;
   public
-    class function Parse(const ASource: String; out AErrors: TStrings; const AFileName: String = ''; const ABasePath: String = ''; AIncludeStack: TStrings = nil; ASharedErrors: TStringList = nil): TIRList;
-    class function ParseFile(const AFileName: String; out AErrors: TStrings): TIRList; static;
+    class function Parse(const ASource: String; out AErrors: TStrings; const AFileName: String = ''; const ABasePath: String = ''; AIncludeStack: TStrings = nil; ASharedErrors: TStringList = nil; AROMHeader: PROMHeader = nil): TIRList;
+    class function ParseFile(const AFileName: String; out AErrors: TStrings; AROMHeader: PROMHeader = nil): TIRList; static;
 
-    class function Assemble(const ASource: String; AMemory: TCustomMemory; AStartAddress: Cardinal; out AErrors: TStrings; const ABasePath: String = ''): Cardinal; static;
+    class function Assemble(const ASource: String; AMemory: TCustomMemory; AStartAddress: Cardinal; out AErrors: TStrings; const ABasePath: String = ''; AROMHeader: PROMHeader = nil): Cardinal; static;
   end;
   {$ENDREGION}
 
@@ -78,8 +79,9 @@ implementation
 {$REGION 'Number Parser'}
 class function TAssembler.ParseNumber(const S: String; out AValue: Cardinal): Boolean;
 var
-  U:    String;
-  Code: Integer;
+  U:         String;
+  Code:      Integer;
+  SingleVal: Single;
 begin
   Result := False;
   AValue := 0;
@@ -122,12 +124,22 @@ begin
   end;
 
   Val(U, AValue, Code);
-  Result := (Code = 0);
+
+  if Code = 0 then
+    Exit(True);
+
+  Val(U, SingleVal, Code);
+
+  if Code = 0 then
+  begin
+    AValue := PCardinal(@SingleVal)^;
+    Exit(True);
+  end;
 end;
 {$ENDREGION}
 
 {$REGION 'Assembler'}
-class function TAssembler.Parse(const ASource: String; out AErrors: TStrings; const AFileName: String; const ABasePath: String; AIncludeStack: TStrings; ASharedErrors: TStringList): TIRList;
+class function TAssembler.Parse(const ASource: String; out AErrors: TStrings; const AFileName: String; const ABasePath: String; AIncludeStack: TStrings; ASharedErrors: TStringList; AROMHeader: PROMHeader): TIRList;
 var
   IR:            TIRList;
   Constants:     TDictionary<String, Cardinal>;
@@ -279,16 +291,160 @@ var
       Exit(True);
     end;
 
-    if CharInSet(C, ['0'..'9', '$', '%']) or ((C = '-') and (SrcPos + 1 <= SrcLen) and CharInSet(ASource[SrcPos + 1], ['0'..'9', '$'])) then
+    if C = '$' then
     begin
-      var NumStr := '';
+      var HexStr := '';
 
-      while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9', 'a'..'f', 'A'..'F', 'x', 'X', '$', '%', '-']) do
+      Inc(SrcPos);
+      Inc(CurCol);
+
+      while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9', 'a'..'f', 'A'..'F']) do
       begin
-        NumStr := NumStr + ASource[SrcPos];
+        HexStr := HexStr + ASource[SrcPos];
 
         Inc(SrcPos);
         Inc(CurCol);
+      end;
+
+      if Length(HexStr) = 0 then
+      begin
+        Error('Expected hex digits after "$"', ATok);
+        Exit(False);
+      end;
+
+      var NumVal: Cardinal;
+      if ParseNumber('$' + HexStr, NumVal) then
+      begin
+        ATok.Kind     := TTokenKind.Number;
+        ATok.ValueStr := '$' + HexStr;
+        ATok.ValueNum := NumVal;
+
+        Exit(True);
+      end;
+    end;
+
+    if C = '%' then
+    begin
+      var BinStr := '';
+
+      Inc(SrcPos);
+      Inc(CurCol);
+
+      while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0', '1']) do
+      begin
+        BinStr := BinStr + ASource[SrcPos];
+
+        Inc(SrcPos);
+        Inc(CurCol);
+      end;
+
+      if Length(BinStr) = 0 then
+      begin
+        Error('Expected binary digits (0 or 1) after "%"', ATok);
+        Exit(False);
+      end;
+
+      var NumVal: Cardinal;
+      if ParseNumber('%' + BinStr, NumVal) then
+      begin
+        ATok.Kind     := TTokenKind.Number;
+        ATok.ValueStr := '%' + BinStr;
+        ATok.ValueNum := NumVal;
+
+        Exit(True);
+      end;
+    end;
+
+    if CharInSet(C, ['0'..'9']) or ((C = '-') and (SrcPos + 1 <= SrcLen) and CharInSet(ASource[SrcPos + 1], ['0'..'9'])) then
+    begin
+      var NumStr := '';
+
+      if (C = '0') and (SrcPos + 1 <= SrcLen) and CharInSet(ASource[SrcPos + 1], ['x', 'X', 'b', 'B']) then
+      begin
+        var Prefix := ASource[SrcPos + 1];
+        NumStr := '0' + Prefix;
+
+        Inc(SrcPos, 2);
+        Inc(CurCol, 2);
+
+        if (Prefix = 'x') or (Prefix = 'X') then
+        begin
+          while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9', 'a'..'f', 'A'..'F']) do
+          begin
+            NumStr := NumStr + ASource[SrcPos];
+
+            Inc(SrcPos);
+            Inc(CurCol);
+          end;
+        end
+        else
+        begin
+          while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0', '1']) do
+          begin
+            NumStr := NumStr + ASource[SrcPos];
+
+            Inc(SrcPos);
+            Inc(CurCol);
+          end;
+        end;
+      end
+      else
+      begin
+        if C = '-' then
+        begin
+          NumStr := '-';
+
+          Inc(SrcPos);
+          Inc(CurCol);
+        end;
+
+        while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9']) do
+        begin
+          NumStr := NumStr + ASource[SrcPos];
+
+          Inc(SrcPos);
+          Inc(CurCol);
+        end;
+
+        if (SrcPos + 1 <= SrcLen) and (ASource[SrcPos] = '.') and CharInSet(ASource[SrcPos + 1], ['0'..'9']) then
+        begin
+          NumStr := NumStr + '.';
+
+          Inc(SrcPos);
+          Inc(CurCol);
+
+          while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9']) do
+          begin
+            NumStr := NumStr + ASource[SrcPos];
+
+            Inc(SrcPos);
+            Inc(CurCol);
+          end;
+
+          if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['e', 'E']) then
+          begin
+            NumStr := NumStr + ASource[SrcPos];
+
+            Inc(SrcPos);
+            Inc(CurCol);
+
+            if (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['+', '-']) then
+            begin
+              NumStr := NumStr + ASource[SrcPos];
+
+              Inc(SrcPos);
+              Inc(CurCol);
+            end;
+
+            while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9']) do
+            begin
+              NumStr := NumStr + ASource[SrcPos];
+
+              Inc(SrcPos);
+              Inc(CurCol);
+            end;
+          end;
+        end;
       end;
 
       var NumVal: Cardinal;
@@ -297,15 +453,15 @@ var
       begin
         ATok.Kind     := TTokenKind.Number;
         ATok.ValueStr := NumStr;
+
         ATok.ValueNum := NumVal;
-
         Exit(True);
+      end
+      else
+      begin
+        Error(Format('Malformed numeric literal "%s"', [NumStr]), ATok);
+        Exit(False);
       end;
-
-      ATok.Kind     := TTokenKind.Identifier;
-      ATok.ValueStr := NumStr;
-
-      Exit(True);
     end;
 
     if CharInSet(C, ['a'..'z', 'A'..'Z', '_', '@', '.']) then
@@ -661,6 +817,44 @@ begin
         Continue;
       end;
 
+      if (LowerIdent = '.float') or (LowerIdent = '.single') then
+      begin
+        var FloatList: TList<Single> := TList<Single>.Create;
+
+        try
+          repeat
+            if not NextToken(Tok) then
+              Break;
+
+            var Val: Cardinal;
+            var IsConst: Boolean;
+
+            if ResolveIdentOrNumber(Tok, Val, IsConst) and IsConst then
+              FloatList.Add(PSingle(@Val)^)
+            else
+            begin
+              Error('Expected floating point number or constant in .float directive', Tok);
+              Break;
+            end;
+
+            Peek := PeekToken;
+
+            if Peek.Kind = TTokenKind.Comma then
+              NextToken(Tok)
+            else
+              Break;
+          until False;
+
+          if FloatList.Count > 0 then
+            IR.AddDataFloats(FloatList.ToArray);
+        finally
+          FloatList.Free;
+        end;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
       if (LowerIdent = '.ds') or (LowerIdent = '.dsz') or (LowerIdent = '.str') or (LowerIdent = '.strz') or (LowerIdent = '.ascii') or (LowerIdent = '.asciiz') then
       begin
         var IsAsciiZ := (LowerIdent = '.asciiz') or (LowerIdent = '.strz') or (LowerIdent = '.dsz');
@@ -770,6 +964,134 @@ begin
         Continue;
       end;
 
+      if LowerIdent = '.heap' then
+      begin
+        var Val: Cardinal;
+        var IsConst: Boolean;
+
+        if not NextToken(Tok) or not ResolveIdentOrNumber(Tok, Val, IsConst) or not IsConst then
+        begin
+          Error('Expected integer size or constant in .heap directive', Tok);
+          Continue;
+        end;
+
+        if Assigned(AROMHeader) then
+          AROMHeader^.HeapSize := Val;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
+      if LowerIdent = '.stack' then
+      begin
+        var Val: Cardinal;
+        var IsConst: Boolean;
+
+        if not NextToken(Tok) or not ResolveIdentOrNumber(Tok, Val, IsConst) or not IsConst then
+        begin
+          Error('Expected integer size or constant in .stack directive', Tok);
+          Continue;
+        end;
+
+        if Assigned(AROMHeader) then
+          AROMHeader^.StackSize := Val;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
+      if LowerIdent = '.name' then
+      begin
+        if not NextToken(Tok) or (Tok.Kind <> TTokenKind.String) then
+        begin
+          Error('Expected quoted string for .name directive', Tok);
+          Continue;
+        end;
+
+        if Assigned(AROMHeader) then
+          AROMHeader^.ROM.Name := Tok.ValueStr;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
+      if LowerIdent = '.version' then
+      begin
+        var MajorVal, MinorVal: Cardinal;
+        var IsConst: Boolean;
+
+        if not NextToken(Tok) or not ResolveIdentOrNumber(Tok, MajorVal, IsConst) or not IsConst then
+        begin
+          Error('Expected major version number in .version directive', Tok);
+          Continue;
+        end;
+
+        if not NextToken(Tok) or (Tok.Kind <> TTokenKind.Comma) then
+        begin
+          Error('Expected comma between major and minor version', Tok);
+          Continue;
+        end;
+
+        if not NextToken(Tok) or not ResolveIdentOrNumber(Tok, MinorVal, IsConst) or not IsConst then
+        begin
+          Error('Expected minor version number in .version directive', Tok);
+          Continue;
+        end;
+
+        if Assigned(AROMHeader) then
+        begin
+          AROMHeader^.ROM.Major := Word(MajorVal and $FFFF);
+          AROMHeader^.ROM.Minor := Word(MinorVal and $FFFF);
+        end;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
+      if LowerIdent = '.target' then
+      begin
+        if not NextToken(Tok) or (Tok.Kind <> TTokenKind.String) then
+        begin
+          Error('Expected quoted target name string in .target directive', Tok);
+          Continue;
+        end;
+
+        if Assigned(AROMHeader) then
+          AROMHeader^.Harness.Name := Tok.ValueStr;
+
+        Peek := PeekToken;
+
+        if Peek.Kind = TTokenKind.Comma then
+        begin
+          NextToken(Tok);
+
+          var MajorVal, MinorVal: Cardinal;
+          var IsConst: Boolean;
+
+          if NextToken(Tok) and ResolveIdentOrNumber(Tok, MajorVal, IsConst) and IsConst then
+          begin
+            if Assigned(AROMHeader) then
+              AROMHeader^.Harness.Major := Word(MajorVal and $FFFF);
+
+            Peek := PeekToken;
+
+            if Peek.Kind = TTokenKind.Comma then
+            begin
+              NextToken(Tok);
+
+              if NextToken(Tok) and ResolveIdentOrNumber(Tok, MinorVal, IsConst) and IsConst then
+              begin
+                if Assigned(AROMHeader) then
+                  AROMHeader^.Harness.Minor := Word(MinorVal and $FFFF);
+              end;
+            end;
+          end;
+        end;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
       if (LowerIdent = '.embed') or (LowerIdent = '.includeb') then
       begin
         if not NextToken(Tok) then
@@ -822,13 +1144,13 @@ begin
       begin
         if not NextToken(Tok) then
         begin
-          Error('Expected filename string in include directive', Tok);
+          Error('Expected filename string in .include directive', Tok);
           Continue;
         end;
 
         if Tok.Kind <> TTokenKind.String then
         begin
-          Error('Expected quoted filename string in include directive', Tok);
+          Error('Expected quoted filename string in .include directive', Tok);
           Continue;
         end;
 
@@ -867,7 +1189,7 @@ begin
             var SubSource := TFile.ReadAllText(FullFilePath);
             var DummyErrors: TStrings := nil;
 
-            var SubIR := Parse(SubSource, DummyErrors, FullFilePath, ExtractFilePath(FullFilePath), IncStack, Errors);
+            var SubIR := Parse(SubSource, DummyErrors, FullFilePath, ExtractFilePath(FullFilePath), IncStack, Errors, AROMHeader);
             try
               for var j := 0 to SubIR.Count - 1 do
                 IR.Add(SubIR[j]);
@@ -930,7 +1252,7 @@ begin
               var Idx  := IR.AddInstrImm(OpCode, OpLabel);
               var Item := IR.Items[Idx];
 
-              Item.Offset.Value := OpVal;
+              Item.Offset.Delta := Integer(OpVal);
 
               IR.Items[Idx] := Item;
             end;
@@ -974,7 +1296,7 @@ begin
               var Idx := IR.AddInstrR1Imm(OpCode, RegA, OpLabel);
               var Item := IR.Items[Idx];
 
-              Item.Offset.Value := OpVal;
+              Item.Offset.Delta := Integer(OpVal);
 
               IR.Items[Idx] := Item;
             end;
@@ -1009,7 +1331,7 @@ begin
                 var Idx := IR.AddInstrRImm(OpCode, OpLabel);
                 var Item := IR.Items[Idx];
 
-                Item.Imm.Value := OpVal;
+                Item.Imm.Delta := Integer(OpVal);
 
                 IR.Items[Idx] := Item;
               end;
@@ -1065,7 +1387,7 @@ begin
                 var Idx  := IR.AddInstrR1Imm(OpCode, RegA, OpLabel);
                 var Item := IR.Items[Idx];
 
-                Item.Imm.Value := OpVal;
+                Item.Imm.Delta := Integer(OpVal);
 
                 IR.Items[Idx] := Item;
               end;
@@ -1130,7 +1452,7 @@ begin
               var Idx  := IR.AddInstrR1R2Imm(OpCode, RegA, RegB, OpLabel);
               var Item := IR.Items[Idx];
 
-              Item.Offset.Value := OpVal;
+              Item.Offset.Delta := Integer(OpVal);
 
               IR.Items[Idx] := Item;
             end;
@@ -1150,7 +1472,7 @@ begin
   Result  := IR;
 end;
 
-class function TAssembler.ParseFile(const AFileName: String; out AErrors: TStrings): TIRList;
+class function TAssembler.ParseFile(const AFileName: String; out AErrors: TStrings; AROMHeader: PROMHeader): TIRList;
 var
   SourceText: String;
 begin
@@ -1164,14 +1486,14 @@ begin
 
   SourceText := TFile.ReadAllText(AFileName);
 
-  Result := Parse(SourceText, AErrors, AFileName, ExtractFilePath(AFileName));
+  Result := Parse(SourceText, AErrors, AFileName, ExtractFilePath(AFileName), nil, nil, AROMHeader);
 end;
 
-class function TAssembler.Assemble(const ASource: String; AMemory: TCustomMemory; AStartAddress: Cardinal; out AErrors: TStrings; const ABasePath: String): Cardinal;
+class function TAssembler.Assemble(const ASource: String; AMemory: TCustomMemory; AStartAddress: Cardinal; out AErrors: TStrings; const ABasePath: String; AROMHeader: PROMHeader): Cardinal;
 var
   IR: TIRList;
 begin
-  IR := Parse(ASource, AErrors, ABasePath);
+   IR := Parse(ASource, AErrors, '', ABasePath, nil, nil, AROMHeader);
 
   try
     if (AErrors <> nil) and (AErrors.Count > 0) then

@@ -79,6 +79,7 @@
         <DCCReference Include="..\src\NixVM.Tools.IR.pas"/>
         <DCCReference Include="..\src\NixVM.Tools.Disasm.pas"/>
         <DCCReference Include="..\src\NixVM.Tools.Assembler.pas"/>
+        <DCCReference Include="..\src\NixVM.Core.ROM.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

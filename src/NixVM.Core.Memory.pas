@@ -644,20 +644,11 @@ begin
           end;
         end;
 
-        'f':
+        'f', 'F':
         begin
           if ArgIdx < System.Length(AArgs) then
           begin
-            Result := Result + AnsiString(FloatToStr(PSingle(@AArgs[ArgIdx])^, 2));
-            Inc(ArgIdx);
-          end;
-        end;
-
-        'F':
-        begin
-          if ArgIdx < System.Length(AArgs) then
-          begin
-            Result := Result + AnsiString(FloatToStr(PSingle(@AArgs[ArgIdx])^, 7));
+            Result := Result + AnsiString(FloatToStr(PSingle(@AArgs[ArgIdx])^, 7, Spec = 'f'));
             Inc(ArgIdx);
           end;
         end;
@@ -1055,11 +1046,9 @@ begin
   if Assigned(FCoreSystemMemory) then
     FCoreSystemMemory.Reset;
 
-  //if FUserAddress > 0 then
-  //  Fill(0, FUserAddress, 0);
-
-  if FUserSize > 0 then
-    Fill(FUserAddress, FUserSize, 0);
+  // Removed - Don't clear the user data on reset (soft reset)
+  //if FUserSize > 0 then
+  //  Fill(FUserAddress, FUserSize, 0);
 
   if Assigned(FHeap) then
     FHeap.Reset;

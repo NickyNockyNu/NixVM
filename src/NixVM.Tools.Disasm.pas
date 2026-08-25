@@ -164,11 +164,8 @@ begin
             AddSymbol(Target, TSymbolKind.Subroutine)
           else if Instr.OpCode = TCPUInstruction.TOpCode.jmp then
             AddSymbol(Target, TSymbolKind.CodeLabel)
-          else if (Instr.OpCode = TCPUInstruction.TOpCode.mov) or (Instr.OpCode = TCPUInstruction.TOpCode.lea) then
-          begin
-            if (Target >= AStartAddress) and (Target < EndAddr) then
+          else if (Target >= AStartAddress) and (Target < EndAddr) then
               AddSymbol(Target, TSymbolKind.DataPointer);
-          end;
 
           Inc(CurrAddr, 4);
         end;

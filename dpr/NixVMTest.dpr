@@ -16,7 +16,8 @@ uses
   NixVM.Harness.Window in '..\src\NixVM.Harness.Window.pas',
   NixVM.Tools.IR in '..\src\NixVM.Tools.IR.pas',
   NixVM.Tools.Disasm in '..\src\NixVM.Tools.Disasm.pas',
-  NixVM.Tools.Assembler in '..\src\NixVM.Tools.Assembler.pas';
+  NixVM.Tools.Assembler in '..\src\NixVM.Tools.Assembler.pas',
+  NixVM.Core.ROM in '..\src\NixVM.Core.ROM.pas';
 
 type
   TTestSystemMemory = packed record
@@ -38,25 +39,17 @@ end;
 
 procedure TTest.Started;
 const SourceCode = '''
-call SayHello
-call remotefunc
+ld r1, fltdata
+ld r2, fltdata + 4
+fadd r1, r2
+mov r2, r1
+mov r0, fmtstr
+syscall 1
 halt
 
-.include "d:\test.asm"
+fmtstr:  .str   "%f %F", 13, 10, 0
+fltdata: .float 0.123, 0.21
 
-.align 8, 255
-SayHello:
-  mov r0, _strconst_format + 7
-  mov r1, _strconst_hello - 4
-  mov r2, _strconst_world
-  syscall 1 ; DebugPrint
-  ret
-
-.align 8
-_strconst_format: .ds "hidden %s, %s!", 13, 10, 0
-.ascii "Hell"
-_strconst_hello:  .ascii "o", 0
-_strconst_world:  .str "World", 0
 ''';
 var
   Errors:    TStrings;
@@ -76,8 +69,8 @@ begin
     Exit;
   end;
 
-//  Writeln('=== IR ===');
-//  Writeln(IR.ToString);
+  Writeln('=== IR ===');
+  Writeln(IR.ToString);
 
   CodeBytes := IR.Emit(Memory, Memory.UserAddress);
 

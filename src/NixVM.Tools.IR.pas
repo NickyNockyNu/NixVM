@@ -49,6 +49,7 @@ type
       DataBytes,
       DataWords,
       DataDWords,
+      DataFloats,
       DataString,
       DataReserved,
       Embed,
@@ -58,6 +59,7 @@ type
 
     TValue = record
       Value:  Cardinal;
+      Delta:  Integer;
       &Label: TLabelString;
     end;
   private
@@ -88,6 +90,7 @@ type
       TKind.DataBytes,
       TKind.DataWords,
       TKind.DataDWords,
+      TKind.DataFloats,
       TKind.DataString,
       TKind.DataReserved: (
         DataPtr:  Pointer;
@@ -148,6 +151,7 @@ type
     function AddDataBytes (const ABytes:  array of Byte):     Integer;
     function AddDataWords (const AWords:  array of Word):     Integer;
     function AddDataDWords(const ADWords: array of Cardinal): Integer;
+    function AddDataFloats(const AFloats: array of Single):   Integer;
 
     function AddDataString(const AString: AnsiString; ANullTerminated: Boolean = True): Integer; overload;
     function AddDataString(const AData: TBytes): Integer; overload;
@@ -254,12 +258,12 @@ function TIRItem.ToString: String;
     begin
       Result := String(AVal.&Label);
 
-      if AVal.Value <> 0 then
+      if AVal.Delta <> 0 then
       begin
-        if Integer(AVal.Value) > 0 then
-          Result := Result + ' + ' + IntToStr(Integer(AVal.Value))
+        if AVal.Delta > 0 then
+          Result := Result + ' + ' + IntToStr(AVal.Delta)
         else
-          Result := Result + ' - ' + IntToStr(Abs(Integer(AVal.Value)));
+          Result := Result + ' - ' + IntToStr(Abs(AVal.Delta));
       end;
     end
     else if AHex then
@@ -372,6 +376,23 @@ begin
       end;
     end;
 
+    TKind.DataFloats:
+    begin
+      Result := '.float'#9;
+
+      var P := PSingle(DataPtr);
+
+      for var i := 0 to (DataSize div 4) - 1 do
+      begin
+        if i > 0 then
+          Result := Result + ', ';
+
+        Result := Result + FloatToStrF(P^, ffGeneral, 7, 0, TFormatSettings.Invariant);
+
+        Inc(P);
+      end;
+    end;
+
     TKind.DataString:
       Result := FormatDataString(DataPtr, DataSize, '.str');
 
@@ -417,6 +438,7 @@ begin
     TKind.DataBytes,
     TKind.DataWords,
     TKind.DataDWords,
+    TKind.DataFloats,
     TKind.DataString,
     TKind.DataReserved:
       Result := DataSize;
@@ -736,6 +758,21 @@ begin
   Result := Add(Item);
 end;
 
+function TIRList.AddDataFloats(const AFloats: array of Single): Integer;
+var
+  Item: TIRItem;
+begin
+  Item := Default(TIRItem);
+
+  Item.Kind     := TIRItem.TKind.DataFloats;
+  Item.DataSize := Length(AFloats) * SizeOf(Single);
+
+  if Item.DataSize > 0 then
+    Item.DataPtr := StoreData(@AFloats[0], Item.DataSize);
+
+  Result := Add(Item);
+end;
+
 function TIRList.AddDataString(const AString: AnsiString; ANullTerminated: Boolean): Integer;
 var
   Item: TIRItem;
@@ -896,7 +933,8 @@ begin
 
           if LabelMap.TryGetValue(FullName, TargetAddr) then
           begin
-            Item.Imm.Value := Cardinal(Integer(TargetAddr) + Integer(Item.Imm.Value));
+            Item.Imm.Value := Cardinal(Integer(TargetAddr) + Item.Imm.Delta);
+
             Modified := True;
           end
           else
@@ -915,7 +953,8 @@ begin
 
           if LabelMap.TryGetValue(FullName, TargetAddr) then
           begin
-            Item.Offset.Value := Cardinal(Integer(TargetAddr) + Integer(Item.Offset.Value));
+            Item.Offset.Value := Cardinal(Integer(TargetAddr) + Item.Offset.Delta);
+
             Modified := True;
           end
           else
@@ -975,6 +1014,7 @@ begin
       TIRItem.TKind.DataBytes,
       TIRItem.TKind.DataWords,
       TIRItem.TKind.DataDWords,
+      TIRItem.TKind.DataFloats,
       TIRItem.TKind.DataString:
       begin
         if (Item.DataPtr <> nil) and (Item.DataSize > 0) then

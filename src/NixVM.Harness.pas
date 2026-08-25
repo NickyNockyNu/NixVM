@@ -36,6 +36,12 @@ uses
 type
   {$REGION 'CustomHarness'}
   TCustomHarness<TSystemMemory: record> = class
+  public
+    {$REGION 'Version'}
+    class function HarnessName:  String; virtual;
+    class function HarnessMajor: Word;   virtual;
+    class function HarnessMinor: Word;   virtual;
+    {$ENDREGION}
   private
     FMemory: TMemory<TSystemMemory>;
     FCPU:    TCPU;
@@ -53,6 +59,8 @@ type
 
     FCPUBatchSize:  Cardinal;
     FCPUBatchCount: Cardinal;
+
+    FROMFile: String;
 
     function GetElapsed: Double;   inline;
     function GetFPS:     Cardinal; inline;
@@ -78,8 +86,10 @@ type
     function DispatchInterrupt(AInterrupt: TInterrupts.ID): Boolean; virtual;
 
     procedure HandlePanic; virtual;
+
+    function LoadROM(const AROMFile: String): Boolean;
   public
-    constructor Create;
+    constructor Create(const AROMFile: String = '');
     destructor  Destroy; override;
 
     procedure Start;
@@ -101,17 +111,47 @@ type
 
     property CPUBatchSize:  Cardinal read FCPUBatchSize write FCPUBatchSize;
     property CPUBatchCount: Cardinal read FCPUBatchCount;
+
+    property ROMFile: String read FROMFile;
   public
-    class procedure Run;
+    class procedure Run(const AROMFile: String = '');
   end;
   {$ENDREGION}
 
 implementation
 
 uses
+  NixVM.Core.ROM,
   NixVM.Core.Strings;
 
 {$REGION 'CustomHarness'}
+{$REGION 'Version'}
+class function TCustomHarness<TSystemMemory>.HarnessName: String;
+var
+  i: Integer;
+begin
+  Result := Copy(ClassName, 1, 32);
+
+  if Result[1] = 'T' then
+    Result := Copy(Result, 2, Length(Result));
+
+  i := Pos('<', Result);
+
+  if i > 0 then
+    Result := Copy(Result, 1, i - 1);
+end;
+
+class function TCustomHarness<TSystemMemory>.HarnessMajor: Word;
+begin
+  Result := 1;
+end;
+
+class function TCustomHarness<TSystemMemory>.HarnessMinor: Word;
+begin
+  Result := 0;
+end;
+{$ENDREGION}
+
 function TCustomHarness<TSystemMemory>.GetElapsed: Double;
 begin
   if FRunning then
@@ -233,7 +273,11 @@ end;
 
 procedure TCustomHarness<TSystemMemory>.Initialize;
 begin
-  // Set the memory size here
+  if Length(FROMFile) > 0  then
+  begin
+    if not LoadROM(FROMFile) then
+      FCPU.Halt; // TODO: Do we make a panic ID for this?
+  end;
 end;
 
 procedure TCustomHarness<TSystemMemory>.Finalize;
@@ -243,7 +287,7 @@ end;
 
 procedure TCustomHarness<TSystemMemory>.Started;
 begin
-  // If you adjust the memory size here you must reset the memory and CPU
+
 end;
 
 procedure TCustomHarness<TSystemMemory>.Stopped;
@@ -324,9 +368,102 @@ begin
   DebugBreak;
 end;
 
-constructor TCustomHarness<TSystemMemory>.Create;
+function TCustomHarness<TSystemMemory>.LoadROM(const AROMFile: String): Boolean;
+var
+  F:         file;
+  OldMode:   Byte;
+  Header:    TROMHeader;
+  BytesRead: Integer;
 begin
-  inherited;
+  Result   := False;
+  OldMode  := FileMode;
+  FileMode := 0;
+  FROMFile := '';
+
+  DebugPrint('Loading "' + AnsiString(AROMFile) + '" ... ');
+
+  AssignFile(F, AROMFile);
+
+  try
+    {$I-}Reset(F, 1);{$I+}
+
+    if IOResult <> 0 then
+    begin
+      DebugPrint('FAIL'#13#10);
+      DebugPrint('Unable to open file'#13#10);
+
+      Exit;
+    end;
+
+    try
+      BlockRead(F, Header, SizeOf(TROMHeader), BytesRead);
+
+      if (BytesRead <> SizeOf(TROMHeader)) or not Header.IsValid then
+      begin
+        DebugPrint('FAIL'#13#10);
+        DebugPrint('Not a valid NixVM ROM'#13#10);
+
+        Exit;
+      end;
+
+      if Length(Header.Harness.Name) > 0 then
+      begin
+        if Header.Harness.Name <> HarnessName then
+        begin
+          DebugPrint('FAIL'#13#10);
+          DebugPrint('Requires harness:' + AnsiString(Header.Harness.Name) + #13#10);
+
+          Exit;
+        end;
+
+        if (Header.Harness.Major > HarnessMajor) or ((Header.Harness.Major = HarnessMajor) and (Header.Harness.Minor > HarnessMinor)) then
+        begin
+          DebugPrint('FAIL'#13#10);
+          DebugPrint(AnsiString('Requires harness version:' + IntToStr(Header.Harness.Major) + '.' + IntToStr(Header.Harness.Minor) + #13#10));
+
+          Exit;
+        end;
+      end;
+
+      if Header.UserSize = 0 then
+        Header.UserSize := FileSize(F) - SizeOf(TROMHeader);
+
+      if Header.HeapSize  = 0 then Header.HeapSize  := 64 * 1024;
+      if Header.StackSize = 0 then Header.StackSize := 16 * 1024;
+
+      FMemory.Resize(Header.UserSize, Header.HeapSize, Header.StackSize);
+      FMemory.Reset;
+
+      if Header.UserSize > 0 then
+      begin
+        BlockRead(F, FMemory[FMemory.UserAddress]^, Header.UserSize, BytesRead);
+
+        if Cardinal(BytesRead) <> Header.UserSize then
+        begin
+          DebugPrint('FAIL'#13#10);
+          DebugPrint('Unable to read data'#13#10);
+
+          Exit(False);
+        end;
+      end;
+
+      DebugPrint('OK'#13#10);
+
+      FROMFile := AROMFile;
+      Result   := True;
+
+      FCPU.Reset;
+    finally
+      CloseFile(F);
+    end;
+  finally
+    FileMode := OldMode;
+  end;
+end;
+
+constructor TCustomHarness<TSystemMemory>.Create(const AROMFile: String = '');
+begin
+  inherited Create;
 
   FMemory := TMemory<TSystemMemory>.Create(0, 0, 0);
   FCPU    := TCPU.Create(FMemory);
@@ -335,6 +472,8 @@ begin
   FCPU.PanicHandler   := HandlePanic;
 
   FCPUBatchSize := 16 * 1024;
+
+  FROMFile := AROMFile;
 
   Initialize;
 end;
@@ -409,9 +548,9 @@ begin
     Write(AString);
 end;
 
-class procedure TCustomHarness<TSystemMemory>.Run;
+class procedure TCustomHarness<TSystemMemory>.Run(const AROMFile: String = '');
 begin
-  with Create do try
+  with Create(AROMFile) do try
     Start;
   finally
     Free;
