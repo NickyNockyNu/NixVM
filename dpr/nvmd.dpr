@@ -150,7 +150,6 @@ begin
   end;
 
   Header.Reset;
-  PayloadSize := 0;
 
   AssignFile(F, InputFile);
   Reset(F, 1);

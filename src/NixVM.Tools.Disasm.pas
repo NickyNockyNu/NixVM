@@ -60,6 +60,9 @@ type
 
 implementation
 
+uses
+  NixVM.Core.System;
+
 {$REGION 'Disassembler'}
 class function TDisassembler.TryReadPrintableString(AMemory: TCustomMemory; AAddr, AMaxAddr: Cardinal; out ABytes: TBytes): Boolean;
 var
@@ -322,9 +325,14 @@ begin
         end;
       end;
 
+      if (Instr.OpCode = TCPUInstruction.TOpCode.syscall) and (Instr.RegB = TRegisters.ID.Imm) then
+        Item.Comment := TSyscalls.ID(Item.Imm.Value).ToString
+      else if (Instr.OpCode = TCPUInstruction.TOpCode.int) and (Instr.RegB = TRegisters.ID.Imm) then
+        Item.Comment := TInterrupts.ID(Item.Imm.Value and $F).ToString;
+
       Result.Add(Item);
 
-      if (Instr.OpCode = TCPUInstruction.TOpCode.ret)  or (Instr.OpCode = TCPUInstruction.TOpCode.iret) or (Instr.OpCode = TCPUInstruction.TOpCode.halt) then
+      if (Instr.OpCode = TCPUInstruction.TOpCode.ret) or (Instr.OpCode = TCPUInstruction.TOpCode.iret) or (Instr.OpCode = TCPUInstruction.TOpCode.halt) then
         InCode := False;
     end;
   finally

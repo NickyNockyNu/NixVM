@@ -1269,7 +1269,7 @@ end;
 
 procedure TCPU.DoINT;
 begin
-  Interrupt(Registers.r[FCurrentCPUInstruction.RegB]);
+  Interrupt(Registers.r[FCurrentCPUInstruction.RegB] and $F);
 end;
 
 procedure TCPU.DoRET;
