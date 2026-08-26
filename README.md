@@ -1,17 +1,4 @@
-Here is a clean, professional **`README.md`** front page for the NixVM repository.
-
----
-
 # NixVM — Virtual Microprocessor & Fantasy Console Engine
-
-```text
-  _   _ _     __     ____  __
- | \ | (_)_  _\ \   / /  \/  |
- |  \| | \ \/ /\ \ / /| |\/| |
- | |\  | |>  <  \ V / | |  | |
- |_| \_|_/_/\_\  \_/  |_|  |_|
-  32-Bit Virtual Computing Platform
-```
 
 **Copyright (c) 2026 Nicholas Smith**  
 *Licensed under the GNU General Public License v3.0*
