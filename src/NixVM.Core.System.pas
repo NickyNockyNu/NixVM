@@ -220,6 +220,8 @@ type
     MemoryMapAddress    = SystemStateAddress + SizeOf(TSystemState);
     TimersAddress       = MemoryMapAddress   + SizeOf(TMemoryMap);
     RegistersAddress    = TimersAddress      + SizeOf(TTimers);
+
+    UserCodeAddress = SystemStateAddress + SizeOf(TRegisters) + SizeOf(TSystemState.TPanicCode);
   public
     Interrupts:  TInterrupts;
     SysCalls:    TSysCalls;
@@ -248,7 +250,7 @@ begin
     Timer0..Timer0 + (TTimers.Count - 1):
       Result := Prefix + 'Timer' + IntToStr(Self - Timer0);
   else
-    Result := Prefix + IntToStr(Self);
+    Result := '';//Prefix + IntToStr(Self);
   end;
 end;
 
@@ -284,7 +286,7 @@ begin
     StringCompare: Result := Prefix + 'StringCompare';
     StringFormat:  Result := Prefix + 'StringFormat';
   else
-    Result := Prefix + IntToStr(Self);
+    Result := '';//Prefix + IntToStr(Self);
   end;
 end;
 
@@ -307,7 +309,7 @@ begin
     StackUnderflow:       Result := Prefix + 'StackUnderflow';
     DivideByZero:         Result := Prefix + 'DivideByZero';
   else
-    Result := Prefix + IntToStr(Self);
+    Result := '';//Prefix + IntToStr(Self);
   end;
 end;
 

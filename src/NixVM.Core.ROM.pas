@@ -43,6 +43,8 @@ type
       Major: Word;
       Minor: Word;
 
+      function ToString: String; inline;
+
       property Name: String read GetName write SetName;
     end;
     {$ENDREGION}
@@ -58,11 +60,17 @@ type
     StackSize:   Cardinal;
 
     procedure Reset;
+
     function IsValid: Boolean; inline;
+
+    function ToString: String;
   end;
   {$ENDREGION}
 
 implementation
+
+uses
+  NixVM.Core.Strings;
 
 {$REGION 'Header'}
 {$REGION 'Version'}
@@ -84,6 +92,11 @@ begin
 
   Move(S[1], FName[0], Length(S));
 end;
+
+function TROMHeader.TVersion.ToString: String;
+begin
+  Result := Name + ' v' + IntToStr(Major) + '.' + IntToStr(Minor);
+end;
 {$ENDREGION}
 
 procedure TROMHeader.Reset;
@@ -101,6 +114,23 @@ end;
 function TROMHeader.IsValid: Boolean;
 begin
   Result := Signature = Magic;
+end;
+
+function TROMHeader.ToString: String;
+begin
+  Result :=
+    '        ROM: ' + ROM.    ToString + #13#10;
+
+  if Length(Harness.Name) > 0 then
+    Result := Result +
+    '    Harness: ' + Harness.ToString + #13#10;
+
+  Result := Result +
+    'UserAddress: 0x' + IntToHex(UserAddress, 8) + #13#10 +
+
+    '   UserSize: ' + IntToStr(UserSize) + #13#10 +
+    '   HeapSize: ' + IntToStr(HeapSize) + #13#10 +
+    '  StackSize: ' + IntToStr(StackSize);
 end;
 {$ENDREGION}
 
