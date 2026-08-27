@@ -1,6 +1,6 @@
 {
   NixVM.Tools.Compiler.Semantics.pas
-    Semantic analyzer, symbol table, and type checker
+    Semantic analyzer, symbol table and type checker
 
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM

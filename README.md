@@ -9,7 +9,7 @@
 
 **NixVM** is a modular, high-performance 32-bit virtual RISC microprocessor, memory architecture, and toolchain designed as a universal foundation for building **fantasy consoles, retro computers, and embedded scripting runtimes**.
 
-Instead of reinventing custom instruction sets and memory controllers for every new virtual console, NixVM provides an extensible, dependency-free core engine with first-class tooling: an Intermediate Representation (IR) linker, a full text assembler (`nvma`), a reverse-engineering disassembler (`nvmd`), and a universal cartridge packaging system (`.nvm`).
+Instead of reinventing custom instruction sets and memory controllers for every new virtual console, NixVM provides an extensible, dependency-free core engine with first-class tooling: A Pascal compiler (`nvmc`), an Intermediate Representation (IR) linker, a full text assembler (`nvma`), a reverse-engineering disassembler (`nvmd`), and a universal cartridge packaging system (`.nvm`).
 
 ---
 
@@ -39,7 +39,7 @@ Explore the complete, language-agnostic hardware specification manuals:
 
 ---
 
-## 🛠️ Quick Start
+## 🛠️ Quick Start (assembler)
 
 ### 1. Writing Your First Program (`hello.asm`)
 
@@ -77,6 +77,7 @@ nvma hello.asm -v
 ```text
 NixVM Assembler v1.0
 Copyright (c) 2026 Nicholas Smith
+https://github.com/NickyNockyNu/NixVM
 
 Assembling "hello.asm" ...
 
@@ -134,13 +135,69 @@ data_00000512:
 To run a cartridge in a host fantasy console harness:
 
 ```pascal
-var Console := TNixBoyConsole.Create;
-try
-  if Console.LoadROM('games/invaders.nvm') then
-    Console.Start; // Initializes memory, loads ROM, and begins execution!
-finally
-  Console.Free;
-end;
+type
+  TMySystemMemory = record
+    // Put your custom system memory layout in here
+  end;
+  
+  TMyConsole = class(TCustomHarness<TMySystemMemory>);
+    // Define your consoles custom behaviour in here
+    // (See the custom harness source for more information (documentation is WiP))
+  end;
+  
+begin
+  // Create an instance of your console and load a ROM
+  TMyConsole.Run('roms/myrom.nvm');
+end.
+```
+
+---
+
+## 🛠️ Quick Start (pascal)
+
+### 1. Writing Your First Program (`HelloWorld.pas`)
+
+```pascal
+program HelloWorld targets Test;
+
+{$HEAP 0}
+{$STACK 128}
+{$BASE $4E0}
+
+uses
+  System;
+
+begin
+  Writeln('Hello, World!');
+end.
+```
+
+---
+
+### 2. Compiling to Cartridge (`nvma`)
+
+Compile the pascal source into a `.nvm` cartridge using the command-line compiler:
+
+```bash
+# Compiles hello.pas -> hello.nvm
+nvmc hello.pas -v
+```
+
+**Output:**
+```text
+NixVM Pascal Compiler v1.0
+Copyright (c) 2026 Nicholas Smith
+https://github.com/NickyNockyNu/NixVM
+
+Compiling "HelloWorld.pas" ...
+SUCCESS: Cartridge written to "HelloWorld.nvm"
+
+        ROM: HelloWorld v1.0
+    Harness: Test v1.0
+UserAddress: 0x000004E0
+   UserSize: 42
+   HeapSize: 0
+  StackSize: 128
 ```
 
 ---
@@ -149,21 +206,27 @@ end;
 
 ```text
 NixVM/
-├── src/                       # Lean, dependency-free core VM engine
-│   ├── NixVM.Core.CPU.pas          # 32-bit RISC CPU fetch-decode-execute engine
-│   ├── NixVM.Core.Instructions.pas # Opcode tables and instruction definitions
-│   ├── NixVM.Core.Memory.pas       # Sandboxed memory, dynamic heap, and managed strings
-│   ├── NixVM.Core.Registers.pas    # Register file, flags helpers, and aliases
-│   ├── NixVM.Core.ROM.pas          # NVMX Universal Cartridge header definition
-│   ├── NixVM.Core.Strings.pas      # Zero-dependency string formatting intrinsics
-│   ├── NixVM.Core.System.pas       # Core System area layout, SysCalls, and Interrupts
-│   ├── NixVM.Tools.IR.pas          # Intermediate Representation & symbol resolver
-│   ├── NixVM.Tools.Assembler.pas   # Full multi-file text assembler
-│   ├── NixVM.Tools.Disasm.pas      # Intelligent binary disassembler
-│   ├── NixVM.Harness.pas           # Base execution harness & cartridge loader
-│   ├── NixVM.Harness.Timing.pas    # Stopwatch & microsecond precision timing
-│   └── NixVM.Harness.Window.pas    # Windows GUI harness & message loop
-└── doc/                       # Technical architecture specifications
+├── src/     # Lean, dependency-free core VM engine
+│   ├── NixVM.Core.CPU.pas                  # 32-bit RISC CPU fetch-decode-execute engine
+│   ├── NixVM.Core.Instructions.pas         # Opcode tables and instruction definitions
+│   ├── NixVM.Core.Memory.pas               # Sandboxed memory, dynamic heap, and managed strings
+│   ├── NixVM.Core.Registers.pas            # Register file, flags helpers, and aliases
+│   ├── NixVM.Core.ROM.pas                  # NVMX Universal Cartridge header definition
+│   ├── NixVM.Core.Strings.pas              # Zero-dependency string formatting intrinsics
+│   ├── NixVM.Core.System.pas               # Core System area layout, SysCalls, and Interrupts
+│   ├── NixVM.Tools.IR.pas                  # Intermediate Representation & symbol resolver
+│   ├── NixVM.Tools.Assembler.pas           # Full multi-file text assembler
+│   ├── NixVM.Tools.Disasm.pas              # Intelligent binary disassembler
+│   ├── NixVM.Tools.Compiler.pas            # Pascal compiler
+│   ├── NixVM.Tools.Compiler.AST.pas        # Abstract Syntax Tree
+│   ├── NixVM.Tools.Compiler.CodeGen.pas    # IR code generator for the NixVM CPU
+│   ├── NixVM.Tools.Compiler.Lexer.pas      # Pascal lexer / tokenizer
+│   ├── NixVM.Tools.Compiler.Parser.pas     # Recursive Descent Parser
+│   ├── NixVM.Tools.Compiler.Semantics.pas  # Semantic analyzer, symbol table and type checker
+│   ├── NixVM.Harness.pas                   # Base execution harness & cartridge loader
+│   ├── NixVM.Harness.Timing.pas            # Stopwatch & microsecond precision timing
+│   └── NixVM.Harness.Window.pas            # Windows GUI harness & message loop
+└── doc/     # Technical architecture specifications
     ├── CPU.md                      # CPU & Instruction set reference
     ├── Memory.md                   # Memory map & system registers
     ├── Syscalls_and_Interrupts.md  # SysCall API & interrupt vectors
