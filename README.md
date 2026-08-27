@@ -174,7 +174,7 @@ end.
 
 ---
 
-### 2. Compiling to Cartridge (`nvma`)
+### 2. Compiling to Cartridge (`nvmc`)
 
 Compile the pascal source into a `.nvm` cartridge using the command-line compiler:
 
