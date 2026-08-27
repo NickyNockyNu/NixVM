@@ -179,8 +179,8 @@ end.
 Compile the pascal source into a `.nvm` cartridge using the command-line compiler:
 
 ```bash
-# Compiles hello.pas -> hello.nvm
-nvmc hello.pas -v
+# Compiles HelloWorld.pas -> HelloWorld.nvm
+nvmc HelloWorld.pas -v
 ```
 
 **Output:**
