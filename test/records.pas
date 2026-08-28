@@ -6,7 +6,7 @@ program records targets Test;
 
 type
   TPoint = record
-  private
+  //private
     fx, fy: Integer;
     
     function GetY: Integer;
@@ -15,7 +15,7 @@ type
     end;
     
     procedure SetY(AValue: Integer);
-  public 
+  //public 
     procedure Init(x, y: Integer);
     begin
       fx := x;
@@ -37,12 +37,19 @@ var
 begin
   for i := 0 to 2 do
   begin
-    p[i].Init(10 + i, 20 + i);
+    with p[i] do
+    begin
+      Init(10 + i, 20 + i);
     
-    Writeln('%d: %d, %d', i, p[i].x, p[i].y);
+      Writeln('%d: %d, %d', i, x, y);
     
-    p[i].y := p[i].x + p[i].y;
+      y := x + y;
     
-    Writeln('  %d', p[i].y);
-  end;
+      Writeln('  %d', y);
+    end;
+   end;
+
+  for i := 0 to 2 do
+    with p[i] do
+      Writeln('%d: %d, %d', i, fx, fy);
 end.

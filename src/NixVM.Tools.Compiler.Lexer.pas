@@ -92,6 +92,7 @@ type
         // Blocks & scopes
         &Begin,
         &End,
+        &With,
 
         // Control flow
         &If,
@@ -282,6 +283,7 @@ begin
 
   FKeywords.Add('begin',          TToken.TKind.Begin);
   FKeywords.Add('end',            TToken.TKind.End);
+  FKeywords.Add('with',           TToken.TKind.With);
 
   FKeywords.Add('if',             TToken.TKind.If);
   FKeywords.Add('then',           TToken.TKind.Then);

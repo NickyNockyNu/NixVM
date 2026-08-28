@@ -49,7 +49,8 @@ type
       &Single,
       &Boolean,
       &String,
-      &Pointer
+      &Pointer,
+      &Set
     );
     {$ENDREGION}
   public
@@ -59,11 +60,12 @@ type
     ValueBool:  Boolean;
     ValueStr:   String;
 
-    class function MakeInt  (AVal: Cardinal): TConstValue; static;
-    class function MakeFloat(AVal: Single):   TConstValue; static;
-    class function MakeBool (AVal: Boolean):  TConstValue; static;
+    class function MakeInt  (AVal: Cardinal):     TConstValue; static;
+    class function MakeFloat(AVal: Single):       TConstValue; static;
+    class function MakeBool (AVal: Boolean):      TConstValue; static;
     class function MakeStr  (const AVal: String): TConstValue; static;
-    class function MakePtr  (AVal: Cardinal): TConstValue; static;
+    class function MakePtr  (AVal: Cardinal):     TConstValue; static;
+    class function MakeSet  (AVal: Cardinal):     TConstValue; static;
   end;
   {$ENDREGION}
 
@@ -180,7 +182,8 @@ type
       &String,
       &Char,
       &Boolean,
-      &Nil
+      &Nil,
+      &Set
     );
     {$ENDREGION}
   private
@@ -196,6 +199,7 @@ type
     constructor CreateChar (AValue: Char;         ALine: Integer = 0; ACol: Integer = 0);
     constructor CreateBool (AValue: Boolean;      ALine: Integer = 0; ACol: Integer = 0);
     constructor CreateNil  (                      ALine: Integer = 0; ACol: Integer = 0);
+    constructor CreateSet  (AValue: Cardinal;     ALine: Integer = 0; ACol: Integer = 0);
 
     property Kind:       TKind    read FKind;
     property ValueInt:   Cardinal read FValueInt;
@@ -214,6 +218,20 @@ type
     destructor  Destroy; override;
 
     property Elements: TObjectList<TASTExpression> read FElements;
+  end;
+  {$ENDREGION}
+
+  {$REGION 'Range'}
+  TASTRange = class(TASTExpression)
+  private
+    FLowExpr:  TASTExpression;
+    FHighExpr: TASTExpression;
+  public
+    constructor Create(ALowExpr, AHighExpr: TASTExpression; ALine: Integer = 0; ACol: Integer = 0);
+    destructor  Destroy; override;
+
+    property LowExpr:  TASTExpression read FLowExpr  write FLowExpr;
+    property HighExpr: TASTExpression read FHighExpr write FHighExpr;
   end;
   {$ENDREGION}
 
@@ -370,6 +388,20 @@ type
     destructor  Destroy; override;
 
     property Statements: TObjectList<TASTStatement> read FStatements;
+  end;
+  {$ENDREGION}
+
+  {$REGION 'with'}
+  TASTWith = class(TASTStatement)
+  private
+    FExpressions: TObjectList<TASTExpression>;
+    FBody:        TASTStatement;
+  public
+    constructor Create(ALine: Integer = 0; ACol: Integer = 0);
+    destructor  Destroy; override;
+
+    property Expressions: TObjectList<TASTExpression> read FExpressions;
+    property Body:        TASTStatement               read FBody write FBody;
   end;
   {$ENDREGION}
 
@@ -758,6 +790,14 @@ begin
   Result.Kind     := TConstValue.TKind.Pointer;
   Result.ValueInt := AVal;
 end;
+
+class function TConstValue.MakeSet(AVal: Cardinal): TConstValue;
+begin
+  Result := Default(TConstValue);
+
+  Result.Kind     := TConstValue.TKind.Set;
+  Result.ValueInt := AVal;
+end;
 {$ENDREGION}
 
 {$REGION 'ASTNode'}
@@ -988,6 +1028,14 @@ begin
 
   FKind := TKind.Nil;
 end;
+
+constructor TASTLiteral.CreateSet(AValue: Cardinal; ALine, ACol: Integer);
+begin
+  inherited Create(ALine, ACol);
+
+  FKind     := TKind.Set;
+  FValueInt := AValue;
+end;
 {$ENDREGION}
 
 {$REGION 'Array literal'}
@@ -1001,6 +1049,27 @@ end;
 destructor TASTArrayLiteral.Destroy;
 begin
   FElements.Free;
+
+  inherited;
+end;
+{$ENDREGION}
+
+{$REGION 'Range'}
+constructor TASTRange.Create(ALowExpr, AHighExpr: TASTExpression; ALine, ACol: Integer);
+begin
+  inherited Create(ALine, ACol);
+
+  FLowExpr  := ALowExpr;
+  FHighExpr := AHighExpr;
+end;
+
+destructor TASTRange.Destroy;
+begin
+  if Assigned(FLowExpr) then
+    FLowExpr.Free;
+
+  if Assigned(FHighExpr) then
+    FHighExpr.Free;
 
   inherited;
 end;
@@ -1151,6 +1220,26 @@ end;
 destructor TASTBlock.Destroy;
 begin
   FStatements.Free;
+
+  inherited;
+end;
+{$ENDREGION}
+
+{$REGION 'with'}
+constructor TASTWith.Create(ALine, ACol: Integer);
+begin
+  inherited Create(ALine, ACol);
+
+  FExpressions := TObjectList<TASTExpression>.Create(True);
+  FBody        := nil;
+end;
+
+destructor TASTWith.Destroy;
+begin
+  FExpressions.Free;
+
+  if Assigned(FBody) then
+    FBody.Free;
 
   inherited;
 end;

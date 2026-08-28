@@ -61,6 +61,8 @@ type
 
     function EvaluateConstant(AExpr: TASTExpression): TConstValue;
 
+    function EvaluateCaseLabel(AExpr: TASTExpression): Integer;
+
     procedure ProcessDirective(const ADirText: String; const ATok: TLexer.TToken);
 
     function IsIdentToken(AKind: TLexer.TToken.TKind): Boolean; inline;
@@ -84,6 +86,7 @@ type
     {$REGION 'Statements'}
     function ParseStatement:        TASTStatement;
     function ParseBlock:            TASTBlock;
+    function ParseWith:             TASTStatement;
     function ParseIf:               TASTStatement;
     function ParseWhile:            TASTStatement;
     function ParseRepeat:           TASTStatement;
@@ -356,6 +359,37 @@ begin
   end;
 
   Error('Expression must be a compile-time constant', AExpr.Line, AExpr.Col);
+end;
+
+function TParser.EvaluateCaseLabel(AExpr: TASTExpression): Integer;
+begin
+  if AExpr is TASTLiteral then
+    Exit(Integer(TASTLiteral(AExpr).ValueInt));
+
+  if AExpr is TASTIdentifier then
+  begin
+    var ConstVal: TConstValue;
+
+    if FConstants.TryGetValue(LowerCase(TASTIdentifier(AExpr).Name), ConstVal) then
+      Exit(Integer(ConstVal.ValueInt));
+  end;
+
+  if AExpr is TASTMemberAccess then
+  begin
+    var MemAcc := TASTMemberAccess(AExpr);
+
+    if MemAcc.Expression is TASTIdentifier then
+    begin
+      var ScopedName := LowerCase(TASTIdentifier(MemAcc.Expression).Name + '.' + MemAcc.MemberName);
+      var ConstVal: TConstValue;
+
+      if FConstants.TryGetValue(ScopedName, ConstVal) then
+        Exit(Integer(ConstVal.ValueInt));
+    end;
+  end;
+
+  var ConstVal := EvaluateConstant(AExpr);
+  Result := Integer(ConstVal.ValueInt);
 end;
 
 procedure TParser.ProcessDirective(const ADirText: String; const ATok: TLexer.TToken);
@@ -1004,10 +1038,19 @@ begin
 
     if not Check(TLexer.TToken.TKind.RBracket) then
       repeat
-        ArrayLit.Elements.Add(ParseExpression);
+        var FirstExpr := ParseExpression;
+
+        if Match(TLexer.TToken.TKind.DotDot) then
+        begin
+          var HighExpr := ParseExpression;
+
+          ArrayLit.Elements.Add(TASTRange.Create(FirstExpr, HighExpr, Tok.Line, Tok.Col));
+        end
+        else
+          ArrayLit.Elements.Add(FirstExpr);
       until not Match(TLexer.TToken.TKind.Comma);
 
-    Expect(TLexer.TToken.TKind.RBracket, 'Expected "]" closing array literal');
+    Expect(TLexer.TToken.TKind.RBracket, 'Expected "]" closing set/array literal');
     Exit(ArrayLit);
   end;
 
@@ -1221,6 +1264,30 @@ begin
   Expect(TLexer.TToken.TKind.End, 'Expected "end" closing statement block');
 end;
 
+function TParser.ParseWith: TASTStatement;
+var
+  StartTok: TLexer.TToken;
+  WithStmt: TASTWith;
+begin
+  StartTok := FCurTok;
+  Expect(TLexer.TToken.TKind.With);
+
+  WithStmt := TASTWith.Create(StartTok.Line, StartTok.Col);
+
+  try
+    repeat
+      WithStmt.Expressions.Add(ParseExpression);
+    until not Match(TLexer.TToken.TKind.Comma);
+
+    Expect(TLexer.TToken.TKind.Do, 'Expected "do" after with expression(s)');
+    WithStmt.Body := ParseStatement;
+    Result := WithStmt;
+  except
+    WithStmt.Free;
+    raise;
+  end;
+end;
+
 function TParser.ParseIf: TASTStatement;
 var
   StartTok: TLexer.TToken;
@@ -1345,7 +1412,7 @@ begin
 
     repeat
       var ValExpr := ParseExpression;
-      var LowConst := EvaluateConstant(ValExpr);
+      var LowConst := EvaluateCaseLabel(ValExpr);
       ValExpr.Free;
 
       var MatchVal: TASTCaseBranch.TMatchValue;
@@ -1353,18 +1420,18 @@ begin
       if Match(TLexer.TToken.TKind.DotDot) then
       begin
         var HighExpr := ParseExpression;
-        var HighConst := EvaluateConstant(HighExpr);
+        var HighConst := EvaluateCaseLabel(HighExpr);
         HighExpr.Free;
 
         MatchVal.Kind    := TASTCaseBranch.TMatchValue.TKind.RangeValue;
-        MatchVal.LowVal  := Integer(LowConst.ValueInt);
-        MatchVal.HighVal := Integer(HighConst.ValueInt);
+        MatchVal.LowVal  := Integer(LowConst);
+        MatchVal.HighVal := Integer(HighConst);
       end
       else
       begin
         MatchVal.Kind    := TASTCaseBranch.TMatchValue.TKind.SingleValue;
-        MatchVal.LowVal  := Integer(LowConst.ValueInt);
-        MatchVal.HighVal := Integer(LowConst.ValueInt);
+        MatchVal.LowVal  := Integer(LowConst);
+        MatchVal.HighVal := Integer(LowConst);
       end;
 
       Branch.Values.Add(MatchVal);
@@ -1467,6 +1534,9 @@ begin
 
   if Check(TLexer.TToken.TKind.Begin) then
     Exit(ParseBlock);
+
+  if Check(TLexer.TToken.TKind.With) then
+    Exit(ParseWith);
 
   if Check(TLexer.TToken.TKind.If) then
     Exit(ParseIf);

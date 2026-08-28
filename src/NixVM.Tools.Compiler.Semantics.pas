@@ -218,20 +218,23 @@ type
 
   {$REGION 'Semantic Analyzer'}
   TSemanticAnalyzer = class
+  type
+    TWithContext = record
+      RecordType: TType;
+    end;
   private
     FGlobalScope:  TScope;
     FCurrentScope: TScope;
     FErrors:       TStrings;
     FOwnsErrors:   Boolean;
     FBuiltinTypes: TObjectDictionary<String, TType>;
+    FWithStack:    TList<TWithContext>;
 
     procedure InitBuiltinTypes;
 
     procedure Error(const AMsg: String; ANode: TASTNode);
 
     function ResolveType(AAstType: TASTType): TType;
-
-    function EvaluateConstValue(AExpr: TASTExpression; out AValue: TConstValue): Boolean;
 
     function  FoldExpression(var AExpr: TASTExpression): Boolean;
     procedure FoldExpressionList(AList: TObjectList<TASTExpression>);
@@ -242,6 +245,7 @@ type
 
     procedure AnalyzeStatement(AStmt:   TASTStatement);
     procedure AnalyzeBlock    (ABlock:  TASTBlock);
+    procedure AnalyzeWith     (AWith:   TASTWith);
     procedure AnalyzeAssign   (AAssign: TASTAssign);
     procedure AnalyzeIf       (AIf:     TASTIf);
     procedure AnalyzeWhile    (AWhile:  TASTWhile);
@@ -263,6 +267,8 @@ type
     constructor Create(AErrors: TStrings = nil);
     destructor  Destroy; override;
 
+    function EvaluateConstValue(AExpr: TASTExpression; out AValue: TConstValue): Boolean;
+
     procedure ImportUnitInterface(AUnit: TASTUnit);
 
     function Analyze    (AProgram: TASTProgram): Boolean;
@@ -274,7 +280,7 @@ type
   {$ENDREGION}
 
   {$REGION 'TreeShaker'}
-TTreeShaker = class
+  TTreeShaker = class
   type
     TPropSpec = record
       ReadRoutine:  String;
@@ -286,6 +292,7 @@ TTreeShaker = class
     FRoutineMap:  TDictionary<String, TASTRoutineDecl>;
     FVarMap:      TDictionary<String, TASTVarDecl>;
     FPropertyMap: TDictionary<String, TPropSpec>;
+    FWithStack:   TList<String>;
 
     procedure MarkExpression(AExpr:    TASTExpression);
     procedure MarkStatement (AStmt:    TASTStatement);
@@ -296,7 +303,8 @@ TTreeShaker = class
     destructor  Destroy; override;
 
     procedure Execute;
-  end;  {$ENDREGION}
+  end;
+  {$ENDREGION}
 
 implementation
 
@@ -516,6 +524,8 @@ begin
   FGlobalScope  := TScope.Create(nil);
   FCurrentScope := FGlobalScope;
 
+  FWithStack := TList<TWithContext>.Create;
+
   InitBuiltinTypes;
 end;
 
@@ -523,6 +533,7 @@ destructor TSemanticAnalyzer.Destroy;
 begin
   FGlobalScope.Free;
   FBuiltinTypes.Free;
+  FWithStack.Free;
 
   if FOwnsErrors then
     FErrors.Free;
@@ -761,6 +772,48 @@ begin
   if AExpr = nil then
     Exit(False);
 
+  if AExpr is TASTRange then
+    Exit(False);
+
+  if AExpr is TASTArrayLiteral then
+  begin
+    var ArrLit := TASTArrayLiteral(AExpr);
+    var Mask: Cardinal := 0;
+
+    for var Elem in ArrLit.Elements do
+    begin
+      if Elem is TASTRange then
+      begin
+        var RangeNode := TASTRange(Elem);
+        var LowVal, HighVal: TConstValue;
+
+        if EvaluateConstValue(RangeNode.LowExpr, LowVal) and EvaluateConstValue(RangeNode.HighExpr, HighVal) then
+        begin
+          for var k := LowVal.ValueInt to HighVal.ValueInt do
+            if k < 32 then
+              Mask := Mask or (1 shl k);
+        end
+        else
+          Exit(False);
+      end
+      else
+      begin
+        var ElemVal: TConstValue;
+
+        if EvaluateConstValue(Elem, ElemVal) then
+        begin
+          if ElemVal.ValueInt < 32 then
+            Mask := Mask or (1 shl ElemVal.ValueInt);
+        end
+        else
+          Exit(False);
+      end;
+    end;
+
+    AValue := TConstValue.MakeSet(Mask);
+    Exit(True);
+  end;
+
   if AExpr is TASTLiteral then
   begin
     var Lit := TASTLiteral(AExpr);
@@ -772,6 +825,7 @@ begin
       TASTLiteral.TKind.Char:    AValue := TConstValue.MakeStr  (Lit.ValueStr);
       TASTLiteral.TKind.Boolean: AValue := TConstValue.MakeBool (Lit.ValueBool);
       TASTLiteral.TKind.Nil:     AValue := TConstValue.MakePtr  (0);
+      TASTLiteral.TKind.Set:     AValue := TConstValue.MakeSet  (Lit.ValueInt);
     end;
 
     Exit(True);
@@ -1180,6 +1234,7 @@ begin
       TConstValue.TKind.Single:  AExpr := TASTLiteral.CreateFloat(ConstVal.ValueFloat, OldLine, OldCol);
       TConstValue.TKind.Boolean: AExpr := TASTLiteral.CreateBool (ConstVal.ValueBool,  OldLine, OldCol);
       TConstValue.TKind.Pointer: AExpr := TASTLiteral.CreateInt  (ConstVal.ValueInt,   OldLine, OldCol);
+      TConstValue.TKind.Set:     AExpr := TASTLiteral.CreateSet  (ConstVal.ValueInt,   OldLine, OldCol);
 
       TConstValue.TKind.String:
         if Length(ConstVal.ValueStr) = 1 then
@@ -1224,6 +1279,12 @@ begin
   if TargetType.IsSet and SourceType.IsSet then
     Exit(True);
 
+  if TargetType.IsSet and (SourceType.Kind = TType.TKind.Integer) then
+    Exit(True);
+
+  if SourceType.IsSet and (TargetType.Kind = TType.TKind.Integer) then
+    Exit(True);
+
   if (TargetType.Kind = TType.TKind.Single) and SourceType.IsInteger then
     Exit(True);
 
@@ -1257,6 +1318,11 @@ begin
     TASTLiteral.TKind.Char:    Result := FBuiltinTypes['char'];
     TASTLiteral.TKind.Boolean: Result := FBuiltinTypes['boolean'];
     TASTLiteral.TKind.Nil:     Result := FBuiltinTypes['nil'];
+    TASTLiteral.TKind.Set:
+    begin
+      Result := TType.Create(TType.TKind.Set, 'Set', 4);
+      FBuiltinTypes.Add(Format('SetLit_%p', [Pointer(Result)]), Result);
+    end;
   else
     Result := FBuiltinTypes['integer'];
   end;
@@ -1264,9 +1330,37 @@ end;
 
 function TSemanticAnalyzer.AnalyzeIdentifier(AIdent: TASTIdentifier): TType;
 begin
+  for var i := FWithStack.Count - 1 downto 0 do
+  begin
+    var RecType := FWithStack[i].RecordType;
+
+    if RecType <> nil then
+    begin
+      var Field: TType.TRecordField;
+
+      if RecType.FindField(AIdent.Name, Field) then
+        Exit(Field.&Type);
+
+      var Prop: TType.TProperty;
+
+      if RecType.FindProperty(AIdent.Name, Prop) then
+        Exit(Prop.PropType);
+
+      var MethodDecl: TASTRoutineDecl;
+
+      if (RecType.Methods <> nil) and RecType.Methods.TryGetValue(LowerCase(AIdent.Name), MethodDecl) then
+      begin
+        if MethodDecl.IsFunction and Assigned(MethodDecl.ReturnType) then
+          Exit(ResolveType(MethodDecl.ReturnType))
+        else
+          Exit(FBuiltinTypes['void']);
+      end;
+    end;
+  end;
+
   var Sym := FCurrentScope.Resolve(AIdent.Name);
 
-  if (Sym = nil) then
+  if Sym = nil then
   begin
     var SelfSym := FCurrentScope.Resolve('self');
 
@@ -1276,6 +1370,21 @@ begin
 
       if SelfSym.SymbolType.FindField(AIdent.Name, Field) then
         Exit(Field.&Type);
+
+      var Prop: TType.TProperty;
+
+      if SelfSym.SymbolType.FindProperty(AIdent.Name, Prop) then
+        Exit(Prop.PropType);
+
+      var MethodDecl: TASTRoutineDecl;
+
+      if (SelfSym.SymbolType.Methods <> nil) and SelfSym.SymbolType.Methods.TryGetValue(LowerCase(AIdent.Name), MethodDecl) then
+      begin
+        if MethodDecl.IsFunction and Assigned(MethodDecl.ReturnType) then
+          Exit(ResolveType(MethodDecl.ReturnType))
+        else
+          Exit(FBuiltinTypes['void']);
+      end;
     end;
 
     Error(Format('Undeclared identifier "%s"', [AIdent.Name]), AIdent);
@@ -1450,6 +1559,30 @@ begin
   FoldExpressionList(ACall.Arguments);
 
   CalleeLower := LowerCase(ACall.CalleeName);
+
+  if ACall.BaseExpr = nil then
+  begin
+    for var i := FWithStack.Count - 1 downto 0 do
+    begin
+      var RecType := FWithStack[i].RecordType;
+
+      if RecType <> nil then
+      begin
+        var MethodDecl: TASTRoutineDecl;
+
+        if (RecType.Methods <> nil) and RecType.Methods.TryGetValue(LowerCase(ACall.CalleeName), MethodDecl) then
+        begin
+          for var Arg in ACall.Arguments do
+            AnalyzeExpression(Arg);
+
+          if MethodDecl.IsFunction and Assigned(MethodDecl.ReturnType) then
+            Exit(ResolveType(MethodDecl.ReturnType))
+          else
+            Exit(FBuiltinTypes['void']);
+        end;
+      end;
+    end;
+  end;
 
   if ACall.BaseExpr <> nil then
   begin
@@ -1737,6 +1870,10 @@ begin
     end;
   end;
 
+  if LeftType.IsSet and RightType.IsInteger then
+    if (ABinary.Op = TASTBinary.TOp.Add) or (ABinary.Op = TASTBinary.TOp.Subtract) then
+      Exit(LeftType);
+
   case ABinary.Op of
      TASTBinary.TOp.Add:
     begin
@@ -1853,6 +1990,7 @@ begin
       TType.TKind.ShortInt: AExpr.ResolvedType := TASTType.Create(TASTType.TKind.ShortInt);
       TType.TKind.SmallInt: AExpr.ResolvedType := TASTType.Create(TASTType.TKind.SmallInt);
       TType.TKind.Enum:     AExpr.ResolvedType := TASTType.Create(TASTType.TKind.Enum);
+      TType.TKind.Set:      AExpr.ResolvedType := TASTType.Create(TASTType.TKind.Set);
 
       TType.TKind.Pointer:
       begin
@@ -1997,12 +2135,47 @@ begin
     AnalyzeStatement(Stmt);
 end;
 
+procedure TSemanticAnalyzer.AnalyzeWith(AWith: TASTWith);
+var
+  PushedCount: Integer;
+begin
+  PushedCount := 0;
+
+  for var Expr in AWith.Expressions do
+  begin
+    var BaseType := AnalyzeExpression(Expr);
+
+    if (BaseType.Kind = TType.TKind.Pointer) and (BaseType.ElementType <> nil) then
+      BaseType := BaseType.ElementType;
+
+    if BaseType.Kind <> TType.TKind.Record then
+    begin
+      Error('Expression in "with" statement must be a record or pointer to record', Expr);
+      Continue;
+    end;
+
+    var Ctx: TWithContext;
+
+    Ctx.RecordType := BaseType;
+    FWithStack.Add(Ctx);
+    Inc(PushedCount);
+  end;
+
+  try
+    AnalyzeStatement(AWith.Body);
+  finally
+    for var i := 1 to PushedCount do
+      FWithStack.Delete(FWithStack.Count - 1);
+  end;
+end;
+
 procedure TSemanticAnalyzer.AnalyzeStatement(AStmt: TASTStatement);
 begin
   if AStmt = nil then
     Exit;
 
        if AStmt is TASTBlock    then AnalyzeBlock   (TASTBlock   (AStmt))
+  else if AStmt is TASTWith     then AnalyzeWith    (TASTWith    (AStmt))
   else if AStmt is TASTAssign   then AnalyzeAssign  (TASTAssign  (AStmt))
   else if AStmt is TASTIf       then AnalyzeIf      (TASTIf      (AStmt))
   else if AStmt is TASTWhile    then AnalyzeWhile   (TASTWhile   (AStmt))
@@ -2039,7 +2212,17 @@ begin
     if ConstDecl.ConstType <> nil then
       ValType := ResolveType(ConstDecl.ConstType)
     else
-      ValType := AnalyzeExpression(ConstDecl.Value);
+    begin
+      var ConstVal: TConstValue;
+
+      if EvaluateConstValue(ConstDecl.Value, ConstVal) and (ConstVal.Kind = TConstValue.TKind.Set) then
+      begin
+        ValType := TType.Create(TType.TKind.Set, 'Set', 4);
+        FBuiltinTypes.Add(Format('SetConst_%p', [Pointer(ValType)]), ValType);
+      end
+      else
+        ValType := AnalyzeExpression(ConstDecl.Value);
+    end;
 
     var Sym := TSymbol.Create(ConstDecl.Name, TSymbol.TKind.Constant, ValType);
 
@@ -2430,10 +2613,10 @@ constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
 
             Spec.ReadRoutine  := TD.Name + '_' + Prop.ReadSpec;
             Spec.WriteRoutine := TD.Name + '_' + Prop.WriteSpec;
-
             FPropertyMap.AddOrSetValue(LowerCase(TD.Name + '_' + Prop.Name), Spec);
           end;
       end
+
       else if Decl is TASTVarDecl then
         for var Name in TASTVarDecl(Decl).Names do
           FVarMap.AddOrSetValue(LowerCase(Name), TASTVarDecl(Decl));
@@ -2447,6 +2630,7 @@ begin
   FRoutineMap  := TDictionary<String, TASTRoutineDecl>.Create;
   FVarMap      := TDictionary<String, TASTVarDecl>.Create;
   FPropertyMap := TDictionary<String, TPropSpec>.Create;
+  FWithStack   := TList<String>.Create;
 
   if FUnits <> nil then
     for var U in FUnits do
@@ -2460,6 +2644,7 @@ end;
 
 destructor TTreeShaker.Destroy;
 begin
+  FWithStack.Free;
   FPropertyMap.Free;
   FRoutineMap.Free;
   FVarMap.Free;
@@ -2485,14 +2670,37 @@ begin
 
   if AExpr is TASTIdentifier then
   begin
+    var IdentName := TASTIdentifier(AExpr).Name;
+
+    for var i := FWithStack.Count - 1 downto 0 do
+    begin
+      var TypeName := FWithStack[i];
+      var Key := LowerCase(TypeName + '_' + IdentName);
+
+      var PropSpec: TPropSpec;
+
+      if FPropertyMap.TryGetValue(Key, PropSpec) then
+      begin
+        var GetterRoutine: TASTRoutineDecl;
+
+        if FRoutineMap.TryGetValue(LowerCase(PropSpec.ReadRoutine), GetterRoutine) then
+          MarkRoutine(GetterRoutine);
+      end;
+
+      var MethodRoutine: TASTRoutineDecl;
+
+      if FRoutineMap.TryGetValue(Key, MethodRoutine) then
+        MarkRoutine(MethodRoutine);
+    end;
+
     var VarDecl: TASTVarDecl;
 
-    if FVarMap.TryGetValue(LowerCase(TASTIdentifier(AExpr).Name), VarDecl) then
+    if FVarMap.TryGetValue(LowerCase(IdentName), VarDecl) then
       VarDecl.IsUsed := True;
 
     var Routine: TASTRoutineDecl;
 
-    if FRoutineMap.TryGetValue(LowerCase(TASTIdentifier(AExpr).Name), Routine) then
+    if FRoutineMap.TryGetValue(LowerCase(IdentName), Routine) then
       MarkRoutine(Routine);
   end
 
@@ -2511,7 +2719,20 @@ begin
 
       if BaseType <> nil then
         Callee := BaseType.TypeName + '_' + Call.CalleeName;
-    end;
+    end
+
+    else
+      for var i := FWithStack.Count - 1 downto 0 do
+      begin
+        var TypeName := FWithStack[i];
+        var CandidateKey := LowerCase(TypeName + '_' + Call.CalleeName);
+
+        if FRoutineMap.ContainsKey(CandidateKey) then
+        begin
+          Callee := CandidateKey;
+          Break;
+        end;
+      end;
 
     if FRoutineMap.TryGetValue(LowerCase(Callee), Routine) then
       MarkRoutine(Routine);
@@ -2599,6 +2820,35 @@ begin
   if AStmt is TASTBlock then
     MarkBlock(TASTBlock(AStmt))
 
+  else if AStmt is TASTWith then
+  begin
+    var WithStmt := TASTWith(AStmt);
+    var PushedCount := 0;
+
+    for var Expr in WithStmt.Expressions do
+    begin
+      MarkExpression(Expr);
+
+      var BaseType := Expr.ResolvedType;
+
+      if (BaseType <> nil) and (BaseType.Kind = TASTType.TKind.Pointer) and (BaseType.ElementType <> nil) then
+        BaseType := BaseType.ElementType;
+
+      if BaseType <> nil then
+      begin
+        FWithStack.Add(BaseType.TypeName);
+        Inc(PushedCount);
+      end;
+    end;
+
+    try
+      MarkStatement(WithStmt.Body);
+    finally
+      for var i := 1 to PushedCount do
+        FWithStack.Delete(FWithStack.Count - 1);
+    end;
+  end
+
   else if AStmt is TASTAssign then
   begin
     var Assign := TASTAssign(AStmt);
@@ -2615,6 +2865,26 @@ begin
           BaseType := BaseType.ElementType;
 
         var Key := LowerCase(BaseType.TypeName + '_' + MemAcc.MemberName);
+        var PropSpec: TPropSpec;
+
+        if FPropertyMap.TryGetValue(Key, PropSpec) then
+        begin
+          var SetterRoutine: TASTRoutineDecl;
+
+          if FRoutineMap.TryGetValue(LowerCase(PropSpec.WriteRoutine), SetterRoutine) then
+            MarkRoutine(SetterRoutine);
+        end;
+      end;
+    end
+
+    else if Assign.Target is TASTIdentifier then
+    begin
+      var TargetName := TASTIdentifier(Assign.Target).Name;
+
+      for var i := FWithStack.Count - 1 downto 0 do
+      begin
+        var TypeName := FWithStack[i];
+        var Key := LowerCase(TypeName + '_' + TargetName);
         var PropSpec: TPropSpec;
 
         if FPropertyMap.TryGetValue(Key, PropSpec) then
@@ -2667,7 +2937,6 @@ begin
   else if AStmt is TASTCase then
   begin
     var CaseStmt := TASTCase(AStmt);
-
     MarkExpression(CaseStmt.Selector);
 
     for var Branch in CaseStmt.Branches do

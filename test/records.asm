@@ -35,6 +35,7 @@ TPoint_SetY:
 	ret
 
 Main:
+	enter	0, $8
 
 	; records.pas(38): for i := 0 to 2 do
 	mov	r0, 0
@@ -45,7 +46,13 @@ Main:
 	cmp	r0, 2
 	jg	@endfor_3
 
-	; records.pas(40): p[i].Init(10 + i, 20 + i);
+	; records.pas(40): with p[i] do
+	ld	r0, _var_i
+	shl	r0, 3
+	lea	r0, r0, _var_p
+	sto	bp, r0, -4
+
+	; records.pas(42): Init(10 + i, 20 + i);
 	mov	r0, 20
 	push	r0
 	ld	r0, _var_i
@@ -60,22 +67,16 @@ Main:
 	pop	r0
 	add	r0, r1
 	push	r0
-	ld	r0, _var_i
-	shl	r0, 3
-	lea	r0, r0, _var_p
+	ldo	r0, bp, -4
 	push	r0
 	popr	3
 	call	TPoint_Init
 
-	; records.pas(42): Writeln('%d: %d, %d', i, p[i].x, p[i].y);
-	ld	r0, _var_i
-	shl	r0, 3
-	lea	r0, r0, _var_p
+	; records.pas(44): Writeln('%d: %d, %d', i, x, y);
+	ldo	r0, bp, -4
 	call	TPoint_GetY
 	push	r0
-	ld	r0, _var_i
-	shl	r0, 3
-	lea	r0, r0, _var_p
+	ldo	r0, bp, -4
 	ldo	r0, r0, 0
 	push	r0
 	ld	r0, _var_i
@@ -85,30 +86,21 @@ Main:
 	popr	4
 	syscall	$1
 
-	; records.pas(44): p[i].y := p[i].x + p[i].y;
-	ld	r0, _var_i
-	shl	r0, 3
-	lea	r0, r0, _var_p
+	; records.pas(46): y := x + y;
+	ldo	r0, bp, -4
 	ldo	r0, r0, 0
 	push	r0
-	ld	r0, _var_i
-	shl	r0, 3
-	lea	r0, r0, _var_p
+	ldo	r0, bp, -4
 	call	TPoint_GetY
 	mov	r1, r0
 	pop	r0
 	add	r0, r1
-	push	r0
-	ld	r0, _var_i
-	shl	r0, 3
-	lea	r0, r0, _var_p
-	pop	r1
+	mov	r1, r0
+	ldo	r0, bp, -4
 	call	TPoint_SetY
 
-	; records.pas(46): Writeln('  %d', p[i].y);
-	ld	r0, _var_i
-	shl	r0, 3
-	lea	r0, r0, _var_p
+	; records.pas(48): Writeln('  %d', y);
+	ldo	r0, bp, -4
 	call	TPoint_GetY
 	push	r0
 	mov	r0, _strconst_2
@@ -121,6 +113,42 @@ Main:
 	st	r1, r0
 	jmp	@for_1
 @endfor_3:
+
+	; records.pas(52): for i := 0 to 2 do
+	mov	r0, 0
+	mov	r1, _var_i
+	st	r1, r0
+@for_4:
+	ld	r0, _var_i
+	cmp	r0, 2
+	jg	@endfor_6
+
+	; records.pas(53): with p[i] do
+	ld	r0, _var_i
+	shl	r0, 3
+	lea	r0, r0, _var_p
+	sto	bp, r0, -8
+
+	; records.pas(54): Writeln('%d: %d, %d', i, fx, fy);
+	ldo	r1, bp, -8
+	ldo	r0, r1, 4
+	push	r0
+	ldo	r1, bp, -8
+	ldo	r0, r1, 0
+	push	r0
+	ld	r0, _var_i
+	push	r0
+	mov	r0, _strconst_1
+	push	r0
+	popr	4
+	syscall	$1
+	ld	r0, _var_i
+	add	r0, 1
+	mov	r1, _var_i
+	st	r1, r0
+	jmp	@for_4
+@endfor_6:
+	leave
 	ret
 
 
