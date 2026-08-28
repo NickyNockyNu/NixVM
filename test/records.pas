@@ -5,8 +5,19 @@ program records targets Test;
 {$BASE $4E0}
 
 type
+  TUnused = record
+    a: Integer;
+    
+    function GetA: Integer;
+    begin
+      Result := a;
+    end;
+    
+    property AA: Integer read GetA;
+  end;
+
   TPoint = record
-  //private
+  private
     fx, fy: Integer;
     
     function GetY: Integer;
@@ -15,7 +26,7 @@ type
     end;
     
     procedure SetY(AValue: Integer);
-  //public 
+  public 
     procedure Init(x, y: Integer);
     begin
       fx := x;
@@ -32,9 +43,13 @@ begin
 end;
 
 var
+  a: TUnused;
   i: Integer;
   p: array[0..2] of TPoint;
 begin
+  a.a := 42;
+  Writeln('%d', a.AA);
+  
   for i := 0 to 2 do
   begin
     with p[i] do

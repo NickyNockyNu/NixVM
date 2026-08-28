@@ -1358,48 +1358,63 @@ begin
     end;
   end;
 
-  var Sym := FCurrentScope.Resolve(AIdent.Name);
+  var LocalSym := FCurrentScope.ResolveLocal(AIdent.Name);
 
-  if Sym = nil then
+  if LocalSym <> nil then
   begin
-    var SelfSym := FCurrentScope.Resolve('self');
-
-    if (SelfSym <> nil) and (SelfSym.SymbolType <> nil) and (SelfSym.SymbolType.Kind = TType.TKind.Record) then
+    if LocalSym.Kind = TSymbol.TKind.Function then
     begin
-      var Field: TType.TRecordField;
-
-      if SelfSym.SymbolType.FindField(AIdent.Name, Field) then
-        Exit(Field.&Type);
-
-      var Prop: TType.TProperty;
-
-      if SelfSym.SymbolType.FindProperty(AIdent.Name, Prop) then
-        Exit(Prop.PropType);
-
-      var MethodDecl: TASTRoutineDecl;
-
-      if (SelfSym.SymbolType.Methods <> nil) and SelfSym.SymbolType.Methods.TryGetValue(LowerCase(AIdent.Name), MethodDecl) then
-      begin
-        if MethodDecl.IsFunction and Assigned(MethodDecl.ReturnType) then
-          Exit(ResolveType(MethodDecl.ReturnType))
-        else
-          Exit(FBuiltinTypes['void']);
-      end;
+      if Assigned(LocalSym.SymbolType) and Assigned(LocalSym.SymbolType.ReturnType) then
+        Exit(LocalSym.SymbolType.ReturnType)
+      else
+        Exit(FBuiltinTypes['void']);
     end;
 
-    Error(Format('Undeclared identifier "%s"', [AIdent.Name]), AIdent);
-    Exit(FBuiltinTypes['integer']);
+    Exit(LocalSym.SymbolType);
   end;
 
-  if Sym.Kind = TSymbol.TKind.Function then
+  var SelfSym := FCurrentScope.Resolve('self');
+
+  if (SelfSym <> nil) and (SelfSym.SymbolType <> nil) and (SelfSym.SymbolType.Kind = TType.TKind.Record) then
   begin
-    if Assigned(Sym.SymbolType) and Assigned(Sym.SymbolType.ReturnType) then
-      Exit(Sym.SymbolType.ReturnType)
-    else
-      Exit(FBuiltinTypes['void']);
+    var Field: TType.TRecordField;
+
+    if SelfSym.SymbolType.FindField(AIdent.Name, Field) then
+      Exit(Field.&Type);
+
+    var Prop: TType.TProperty;
+
+    if SelfSym.SymbolType.FindProperty(AIdent.Name, Prop) then
+      Exit(Prop.PropType);
+
+    var MethodDecl: TASTRoutineDecl;
+
+    if (SelfSym.SymbolType.Methods <> nil) and SelfSym.SymbolType.Methods.TryGetValue(LowerCase(AIdent.Name), MethodDecl) then
+    begin
+      if MethodDecl.IsFunction and Assigned(MethodDecl.ReturnType) then
+        Exit(ResolveType(MethodDecl.ReturnType))
+      else
+        Exit(FBuiltinTypes['void']);
+    end;
   end;
 
-  Result := Sym.SymbolType;
+  var GlobalSym := FCurrentScope.Resolve(AIdent.Name);
+
+  if GlobalSym <> nil then
+  begin
+    if GlobalSym.Kind = TSymbol.TKind.Function then
+    begin
+      if Assigned(GlobalSym.SymbolType) and Assigned(GlobalSym.SymbolType.ReturnType) then
+        Exit(GlobalSym.SymbolType.ReturnType)
+      else
+        Exit(FBuiltinTypes['void']);
+    end;
+
+    Exit(GlobalSym.SymbolType);
+  end;
+
+  Error(Format('Undeclared identifier "%s"', [AIdent.Name]), AIdent);
+  Result := FBuiltinTypes['integer'];
 end;
 
 function TSemanticAnalyzer.AnalyzeMemberAccess(AMember: TASTMemberAccess): TType;
