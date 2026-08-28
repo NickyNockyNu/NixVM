@@ -5,7 +5,7 @@ Main:
 
 	; helloworld.pas(11): Writeln('Hello, World!');
 	mov	r0, _strconst_1
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	ret
 
 

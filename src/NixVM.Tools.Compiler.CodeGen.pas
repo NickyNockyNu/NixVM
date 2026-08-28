@@ -90,6 +90,7 @@ type
     procedure GenWhile    (AWhile:  TASTWhile);
     procedure GenRepeat   (ARepeat: TASTRepeat);
     procedure GenFor      (AFor:    TASTFor);
+    procedure GenForIn    (AForIn:  TASTForIn);
     procedure GenCase     (ACase:   TASTCase);
     procedure GenProcCall (ACall:   TASTProcCall);
 
@@ -358,7 +359,7 @@ begin
   if Sym.Kind = TSymbol.TKind.Function then
   begin
     if Sym.IsSysCall then
-      FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(Sym.SysCallID))
+      FIR.AddSysCall(Sym.SysCallID)
     else
       FIR.AddInstrRImm(TCPUInstruction.TOpCode.call, TLabelString(Sym.Name));
 
@@ -748,7 +749,7 @@ begin
     FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TRegisters.ID.R0);
     FIR.AddInstrR1(TCPUInstruction.TOpCode.pop, TRegisters.ID.R0);
 
-    FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(TSysCalls.ID.StringConcat));
+    FIR.AddSysCall(TSysCalls.ID.StringConcat);
 
     Exit;
   end;
@@ -762,7 +763,7 @@ begin
     FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TRegisters.ID.R0);
     FIR.AddInstrR1(TCPUInstruction.TOpCode.pop, TRegisters.ID.R0);
 
-    FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(TSysCalls.ID.StringCompare));
+    FIR.AddSysCall(TSysCalls.ID.StringCompare);
     FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.cmp, TRegisters.ID.R0, 0);
 
     case ABinary.Op of
@@ -1093,9 +1094,9 @@ begin
           FIR.AddInstrRn(TCPUInstruction.TOpCode.popr, TotalRegs);
 
         if CalleeLower = 'format' then
-          FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(TSysCalls.ID.StringFormat))
+          FIR.AddSysCall(TSysCalls.ID.StringFormat)
         else
-          FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(TSysCalls.ID.DebugPrint));
+          FIR.AddSysCall(TSysCalls.ID.DebugPrint);
       finally
         ArgList.Free;
       end;
@@ -1109,7 +1110,7 @@ begin
     if ACall.Arguments.Count > 0 then
     begin
       GenExpression(ACall.Arguments[0]);
-      FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(TSysCalls.ID.StringLength));
+      FIR.AddSysCall(TSysCalls.ID.StringLength);
     end;
 
     Exit;
@@ -1130,7 +1131,7 @@ begin
 
       FIR.AddInstrRn(TCPUInstruction.TOpCode.popr, 3);
 
-      FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(TSysCalls.ID.StringCopy));
+      FIR.AddSysCall(TSysCalls.ID.StringCopy);
     end;
 
     Exit;
@@ -1281,7 +1282,7 @@ begin
       FIR.AddInstrRn(TCPUInstruction.TOpCode.popr, RegArgs);
 
     if (RoutineSym <> nil) and RoutineSym.IsSysCall then
-      FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(RoutineSym.SysCallID))
+      FIR.AddSysCall(RoutineSym.SysCallID)
     else
       FIR.AddInstrRImm(TCPUInstruction.TOpCode.call, TLabelString(ACall.CalleeName));
 
@@ -1658,7 +1659,7 @@ begin
       FIR.AddInstrRn(TCPUInstruction.TOpCode.popr, 2);
 
       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R2, StructSize);
-      FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(TSysCalls.ID.MemoryCopy));
+      FIR.AddSysCall(TSysCalls.ID.MemoryCopy);
     end;
 
     Exit;
@@ -1852,6 +1853,285 @@ begin
   FIR.AddLabel(TLabelString(Loop.EndLabel));
 end;
 
+procedure TCodeGenerator.GenForIn(AForIn: TASTForIn);
+var
+  Loop: TLoopContext;
+  LoopVarSym: TSymbol;
+  CollType: TType;
+  IsArray, IsSet, IsString: Boolean;
+begin
+  LoopVarSym := FCurrentScope.Resolve(AForIn.LoopVar);
+
+  if LoopVarSym = nil then
+    Exit;
+
+  CollType := nil;
+
+  if (AForIn.Collection.ResolvedType <> nil) and (AForIn.Collection.ResolvedType.TypeName <> '') then
+  begin
+    var Sym := FAnalyzer.GlobalScope.Resolve(AForIn.Collection.ResolvedType.TypeName);
+
+    if (Sym <> nil) and (Sym.SymbolType <> nil) then
+      CollType := Sym.SymbolType;
+  end;
+
+  if (CollType = nil) and (AForIn.Collection is TASTIdentifier) then
+  begin
+    var Sym := FCurrentScope.Resolve(TASTIdentifier(AForIn.Collection).Name);
+
+    if (Sym <> nil) and (Sym.SymbolType <> nil) then
+      CollType := Sym.SymbolType;
+  end;
+
+  IsArray  := False;
+  IsSet    := False;
+  IsString := False;
+
+  if AForIn.Collection.ResolvedType <> nil then
+  begin
+    IsSet    :=  AForIn.Collection.ResolvedType.IsSet;
+    IsString :=  AForIn.Collection.ResolvedType.IsString;
+    IsArray  := (AForIn.Collection.ResolvedType.Kind = TASTType.TKind.Array);
+  end;
+
+  if CollType <> nil then
+  begin
+    if CollType.IsSet then
+      IsSet := True;
+
+    if CollType.IsString then
+      IsString := True;
+
+    if CollType.Kind = TType.TKind.Array then
+      IsArray := True;
+  end;
+
+  Loop.StartLabel    := GenUniqueLabel('@forin_start');
+  Loop.ContinueLabel := GenUniqueLabel('@forin_next');
+  Loop.EndLabel      := GenUniqueLabel('@forin_end');
+
+  if IsSet then
+  begin
+    GenExpression(AForIn.Collection);
+    FCurrentScope.LocalSize := FCurrentScope.LocalSize + 4;
+    var SetSlot := -Integer(FCurrentScope.LocalSize);
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(SetSlot));
+
+    FCurrentScope.LocalSize := FCurrentScope.LocalSize + 4;
+    var CounterSlot := -Integer(FCurrentScope.LocalSize);
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, 0);
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(CounterSlot));
+
+    FIR.AddLabel(TLabelString(Loop.StartLabel));
+
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(CounterSlot));
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.cmp, TRegisters.ID.R0, 32);
+    FIR.AddInstrImm(TCPUInstruction.TOpCode.jge, TLabelString(Loop.EndLabel));
+
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, 1);
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.shl, TRegisters.ID.R1, TRegisters.ID.R0);
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(SetSlot));
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.btst, TRegisters.ID.R0, TRegisters.ID.R1);
+    FIR.AddInstrImm(TCPUInstruction.TOpCode.je, TLabelString(Loop.ContinueLabel));
+
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(CounterSlot));
+    if LoopVarSym.Storage = TSymbol.TStorage.Local then
+      FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stob, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(LoopVarSym.StackOffset))
+    else
+    begin
+      FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TLabelString(LoopVarSym.GlobalLabel));
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.stb, TRegisters.ID.R1, TRegisters.ID.R0);
+    end;
+
+    FLoopStack.Push(Loop);
+    try
+      GenStatement(AForIn.Body);
+    finally
+      FLoopStack.Pop;
+    end;
+
+    FIR.AddLabel(TLabelString(Loop.ContinueLabel));
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(CounterSlot));
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, 1);
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(CounterSlot));
+    FIR.AddInstrRImm(TCPUInstruction.TOpCode.jmp, TLabelString(Loop.StartLabel));
+
+    FIR.AddLabel(TLabelString(Loop.EndLabel));
+
+    Exit;
+  end;
+
+  if IsString then
+  begin
+    GenExpression(AForIn.Collection);
+    FCurrentScope.LocalSize := FCurrentScope.LocalSize + 4;
+    var StrSlot := -Integer(FCurrentScope.LocalSize);
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(StrSlot));
+
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(StrSlot));
+    FIR.AddSysCall(TSysCalls.ID.StringLength);
+    FCurrentScope.LocalSize := FCurrentScope.LocalSize + 4;
+    var LenSlot := -Integer(FCurrentScope.LocalSize);
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(LenSlot));
+
+    FCurrentScope.LocalSize := FCurrentScope.LocalSize + 4;
+
+    var IdxSlot := -Integer(FCurrentScope.LocalSize);
+
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, 1);
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(IdxSlot));
+
+    FIR.AddLabel(TLabelString(Loop.StartLabel));
+
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(IdxSlot));
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R1, TRegisters.ID.BP, Cardinal(LenSlot));
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.cmp, TRegisters.ID.R0, TRegisters.ID.R1);
+    FIR.AddInstrImm(TCPUInstruction.TOpCode.jg, TLabelString(Loop.EndLabel));
+
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(IdxSlot));
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.sub, TRegisters.ID.R0, 1);
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R1, TRegisters.ID.BP, Cardinal(StrSlot));
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, TRegisters.ID.R1);
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ldb, TRegisters.ID.R0, TRegisters.ID.R0);
+
+    if LoopVarSym.Storage = TSymbol.TStorage.Local then
+      FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stob, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(LoopVarSym.StackOffset))
+    else
+    begin
+      FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TLabelString(LoopVarSym.GlobalLabel));
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.stb, TRegisters.ID.R1, TRegisters.ID.R0);
+    end;
+
+    FLoopStack.Push(Loop);
+    try
+      GenStatement(AForIn.Body);
+    finally
+      FLoopStack.Pop;
+    end;
+
+    FIR.AddLabel(TLabelString(Loop.ContinueLabel));
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(IdxSlot));
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, 1);
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(IdxSlot));
+    FIR.AddInstrRImm(TCPUInstruction.TOpCode.jmp, TLabelString(Loop.StartLabel));
+
+    FIR.AddLabel(TLabelString(Loop.EndLabel));
+
+    Exit;
+  end;
+
+  var LowBound  := 0;
+  var HighBound := 0;
+  var ElemSize  := 4;
+  var CollSym: TSymbol := nil;
+
+  if AForIn.Collection is TASTIdentifier then
+    CollSym := FCurrentScope.Resolve(TASTIdentifier(AForIn.Collection).Name);
+
+  if (CollType <> nil) and (CollType.Kind = TType.TKind.Array) then
+  begin
+    LowBound  := CollType.SubrangeLow;
+    HighBound := CollType.SubrangeHigh;
+
+    if CollType.ElementType <> nil then
+      ElemSize := CollType.ElementType.Size;
+  end;
+
+  FCurrentScope.LocalSize := FCurrentScope.LocalSize + 4;
+  var IdxSlot := -Integer(FCurrentScope.LocalSize);
+
+  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, Cardinal(LowBound));
+  FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(IdxSlot));
+
+  FIR.AddLabel(TLabelString(Loop.StartLabel));
+
+  FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(IdxSlot));
+  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.cmp, TRegisters.ID.R0, Cardinal(HighBound));
+  FIR.AddInstrImm(TCPUInstruction.TOpCode.jg, TLabelString(Loop.EndLabel));
+
+  FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(IdxSlot));
+
+  if LowBound > 0 then
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.sub, TRegisters.ID.R0, Cardinal(LowBound));
+
+  case ElemSize of
+    1:  ;
+    2:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 1);
+    4:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 2);
+    8:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 3);
+    12: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, TRegisters.ID.R0, 12);
+    16: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 4);
+  else
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, TRegisters.ID.R0, ElemSize);
+  end;
+
+  if (CollSym <> nil) and (CollSym.Storage = TSymbol.TStorage.Global) then
+    FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, TRegisters.ID.R0, TRegisters.ID.R0, TLabelString(CollSym.GlobalLabel))
+
+  else if (CollSym <> nil) and (CollSym.Storage = TSymbol.TStorage.Local) then
+  begin
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, TRegisters.ID.BP);
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, Cardinal(CollSym.StackOffset));
+  end
+
+  else
+  begin
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TRegisters.ID.R0);
+    GenAddressOf(AForIn.Collection);
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, TRegisters.ID.R1);
+  end;
+
+  if (CollType <> nil) and (CollType.ElementType <> nil) and (CollType.ElementType.Kind = TType.TKind.Record) then
+  begin
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TRegisters.ID.R0);
+
+    if LoopVarSym.Storage = TSymbol.TStorage.Local then
+      FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(LoopVarSym.StackOffset))
+    else
+      FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(LoopVarSym.GlobalLabel));
+
+    FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TRegisters.ID.R1);
+    FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
+
+    FIR.AddInstrRn(TCPUInstruction.TOpCode.popr, 2);
+    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R2, ElemSize);
+    FIR.AddSysCall(TSysCalls.ID.MemoryCopy);
+  end
+  else
+  begin
+    case ElemSize of
+      1: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ldb, TRegisters.ID.R0, TRegisters.ID.R0);
+      2: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ldw, TRegisters.ID.R0, TRegisters.ID.R0);
+    else
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ld,  TRegisters.ID.R0, TRegisters.ID.R0);
+    end;
+
+    if LoopVarSym.Storage = TSymbol.TStorage.Local then
+      FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(LoopVarSym.StackOffset))
+    else
+    begin
+      FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TLabelString(LoopVarSym.GlobalLabel));
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.st, TRegisters.ID.R1, TRegisters.ID.R0);
+    end;
+  end;
+
+  FLoopStack.Push(Loop);
+  try
+    GenStatement(AForIn.Body);
+  finally
+    FLoopStack.Pop;
+  end;
+
+  FIR.AddLabel(TLabelString(Loop.ContinueLabel));
+  FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(IdxSlot));
+  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, 1);
+  FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(IdxSlot));
+  FIR.AddInstrRImm(TCPUInstruction.TOpCode.jmp, TLabelString(Loop.StartLabel));
+
+  FIR.AddLabel(TLabelString(Loop.EndLabel));
+end;
+
 procedure TCodeGenerator.GenCase(ACase: TASTCase);
 var
   EndLabel: String;
@@ -1998,6 +2278,7 @@ begin
   else if AStmt is TASTWhile    then GenWhile   (TASTWhile   (AStmt))
   else if AStmt is TASTRepeat   then GenRepeat  (TASTRepeat  (AStmt))
   else if AStmt is TASTFor      then GenFor     (TASTFor     (AStmt))
+  else if AStmt is TASTForIn    then GenForIn   (TASTForIn   (AStmt))
   else if AStmt is TASTCase     then GenCase    (TASTCase    (AStmt))
   else if AStmt is TASTProcCall then GenProcCall(TASTProcCall(AStmt))
   else if AStmt is TASTBreak    then GenBreak
@@ -2046,7 +2327,7 @@ var
     if AType.IsString then
     begin
       FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(ABaseOffset));
-      FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(TSysCalls.ID.StringDispose));
+      FIR.AddSysCall(TSysCalls.ID.StringDispose);
     end
 
     else if AType.Kind = TType.TKind.Record then
@@ -2422,12 +2703,25 @@ begin
 end;
 
 procedure TCodeGenerator.GenProgram;
+  procedure SwitchSourceContext(const ASource, AFile: String);
+  begin
+    FFileName := ExtractFileName(AFile);
+    if FFileName = '' then
+      FFileName := 'Source.pas';
+
+    FSourceLines.Clear;
+    if ASource <> '' then
+      FSourceLines.Text := ASource;
+
+    FLastLine := 0;
+  end;
+
   procedure EmitTypeMethods(ADecls: TObjectList<TASTDeclaration>);
   begin
     for var Decl in ADecls do
       if Decl is TASTTypeDecl then
         for var MNode in TASTTypeDecl(Decl).DeclType.RecordMethods do
-          if (MNode is TASTRoutineDecl) and (TASTRoutineDecl(MNode).Body <> nil) and TASTRoutineDecl(MNode).IsUsed then
+          if (MNode is TASTRoutineDecl) and (TASTRoutineDecl(MNode).Body <> nil) and (not TASTRoutineDecl(MNode).IsForward) and TASTRoutineDecl(MNode).IsUsed then
             GenRoutine(TASTRoutineDecl(MNode));
   end;
 
@@ -2436,23 +2730,35 @@ begin
   FIR.AddInstr(TCPUInstruction.TOpCode.halt);
 
   if FUnits <> nil then
-  begin
     for var U in FUnits do
     begin
+      SwitchSourceContext(U.Source, U.FileName);
+
       EmitTypeMethods(U.InterfaceDecls);
       EmitTypeMethods(U.ImplementationDecls);
 
       for var Decl in U.ImplementationDecls do
-        if (Decl is TASTRoutineDecl) and Decl.IsUsed then
-          GenRoutine(TASTRoutineDecl(Decl));
+        if (Decl is TASTRoutineDecl) then
+        begin
+          var R := TASTRoutineDecl(Decl);
+
+          if (not R.IsForward) and (R.Body <> nil) and R.IsUsed then
+            GenRoutine(R);
+        end;
     end;
-  end;
+
+  SwitchSourceContext(FProgram.Source, FProgram.FileName);
 
   EmitTypeMethods(FProgram.Declarations);
 
   for var Decl in FProgram.Declarations do
-    if (Decl is TASTRoutineDecl) and Decl.IsUsed then
-      GenRoutine(TASTRoutineDecl(Decl));
+    if (Decl is TASTRoutineDecl) then
+    begin
+      var R := TASTRoutineDecl(Decl);
+
+      if (not R.IsForward) and (R.Body <> nil) and R.IsUsed then
+        GenRoutine(R);
+    end;
 
   FIR.AddBlankLine;
   FIR.AddLabel('Main');
@@ -2462,6 +2768,7 @@ begin
 
   var MainBodyIR := TIRList.Create;
   var OldIR := FIR;
+
   FIR := MainBodyIR;
 
   try

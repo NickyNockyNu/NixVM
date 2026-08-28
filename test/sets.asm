@@ -14,12 +14,14 @@ Test:
 	mov	r0, 96
 	mov	r1, r0
 	pop	r0
-	cmp	r0, 0
+	mov	r2, 1
+	shl	r2, r0
+	btst	r1, r2
 	je	@endif_2
 
 	; sets.pas(22): Writeln('Weekend!');
 	mov	r0, _strconst_1
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 @endif_2:
 
 	; sets.pas(24): Work := [TDays.Tue..TDays.Wed, TDays.Fri, TDays.Sun];
@@ -27,6 +29,7 @@ Test:
 	sto	bp, r0, -8
 
 	; sets.pas(25): Work := Work - [TDays.Sun];
+	ldo	r0, bp, -8
 	push	r0
 	mov	r0, 64
 	mov	r1, r0
@@ -40,13 +43,17 @@ Test:
 	ldo	r0, bp, -8
 	mov	r1, r0
 	pop	r0
+	mov	r2, 1
+	shl	r2, r0
+	btst	r1, r2
+	setne	r0
 	not	r0, r0
 	cmp	r0, 0
 	je	@endif_4
 
 	; sets.pas(28): Writeln('we dont work sundays!');
 	mov	r0, _strconst_2
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 @endif_4:
 
 	; sets.pas(30): case Day of
@@ -60,20 +67,21 @@ Test:
 
 	; sets.pas(32): Writeln('YAWN! Monday');
 	mov	r0, _strconst_3
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	jmp	@endcase_5
 @case_next_7:
 	ldo	r0, sp, 0
 	cmp	r0, 1
-	jl	@case_next_9
+	jl	@skip_range_12
 	cmp	r0, 4
 	jle	@case_branch_8
+@skip_range_12:
 	jmp	@case_next_9
 @case_branch_8:
 
 	; sets.pas(35): Writeln('Week day');
 	mov	r0, _strconst_4
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	jmp	@endcase_5
 @case_next_9:
 	ldo	r0, sp, 0
@@ -87,13 +95,13 @@ Test:
 
 	; sets.pas(38): Writeln('Weekend');
 	mov	r0, _strconst_5
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	jmp	@endcase_5
 @case_next_11:
 
 	; sets.pas(40): Writeln('Time and space is broken');
 	mov	r0, _strconst_6
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 @endcase_5:
 	pop	r0
 	leave

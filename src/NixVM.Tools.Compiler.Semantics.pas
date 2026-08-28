@@ -251,6 +251,7 @@ type
     procedure AnalyzeWhile    (AWhile:  TASTWhile);
     procedure AnalyzeRepeat   (ARepeat: TASTRepeat);
     procedure AnalyzeFor      (AFor:    TASTFor);
+    procedure AnalyzeForIn    (AForIn:  TASTForIn);
     procedure AnalyzeProcCall (ACall:   TASTProcCall);
 
     function AnalyzeExpression  (AExpr:     TASTExpression):   TType;
@@ -2134,6 +2135,43 @@ begin
   AnalyzeStatement(AFor.Body);
 end;
 
+procedure TSemanticAnalyzer.AnalyzeForIn(AForIn: TASTForIn);
+begin
+  var LoopVarSym := FCurrentScope.Resolve(AForIn.LoopVar);
+
+  if LoopVarSym = nil then
+  begin
+    Error(Format('Undeclared loop variable "%s"', [AForIn.LoopVar]), AForIn);
+    Exit;
+  end;
+
+  var CollType := AnalyzeExpression(AForIn.Collection);
+
+  if CollType.Kind = TType.TKind.Array then
+  begin
+    if CollType.ElementType <> nil then
+      if not CheckTypeCompatibility(LoopVarSym.SymbolType, CollType.ElementType) then
+        Error(Format('Incompatible loop variable type for array element (cannot assign "%s" to "%s")',
+                     [CollType.ElementType.Name, LoopVarSym.SymbolType.Name]), AForIn);
+  end
+
+  else if CollType.IsSet then
+  begin
+    if (not LoopVarSym.SymbolType.IsInteger) and (LoopVarSym.SymbolType.Kind <> TType.TKind.Enum) then
+      Error('Loop variable for set iteration must be an integer, char, or enum', AForIn);
+  end
+
+  else if CollType.IsString then
+  begin
+    if (LoopVarSym.SymbolType.Kind <> TType.TKind.Char) and (LoopVarSym.SymbolType.Kind <> TType.TKind.Byte) then
+      Error('Loop variable for string iteration must be of type Char or Byte', AForIn);
+  end
+  else
+    Error('Expression in "for..in" must be an array, set, or string', AForIn.Collection);
+
+  AnalyzeStatement(AForIn.Body);
+end;
+
 procedure TSemanticAnalyzer.AnalyzeProcCall(ACall: TASTProcCall);
 begin
   AnalyzeCallExpr(ACall.CallExpr);
@@ -2191,6 +2229,7 @@ begin
   else if AStmt is TASTWhile    then AnalyzeWhile   (TASTWhile   (AStmt))
   else if AStmt is TASTRepeat   then AnalyzeRepeat  (TASTRepeat  (AStmt))
   else if AStmt is TASTFor      then AnalyzeFor     (TASTFor     (AStmt))
+  else if AStmt is TASTForIn    then AnalyzeForIn   (TASTForIn   (AStmt))
   else if AStmt is TASTProcCall then AnalyzeProcCall(TASTProcCall(AStmt))
   else if AStmt is TASTCase then
   begin
@@ -2360,43 +2399,63 @@ procedure TSemanticAnalyzer.AnalyzeRoutine(ARoutine: TASTRoutineDecl);
 var
   RetType:     TType;
   RoutineKind: TSymbol.TKind;
+  ExistingSym: TSymbol;
+  RoutineName: String;
 begin
-  RoutineKind := TSymbol.TKind.Procedure;
-
-  if ARoutine.IsFunction then
-  begin
-    RoutineKind := TSymbol.TKind.Function;
-    RetType     := ResolveType(ARoutine.ReturnType);
-  end
-  else
-    RetType := FBuiltinTypes['void'];
-
-  var RoutineType := TType.Create(TType.TKind.Procedure, ARoutine.Name, 0);
-  RoutineType.ReturnType := RetType;
-
-  var RoutineName := ARoutine.Name;
+  RoutineName := ARoutine.Name;
 
   if ARoutine.IsRecordMethod and (Length(ARoutine.ParentTypeName) > 0) then
     RoutineName := ARoutine.ParentTypeName + '_' + ARoutine.Name;
 
-  var RoutineSym := TSymbol.Create(RoutineName, RoutineKind, RoutineType);
+  ExistingSym := FCurrentScope.Resolve(RoutineName);
 
-  RoutineSym.Declaration := ARoutine;
-  RoutineSym.IsSysCall   := ARoutine.IsSysCall;
-  RoutineSym.SysCallID   := ARoutine.SysCallID;
-  RoutineSym.IsInterrupt := ARoutine.IsInterrupt;
-  RoutineSym.IsVarArgs   := ARoutine.IsVarArgs;
-
-  if ARoutine.IsInterrupt then
+  if (ExistingSym <> nil) and (ExistingSym.Declaration <> nil) and
+     (ExistingSym.Declaration.IsForward or (ExistingSym.Declaration.Body = nil)) and
+     (not ExistingSym.IsSysCall) then
   begin
-    if ARoutine.IsFunction then
-      Error('Functions cannot be declared as interrupt handlers', ARoutine);
+    ExistingSym.Declaration.IsForward := False;
 
-    if ARoutine.Params.Count > 0 then
-      Error('Interrupt handler procedures cannot have parameters', ARoutine);
+    if (ARoutine.Params.Count = 0) and (ExistingSym.Declaration.Params.Count > 0) then
+      for var P in ExistingSym.Declaration.Params do
+        ARoutine.Params.Add(TASTParamDecl.Create(P.Name, P.ParamType.Clone, P.Modifier, ARoutine.Line, ARoutine.Col));
+
+    if (ARoutine.ReturnType = nil) and (ExistingSym.Declaration.ReturnType <> nil) then
+      ARoutine.ReturnType := ExistingSym.Declaration.ReturnType.Clone;
+
+    ExistingSym.Declaration := ARoutine;
+  end
+  else
+  begin
+    RoutineKind := TSymbol.TKind.Procedure;
+
+    if ARoutine.IsFunction then
+    begin
+      RoutineKind := TSymbol.TKind.Function;
+      RetType     := ResolveType(ARoutine.ReturnType);
+    end
+    else
+      RetType := FBuiltinTypes['void'];
+
+    var RoutineType := TType.Create(TType.TKind.Procedure, ARoutine.Name, 0);
+
+    RoutineType.ReturnType := RetType;
+
+    var RoutineSym := TSymbol.Create(RoutineName, RoutineKind, RoutineType);
+
+    RoutineSym.Declaration := ARoutine;
+    RoutineSym.IsSysCall   := ARoutine.IsSysCall;
+    RoutineSym.SysCallID   := ARoutine.SysCallID;
+    RoutineSym.IsInterrupt := ARoutine.IsInterrupt;
+    RoutineSym.IsVarArgs   := ARoutine.IsVarArgs;
+
+    if not FCurrentScope.Define(RoutineSym) then
+      Error(Format('Duplicate routine identifier "%s"', [RoutineName]), ARoutine);
+
+    ExistingSym := RoutineSym;
   end;
 
-  FCurrentScope.Define(RoutineSym);
+  if ARoutine.IsForward or (ARoutine.Body = nil) then
+    Exit;
 
   if ARoutine.IsSysCall then
   begin
@@ -2406,7 +2465,7 @@ begin
     var SysVal: TConstValue;
 
     if EvaluateConstValue(ARoutine.SysCallExpr, SysVal) then
-      RoutineSym.SysCallID := SysVal.ValueInt
+      ExistingSym.SysCallID := SysVal.ValueInt
     else
       Error('SysCall ID must evaluate to a compile-time integer constant', ARoutine);
 
@@ -2414,7 +2473,7 @@ begin
   end;
 
   var RoutineScope := TScope.Create(FCurrentScope);
-  RoutineSym.LocalScope := RoutineScope;
+  ExistingSym.LocalScope := RoutineScope;
   FCurrentScope := RoutineScope;
 
   try
@@ -2431,7 +2490,6 @@ begin
         SelfSym.Storage    := TSymbol.TStorage.Parameter;
         SelfSym.ParamIndex := 0;
         SelfSym.IsVarParam := True;
-
         Inc(FCurrentScope.FLocalSize, 4);
         SelfSym.StackOffset := -Integer(FCurrentScope.FLocalSize);
 
@@ -2442,16 +2500,14 @@ begin
 
     if ARoutine.IsFunction then
     begin
-      var ResultSym := TSymbol.Create('result', TSymbol.TKind.Variable, RetType);
-
+      var ResultSym := TSymbol.Create('result', TSymbol.TKind.Variable, ResolveType(ARoutine.ReturnType));
       ResultSym.Storage := TSymbol.TStorage.Local;
 
       Inc(FCurrentScope.FLocalSize, 4);
       ResultSym.StackOffset := -Integer(FCurrentScope.FLocalSize);
-
       FCurrentScope.Define(ResultSym);
 
-      var FuncNameSym := TSymbol.Create(ARoutine.Name, TSymbol.TKind.Variable, RetType);
+      var FuncNameSym := TSymbol.Create(ARoutine.Name, TSymbol.TKind.Variable, ResolveType(ARoutine.ReturnType));
 
       FuncNameSym.Storage     := TSymbol.TStorage.Local;
       FuncNameSym.StackOffset := ResultSym.StackOffset;
@@ -2465,7 +2521,6 @@ begin
     begin
       var PDecl := ARoutine.Params[i];
       var PType := ResolveType(PDecl.ParamType);
-
       var PSym := TSymbol.Create(PDecl.Name, TSymbol.TKind.Parameter, PType);
 
       PSym.Storage    := TSymbol.TStorage.Parameter;
@@ -2537,6 +2592,11 @@ begin
     Exit(False);
 
   AnalyzeProgram(AProgram);
+
+  for var Decl in AProgram.Declarations do
+    if (Decl is TASTRoutineDecl) and TASTRoutineDecl(Decl).IsForward then
+      Error(Format('Forward-declared routine "%s" was never implemented', [TASTRoutineDecl(Decl).Name]), Decl);
+
   Result := (FErrors.Count = 0);
 end;
 
@@ -2559,6 +2619,7 @@ begin
       end;
 
       var RType := TType.Create(TType.TKind.Procedure, RDecl.Name, 0);
+
       RType.ReturnType := RetType;
 
       var RSym := TSymbol.Create(RDecl.Name, RKind, RType);
@@ -2581,6 +2642,19 @@ begin
   if Assigned(AUnit.InitializationBlock) then
     AnalyzeBlock(AUnit.InitializationBlock);
 
+  for var Decl in AUnit.InterfaceDecls do
+    if (Decl is TASTRoutineDecl) and (not TASTRoutineDecl(Decl).IsSysCall) then
+    begin
+      var Sym := FCurrentScope.Resolve(TASTRoutineDecl(Decl).Name);
+
+      if (Sym = nil) or (Sym.Declaration = nil) or (Sym.Declaration.Body = nil) then
+        Error(Format('Unsatisfied interface declaration for "%s"', [TASTRoutineDecl(Decl).Name]), Decl);
+    end;
+
+  for var Decl in AUnit.ImplementationDecls do
+    if (Decl is TASTRoutineDecl) and TASTRoutineDecl(Decl).IsForward then
+      Error(Format('Forward-declared routine "%s" was never implemented', [TASTRoutineDecl(Decl).Name]), Decl);
+
   Result := (FErrors.Count = 0);
 end;
 {$ENDREGION}
@@ -2594,14 +2668,17 @@ constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
       if Decl is TASTRoutineDecl then
       begin
         var R := TASTRoutineDecl(Decl);
-        var MangledName := R.Name;
 
-        if R.IsRecordMethod and (Length(R.ParentTypeName) > 0) then
-          MangledName := R.ParentTypeName + '_' + R.Name;
+        if (R.Body <> nil) and (not R.IsForward) then
+        begin
+          var MangledName := R.Name;
 
-        FRoutineMap.AddOrSetValue(LowerCase(MangledName), R);
+          if R.IsRecordMethod and (Length(R.ParentTypeName) > 0) then
+            MangledName := R.ParentTypeName + '_' + R.Name;
+
+          FRoutineMap.AddOrSetValue(LowerCase(MangledName), R);
+        end;
       end
-
       else if Decl is TASTTypeDecl then
       begin
         var TD := TASTTypeDecl(Decl);
@@ -2610,9 +2687,13 @@ constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
           if MNode is TASTRoutineDecl then
           begin
             var R := TASTRoutineDecl(MNode);
-            var MangledName := TD.Name + '_' + R.Name;
 
-            FRoutineMap.AddOrSetValue(LowerCase(MangledName), R);
+            if (R.Body <> nil) and (not R.IsForward) then
+            begin
+              var MangledName := TD.Name + '_' + R.Name;
+
+              FRoutineMap.AddOrSetValue(LowerCase(MangledName), R);
+            end;
           end;
 
         for var PNode in TD.DeclType.RecordProperties do
@@ -2623,6 +2704,7 @@ constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
 
             Spec.ReadRoutine  := TD.Name + '_' + Prop.ReadSpec;
             Spec.WriteRoutine := TD.Name + '_' + Prop.WriteSpec;
+
             FPropertyMap.AddOrSetValue(LowerCase(TD.Name + '_' + Prop.Name), Spec);
           end;
       end
@@ -2632,6 +2714,7 @@ constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
           FVarMap.AddOrSetValue(LowerCase(Name), TASTVarDecl(Decl));
     end;
   end;
+
 begin
   inherited Create;
 
@@ -2939,6 +3022,18 @@ begin
     MarkExpression(TASTFor(AStmt).StartExpr);
     MarkExpression(TASTFor(AStmt).StopExpr);
     MarkStatement(TASTFor(AStmt).Body);
+  end
+
+  else if AStmt is TASTForIn then
+  begin
+    var ForInStmt := TASTForIn(AStmt);
+    var VarDecl: TASTVarDecl;
+
+    if FVarMap.TryGetValue(LowerCase(ForInStmt.LoopVar), VarDecl) then
+      VarDecl.IsUsed := True;
+
+    MarkExpression(ForInStmt.Collection);
+    MarkStatement(ForInStmt.Body);
   end
 
   else if AStmt is TASTProcCall then

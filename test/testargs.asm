@@ -2,11 +2,7 @@
 	halt
 
 Test:
-	enter	$10
-	sto	bp, r0, -4
-	sto	bp, r1, -8
-	sto	bp, r2, -12
-	sto	bp, r3, -16
+	enter	4, $10
 
 	; testargs.pas(9): Writeln('%d %d %d %d %d %d %d', a, b, c, d, e, f, g);
 	ldo	r0, bp, 16
@@ -25,8 +21,8 @@ Test:
 	push	r0
 	mov	r0, _strconst_1
 	push	r0
-	popr	$8
-	syscall	$1
+	popr	8
+	syscall	$1	; _SysCall_DebugPrint
 	leave
 	ret
 
@@ -47,7 +43,7 @@ Main:
 	push	r0
 	mov	r0, 1
 	push	r0
-	popr	$4
+	popr	4
 	call	Test
 	add	sp, 12
 	ret

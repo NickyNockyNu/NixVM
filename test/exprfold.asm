@@ -13,8 +13,8 @@ Main:
 	push	r0
 	mov	r0, _strconst_1
 	push	r0
-	popr	$2
-	syscall	$1
+	popr	2
+	syscall	$1	; _SysCall_DebugPrint
 	ret
 
 

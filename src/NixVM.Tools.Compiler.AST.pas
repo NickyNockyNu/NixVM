@@ -495,6 +495,22 @@ type
   end;
   {$ENDREGION}
 
+  {$REGION 'for in'}
+  TASTForIn = class(TASTStatement)
+  private
+    FLoopVar:     String;
+    FCollection:  TASTExpression;
+    FBody:        TASTStatement;
+  public
+    constructor Create(const ALoopVar: String; ACollection: TASTExpression; ABody: TASTStatement; ALine: Integer = 0; ACol: Integer = 0);
+    destructor  Destroy; override;
+
+    property LoopVar:    String         read FLoopVar    write FLoopVar;
+    property Collection: TASTExpression read FCollection write FCollection;
+    property Body:       TASTStatement  read FBody       write FBody;
+  end;
+  {$ENDREGION}
+
   {$REGION 'procedure call'}
   TASTProcCall = class(TASTStatement)
   private
@@ -636,7 +652,7 @@ type
   end;
   {$ENDREGION}
 
-  {$REGION 'routine'}
+  {$REGION 'Routine'}
   TASTRoutineDecl = class(TASTDeclaration)
   private
     FName:           String;
@@ -652,6 +668,7 @@ type
     FIsRecordMethod: Boolean;
     FIsInterrupt:    Boolean;
     FIsVarArgs:      Boolean;
+    FIsForward:      Boolean;
   public
     constructor Create(const AName: String; AIsFunction: Boolean; AReturnType: TASTType = nil; ALine: Integer = 0; ACol: Integer = 0);
     destructor  Destroy; override;
@@ -669,6 +686,7 @@ type
     property IsRecordMethod: Boolean                      read FIsRecordMethod write FIsRecordMethod;
     property IsInterrupt:    Boolean                      read FIsInterrupt    write FIsInterrupt;
     property IsVarArgs:      Boolean                      read FIsVarArgs      write FIsVarArgs;
+    property IsForward:      Boolean                      read FIsForward      write FIsForward;
   end;
   {$ENDREGION}
 
@@ -702,6 +720,8 @@ type
     FHeader:       TROMHeader;
     FUsesUnits:    TList<String>;
     FDeclarations: TObjectList<TASTDeclaration>;
+    FSource:       String;
+    FFileName:     String;
   public
     constructor Create(const AName: String = '');
     destructor  Destroy; override;
@@ -710,6 +730,8 @@ type
     property Header:       TROMHeader                   read FHeader write FHeader;
     property UsesUnits:    TList<String>                read FUsesUnits;
     property Declarations: TObjectList<TASTDeclaration> read FDeclarations;
+    property Source:       String                       read FSource   write FSource;
+    property FileName:     String                       read FFileName write FFileName;
   end;
   {$ENDREGION}
 
@@ -1352,6 +1374,28 @@ begin
 
   if Assigned(FStopExpr) then
     FStopExpr.Free;
+
+  if Assigned(FBody) then
+    FBody.Free;
+
+  inherited;
+end;
+{$ENDREGION}
+
+{$REGION 'for in'}
+constructor TASTForIn.Create(const ALoopVar: String; ACollection: TASTExpression; ABody: TASTStatement; ALine, ACol: Integer);
+begin
+  inherited Create(ALine, ACol);
+
+  FLoopVar    := ALoopVar;
+  FCollection := ACollection;
+  FBody       := ABody;
+end;
+
+destructor TASTForIn.Destroy;
+begin
+  if Assigned(FCollection) then
+    FCollection.Free;
 
   if Assigned(FBody) then
     FBody.Free;

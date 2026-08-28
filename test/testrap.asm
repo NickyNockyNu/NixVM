@@ -93,7 +93,7 @@ Main:
 	mov	r0, _strconst_1
 	push	r0
 	popr	3
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 
 	; testrap.pas(45): ptPtr := @points[0];
 	mov	r0, _var_points
@@ -110,7 +110,7 @@ Main:
 	mov	r0, _strconst_2
 	push	r0
 	popr	3
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 
 	; testrap.pas(48): Inc(ptPtr);
 	mov	r1, 8
@@ -129,7 +129,7 @@ Main:
 	mov	r0, _strconst_3
 	push	r0
 	popr	3
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 
 	; testrap.pas(51): with hero do
 	mov	r0, _var_hero
@@ -196,7 +196,7 @@ Main:
 	mov	r0, _strconst_4
 	push	r0
 	popr	6
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 
 	; testrap.pas(64): for i := 0 to 2 do
 	mov	r0, 0
@@ -269,7 +269,7 @@ Main:
 	mov	r0, _strconst_5
 	push	r0
 	popr	2
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 
 	; testrap.pas(69): Writeln('Grid[2, 0] = %d', grid[2, 0]);
 	mov	r0, _var_grid
@@ -288,7 +288,7 @@ Main:
 	mov	r0, _strconst_6
 	push	r0
 	popr	2
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	leave
 	ret
 

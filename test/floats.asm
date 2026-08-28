@@ -20,8 +20,8 @@ Main:
 	push	r0
 	mov	r0, _strconst_1
 	push	r0
-	popr	$3
-	syscall	$1
+	popr	3
+	syscall	$1	; _SysCall_DebugPrint
 
 	; floats.pas(17): fb := Single(ia);
 	ld	r0, _var_ia
@@ -42,8 +42,8 @@ Main:
 	push	r0
 	mov	r0, _strconst_1
 	push	r0
-	popr	$3
-	syscall	$1
+	popr	3
+	syscall	$1	; _SysCall_DebugPrint
 
 	; floats.pas(22): ia := trunc(fa);
 	ld	r0, _var_fa
@@ -64,8 +64,8 @@ Main:
 	push	r0
 	mov	r0, _strconst_2
 	push	r0
-	popr	$3
-	syscall	$1
+	popr	3
+	syscall	$1	; _SysCall_DebugPrint
 	ret
 
 

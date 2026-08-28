@@ -475,6 +475,9 @@ begin
 
   Result := TASTUnit.Create(UnitName);
 
+  Result.Source   := FLexer.Source;
+  Result.FileName := FLexer.FileName;
+
   Expect(TLexer.TToken.TKind.Interface, 'Expected "interface" section');
 
   if Match(TLexer.TToken.TKind.Uses) then
@@ -653,6 +656,9 @@ begin
   end;
 
   Result := TASTProgram.Create(ProgName);
+
+  Result.Source   := FLexer.Source;
+  Result.FileName := FLexer.FileName;
 
   Result.Header           := FHeader;
   Result.Header.ROM.Name  := ProgName;
@@ -1358,20 +1364,30 @@ begin
   Expect(TLexer.TToken.TKind.For);
 
   var VarTok := FCurTok;
+
   if not Expect(TLexer.TToken.TKind.Identifier, 'Expected loop variable identifier after for') then
     Exit(nil);
 
   LoopVar := VarTok.ValueStr;
-  Expect(TLexer.TToken.TKind.Assign, 'Expected ":=" after loop variable');
+
+  if Match(TLexer.TToken.TKind.In) then
+  begin
+    var CollectionExpr := ParseExpression;
+
+    Expect(TLexer.TToken.TKind.Do, 'Expected "do" after for..in collection');
+    Body := ParseStatement;
+
+    Exit(TASTForIn.Create(LoopVar, CollectionExpr, Body, StartTok.Line, StartTok.Col));
+  end;
+
+  Expect(TLexer.TToken.TKind.Assign, 'Expected ":=" or "in" after loop variable');
 
   StartExp := ParseExpression;
 
   if Match(TLexer.TToken.TKind.To) then
     &Downto := False
-
   else if Match(TLexer.TToken.TKind.&Downto) then
     &Downto := True
-
   else
   begin
     Error('Expected "to" or "downto" in for loop', FCurTok);
@@ -1381,7 +1397,7 @@ begin
   StopExp := ParseExpression;
   Expect(TLexer.TToken.TKind.Do, 'Expected "do" after for range');
 
-  Body   := ParseStatement;
+  Body := ParseStatement;
   Result := TASTFor.Create(LoopVar, StartExp, StopExp, &Downto, Body, StartTok.Line, StartTok.Col);
 end;
 
@@ -1756,6 +1772,14 @@ begin
   end;
 
   Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after routine header');
+
+  if Match(TLexer.TToken.TKind.Forward) then
+  begin
+    Result.IsForward := True;
+    Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after forward directive');
+
+    Exit;
+  end;
 
   if Match(TLexer.TToken.TKind.Interrupt) then
   begin

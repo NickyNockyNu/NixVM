@@ -85,6 +85,7 @@ type
         Syscall,
         Interrupt,
         &VarArgs,
+        &Forward,
 
         // Self reference
         &Self,
@@ -278,6 +279,7 @@ begin
   FKeywords.Add('syscall',        TToken.TKind.SysCall);
   FKeywords.Add('interrupt',      TToken.TKind.Interrupt);
   FKeywords.Add('varargs',        TToken.TKind.VarArgs);
+  FKeywords.Add('forward',        TToken.TKind.Forward);
 
   FKeywords.Add('self',           TToken.TKind.Self);
 

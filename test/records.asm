@@ -5,7 +5,9 @@ TPoint_GetY:
 	enter	1, $8
 
 	; records.pas(28): Result := fy;
-	ldo	r0, r0, 4
+	ldo	r1, bp, -4
+	ldo	r0, r1, 4
+	sto	bp, r0, -8
 	leave
 	ret
 
@@ -84,7 +86,7 @@ Main:
 	mov	r0, _strconst_1
 	push	r0
 	popr	4
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 
 	; records.pas(62): with u do
 	ldo	r0, bp, -4
@@ -116,7 +118,7 @@ Main:
 	mov	r0, _strconst_2
 	push	r0
 	popr	2
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	ld	r0, _var_i
 	add	r0, 1
 	mov	r1, _var_i
@@ -140,6 +142,7 @@ Main:
 	sto	bp, r0, -12
 
 	; records.pas(73): Writeln('%d: %d, %d, %d', i, fx, fy, u.a);
+	ldo	r0, bp, -12
 	add	r0, 8
 	ldo	r0, r0, 0
 	push	r0
@@ -154,7 +157,7 @@ Main:
 	mov	r0, _strconst_3
 	push	r0
 	popr	5
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	ld	r0, _var_i
 	add	r0, 1
 	mov	r1, _var_i
@@ -169,7 +172,7 @@ Main:
 	push	r0
 	popr	2
 	mov	r2, 12
-	syscall	$11
+	syscall	$11	; _SysCall_MemoryCopy
 
 	; records.pas(77): cp := @p[1];
 	mov	r0, _var_p + 12
@@ -186,7 +189,7 @@ Main:
 	mov	r0, _strconst_4
 	push	r0
 	popr	3
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	leave
 	ret
 

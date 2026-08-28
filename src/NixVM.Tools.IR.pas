@@ -30,6 +30,7 @@ uses
   System.Classes,
   System.Generics.Collections,
 
+  NixVM.Core.System,
   NixVM.Core.Registers,
   NixVM.Core.Instructions,
   NixVM.Core.Memory;
@@ -164,6 +165,8 @@ type
     function AddEmbed(const AFileName: String; const AData: TBytes): Integer;
 
     function AddAlign(ABoundary: Cardinal; APadByte: Byte = 0): Integer;
+
+    function AddSysCall(ASysCallID: TSysCalls.ID): Integer;
 
     function ComputeAddresses(AStartAddress: Cardinal = 0):                          Cardinal;
     function ResolveLabels   (AStartAddress: Cardinal = 0; AErrors: TStrings = nil): Boolean;
@@ -887,6 +890,21 @@ begin
   Item.Kind          := TIRItem.TKind.Align;
   Item.AlignBoundary := ABoundary;
   Item.AlignPadByte  := APadByte;
+
+  Result := Add(Item);
+end;
+
+function TIRList.AddSysCall(ASysCallID: TSysCalls.ID): Integer;
+var
+  Item: TIRItem;
+begin
+  Item := Default(TIRItem);
+
+  Item.Kind      := TIRItem.TKind.Instruction;
+  Item.OpCode    := TCPUInstruction.TOpCode.syscall;
+  Item.RegB      := TRegisters.ID.Imm;
+  Item.Imm.Value := Cardinal(ASysCallID);
+  Item.Comment   := ASysCallID.ToString;
 
   Result := Add(Item);
 end;

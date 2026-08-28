@@ -2,11 +2,11 @@
 	halt
 
 ShouldNotBeCalled:
-	enter	$4
+	enter	0, $4
 
 	; shortcircuit.pas(9): Writeln('ERROR: Right side was evaluated!');
 	mov	r0, _strconst_1
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 
 	; shortcircuit.pas(10): Result := True;
 	mov	r0, 1
@@ -17,14 +17,18 @@ ShouldNotBeCalled:
 Main:
 
 	; shortcircuit.pas(15): if (1 = 2) and ShouldNotBeCalled then
+	jmp	@endif_2
 
 	; shortcircuit.pas(16): Writeln('Unreachable');
+@endif_2:
 
 	; shortcircuit.pas(19): if (1 = 1) or ShouldNotBeCalled then
+	jmp	@or_true_7
+@or_true_7:
 
 	; shortcircuit.pas(20): Writeln('Short-circuit OR OK');
 	mov	r0, _strconst_3
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	ret
 
 

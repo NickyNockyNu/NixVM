@@ -2,15 +2,15 @@
 	halt
 
 classifyint:
-	enter	$4
-	sto	bp, r0, -4
+	enter	1, $4
 
 	; testcase.pas(12): Write('%d: ', a);
+	ldo	r0, bp, -4
 	push	r0
 	mov	r0, _strconst_1
 	push	r0
-	popr	$2
-	syscall	$1
+	popr	2
+	syscall	$1	; _SysCall_DebugPrint
 
 	; testcase.pas(13): case a of
 	ldo	r0, bp, -4
@@ -29,26 +29,27 @@ classifyint:
 
 	; testcase.pas(14): 3, 5, 7: Writeln('Small prime');
 	mov	r0, _strconst_2
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	jmp	@endcase_1
 @case_next_3:
 	ldo	r0, sp, 0
 	cmp	r0, 13
-	jl	@case_next_5
+	jl	@skip_range_6
 	cmp	r0, 19
 	jle	@case_branch_4
+@skip_range_6:
 	jmp	@case_next_5
 @case_branch_4:
 
 	; testcase.pas(15): 13..19:  Writeln('Teen');
 	mov	r0, _strconst_3
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 	jmp	@endcase_1
 @case_next_5:
 
 	; testcase.pas(17): Writeln('Not classified');
 	mov	r0, _strconst_4
-	syscall	$1
+	syscall	$1	; _SysCall_DebugPrint
 @endcase_1:
 	pop	r0
 	leave
@@ -62,11 +63,7 @@ Main:
 	st	r1, r0
 @for_7:
 	ld	r0, _var_i
-	push	r0
-	mov	r0, 20
-	mov	r1, r0
-	pop	r0
-	cmp	r0, r1
+	cmp	r0, 20
 	jg	@endfor_9
 
 	; testcase.pas(26): classifyint(i);

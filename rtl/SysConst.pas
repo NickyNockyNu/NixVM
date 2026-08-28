@@ -23,9 +23,9 @@ const
   // SysCall ID's
   _SysCall_DebugBreak       = $00;
   _SysCall_DebugPrint       = $01;
-  _SysCall_MemoryFill       = $02;
-  _SysCall_MemoryCopy       = $03;
-  _SysCall_MemoryCompare    = $04;
+  _SysCall_MemoryFill       = $10;
+  _SysCall_MemoryCopy       = $11;
+  _SysCall_MemoryCompare    = $12;
   _SysCall_HeapAlloc        = $20;
   _SysCall_HeapRealloc      = $21;
   _SysCall_HeapFree         = $22;
