@@ -16,6 +16,7 @@ type
     property AA: Integer read GetA;
   end;
 
+  PPoint = ^TPoint;
   TPoint = record
   private
     fx, fy: Integer;
@@ -45,6 +46,7 @@ begin
 end;
 
 var
+  cp: PPoint;
   c: TPoint;
   i: Integer;
   p: array[0..2] of TPoint;
@@ -72,5 +74,7 @@ begin
       
   c := p[1];
   
-  Writeln('%d, %d', c.x, c.y);
+  cp := @p[1]; 
+  
+  Writeln('%d, %d', c.x, cp^.y);
 end.

@@ -701,17 +701,12 @@ begin
       if (AAstType.HighBoundExpr <> nil) and EvaluateConstValue(AAstType.HighBoundExpr, HighVal) then
         HighBound := Integer(HighVal.ValueInt);
 
-      Result := TType.CreateArray(ElemType, LowBound, HighBound);
-      FBuiltinTypes.Add(Result.Name, Result);
-    end;
+      AAstType.SubrangeLow  := LowBound;
+      AAstType.SubrangeHigh := HighBound;
 
-//    TASTType.TKind.Array:
-//    begin
-//      var ElemType := ResolveType(AAstType.ElementType);
-//
-//      Result := TType.CreateArray(ElemType, AAstType.SubrangeLow, AAstType.SubrangeHigh);
-//      FBuiltinTypes.Add(Result.Name, Result);
-//    end;
+      Result := TType.CreateArray(ElemType, LowBound, HighBound);
+      FBuiltinTypes.Add(Format('Array_%p', [Pointer(Result)]), Result);
+    end;
 
     TASTType.TKind.Record:
     begin

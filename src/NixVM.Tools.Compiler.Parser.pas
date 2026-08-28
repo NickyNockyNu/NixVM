@@ -65,8 +65,6 @@ type
 
     procedure ProcessDirective(const ADirText: String; const ATok: TLexer.TToken);
 
-    function IsIdentToken(AKind: TLexer.TToken.TKind): Boolean; inline;
-
     {$REGION 'Types'}
     function ParseType:       TASTType;
     function ParseRecordType: TASTType;
@@ -448,11 +446,6 @@ begin
 
   else
     Error(Format('Unknown compiler directive "{$%s}"', [DirName]), ATok);
-end;
-
-function TParser.IsIdentToken(AKind: TLexer.TToken.TKind): Boolean;
-begin
-  Result := AKind in [TLexer.TToken.TKind.Identifier, TLexer.TToken.TKind.Read, TLexer.TToken.TKind.Write];
 end;
 
 function TParser.Parse: TASTCompilationUnit;
