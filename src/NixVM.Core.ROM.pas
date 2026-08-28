@@ -119,18 +119,18 @@ end;
 function TROMHeader.ToString: String;
 begin
   Result :=
-    '        ROM: ' + ROM.    ToString + #13#10;
+    '          ROM: ' + ROM.    ToString + #13#10;
 
   if Length(Harness.Name) > 0 then
     Result := Result +
-    '    Harness: ' + Harness.ToString + #13#10;
+    '      Harness: ' + Harness.ToString + #13#10;
 
   Result := Result +
-    'UserAddress: 0x' + IntToHex(UserAddress, 8) + #13#10 +
+    '  UserAddress: 0x' + IntToHex(UserAddress, 8) + #13#10 +
 
-    '   UserSize: ' + IntToStr(UserSize) + #13#10 +
-    '   HeapSize: ' + IntToStr(HeapSize) + #13#10 +
-    '  StackSize: ' + IntToStr(StackSize);
+    '     UserSize: ' + IntToStr(UserSize) + #13#10 +
+    '     HeapSize: ' + IntToStr(HeapSize) + #13#10 +
+    '    StackSize: ' + IntToStr(StackSize);
 end;
 {$ENDREGION}
 

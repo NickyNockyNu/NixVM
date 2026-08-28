@@ -122,6 +122,7 @@ type
       iret    = $84;
       enter   = $85;
       leave   = $86;
+      zenter  = $87;
 
       push  = $90;
       pop   = $91;
@@ -316,7 +317,7 @@ type
       {84}(Mnemonic:'iret'),
       {85}(Mnemonic:'enter';   Params:TParameters.Imm),
       {86}(Mnemonic:'leave'),
-      {87}(),
+      {87}(Mnemonic:'zenter';  Params:TParameters.Imm),
       {88}(),
       {89}(),
       {8A}(),

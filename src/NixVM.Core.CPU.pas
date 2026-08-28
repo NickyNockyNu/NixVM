@@ -170,6 +170,7 @@ type
 
     procedure DoENTER;
     procedure DoLEAVE;
+    procedure DoZENTER;
 
     procedure DoPUSH;
     procedure DoPOP;
@@ -381,8 +382,9 @@ begin
     TCPUInstruction.TOpCode.RET:     DoRET;
     TCPUInstruction.TOpCode.IRET:    DoIRET;
 
-    TCPUInstruction.TOpCode.ENTER: DoENTER;
-    TCPUInstruction.TOpCode.LEAVE: DoLEAVE;
+    TCPUInstruction.TOpCode.ENTER:  DoENTER;
+    TCPUInstruction.TOpCode.LEAVE:  DoLEAVE;
+    TCPUInstruction.TOpCode.ZENTER: DoZENTER;
 
     TCPUInstruction.TOpCode.PUSH:  DoPUSH;
     TCPUInstruction.TOpCode.POP:   DoPOP;
@@ -1296,6 +1298,29 @@ procedure TCPU.DoLEAVE;
 begin
   Registers.SP := Registers.BP;
   Registers.BP := Pop;
+end;
+
+procedure TCPU.DoZENTER;
+var
+  FrameSize: Cardinal;
+begin
+  Push(Registers.BP);
+
+  Registers.BP := Registers.SP;
+  FrameSize    := NextDWord;
+
+  if FrameSize > 0 then
+  begin
+    if Registers.SP < (FMemory.Stack.Address - FMemory.Stack.Size) + FrameSize then
+    begin
+      Panic(TSystemState.TPanicCode.StackOverflow);
+      Exit;
+    end;
+
+    Dec(Registers.SP, FrameSize);
+
+    FMemory.Fill(Registers.SP, FrameSize, 0);
+  end;
 end;
 {$ENDREGION}
 

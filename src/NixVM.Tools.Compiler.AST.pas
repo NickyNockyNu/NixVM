@@ -33,6 +33,8 @@ uses
   NixVM.Core.ROM;
 
 type
+  TASTExpression = class;
+
   {$REGION 'Visibility'}
   TVisibility = (&Public, &Private);
   {$ENDREGION}
@@ -119,6 +121,8 @@ type
     FRecordMethods:    TObjectList<TASTNode>;
     FEnumElements:     TList<TEnumElement>;
     FRecordProperties: TObjectList<TASTNode>;
+    FLowBoundExpr:     TASTExpression;
+    FHighBoundExpr:    TASTExpression;
   public
     constructor Create(AKind: TKind;        ALine: Integer = 0; ACol: Integer = 0); overload;
     constructor Create(const AName: String; ALine: Integer = 0; ACol: Integer = 0); overload;
@@ -146,6 +150,9 @@ type
 
     property SubrangeLow:  Integer read FSubrangeLow  write FSubrangeLow;
     property SubrangeHigh: Integer read FSubrangeHigh write FSubrangeHigh;
+
+    property LowBoundExpr:  TASTExpression read FLowBoundExpr  write FLowBoundExpr;
+    property HighBoundExpr: TASTExpression read FHighBoundExpr write FHighBoundExpr;
 
     property RecordMethods: TObjectList<TASTNode> read FRecordMethods;
 
@@ -795,6 +802,12 @@ begin
   FRecordMethods.Free;
   FEnumElements.Free;
   FRecordProperties.Free;
+
+  if Assigned(FLowBoundExpr) then
+    FLowBoundExpr.Free;
+
+  if Assigned(FHighBoundExpr) then
+    FHighBoundExpr.Free;
 
   inherited;
 end;

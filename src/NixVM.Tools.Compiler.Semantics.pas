@@ -233,6 +233,9 @@ type
 
     function EvaluateConstValue(AExpr: TASTExpression; out AValue: TConstValue): Boolean;
 
+    function  FoldExpression(var AExpr: TASTExpression): Boolean;
+    procedure FoldExpressionList(AList: TObjectList<TASTExpression>);
+
     procedure AnalyzeProgram    (AProgram: TASTProgram);
     procedure AnalyzeDeclaration(ADecl:    TASTDeclaration);
     procedure AnalyzeRoutine    (ARoutine: TASTRoutineDecl);
@@ -634,10 +637,29 @@ begin
     TASTType.TKind.Array:
     begin
       var ElemType := ResolveType(AAstType.ElementType);
+      var LowVal:  TConstValue;
+      var HighVal: TConstValue;
 
-      Result := TType.CreateArray(ElemType, AAstType.SubrangeLow, AAstType.SubrangeHigh);
+      var LowBound  := AAstType.SubrangeLow;
+      var HighBound := AAstType.SubrangeHigh;
+
+      if (AAstType.LowBoundExpr <> nil) and EvaluateConstValue(AAstType.LowBoundExpr, LowVal) then
+        LowBound := Integer(LowVal.ValueInt);
+
+      if (AAstType.HighBoundExpr <> nil) and EvaluateConstValue(AAstType.HighBoundExpr, HighVal) then
+        HighBound := Integer(HighVal.ValueInt);
+
+      Result := TType.CreateArray(ElemType, LowBound, HighBound);
       FBuiltinTypes.Add(Result.Name, Result);
     end;
+
+//    TASTType.TKind.Array:
+//    begin
+//      var ElemType := ResolveType(AAstType.ElementType);
+//
+//      Result := TType.CreateArray(ElemType, AAstType.SubrangeLow, AAstType.SubrangeHigh);
+//      FBuiltinTypes.Add(Result.Name, Result);
+//    end;
 
     TASTType.TKind.Record:
     begin
@@ -693,22 +715,22 @@ end;
 
 function TSemanticAnalyzer.EvaluateConstValue(AExpr: TASTExpression; out AValue: TConstValue): Boolean;
 begin
-  Result := False;
   AValue := Default(TConstValue);
 
   if AExpr = nil then
-    Exit;
+    Exit(False);
 
   if AExpr is TASTLiteral then
   begin
     var Lit := TASTLiteral(AExpr);
+
     case Lit.Kind of
-      TASTLiteral.TKind.Integer: AValue := TConstValue.MakeInt(Lit.ValueInt);
+      TASTLiteral.TKind.Integer: AValue := TConstValue.MakeInt  (Lit.ValueInt);
       TASTLiteral.TKind.Float:   AValue := TConstValue.MakeFloat(Lit.ValueFloat);
-      TASTLiteral.TKind.String:  AValue := TConstValue.MakeStr(Lit.ValueStr);
-      TASTLiteral.TKind.Char:    AValue := TConstValue.MakeStr(Lit.ValueStr);
-      TASTLiteral.TKind.Boolean: AValue := TConstValue.MakeBool(Lit.ValueBool);
-      TASTLiteral.TKind.Nil:     AValue := TConstValue.MakePtr(0);
+      TASTLiteral.TKind.String:  AValue := TConstValue.MakeStr  (Lit.ValueStr);
+      TASTLiteral.TKind.Char:    AValue := TConstValue.MakeStr  (Lit.ValueStr);
+      TASTLiteral.TKind.Boolean: AValue := TConstValue.MakeBool (Lit.ValueBool);
+      TASTLiteral.TKind.Nil:     AValue := TConstValue.MakePtr  (0);
     end;
 
     Exit(True);
@@ -724,7 +746,6 @@ begin
       Exit(True);
     end;
 
-    Error(Format('Unknown constant identifier "%s"', [TASTIdentifier(AExpr).Name]), AExpr);
     Exit(False);
   end;
 
@@ -734,7 +755,8 @@ begin
 
     if MemberAcc.Expression is TASTIdentifier then
     begin
-      var Sym := FCurrentScope.Resolve(TASTIdentifier(MemberAcc.Expression).Name);
+      var IdentName := TASTIdentifier(MemberAcc.Expression).Name;
+      var Sym := FCurrentScope.Resolve(IdentName);
 
       if (Sym <> nil) and (Sym.Kind = TSymbol.TKind.Type) and (Sym.SymbolType.Kind = TType.TKind.Enum) then
         for var Elem in Sym.SymbolType.EnumElements do
@@ -743,7 +765,45 @@ begin
             AValue := TConstValue.MakeInt(Cardinal(Elem.Value));
             Exit(True);
           end;
+
+      var QualifiedSym := FCurrentScope.Resolve(IdentName + '.' + MemberAcc.MemberName);
+
+      if (QualifiedSym <> nil) and (QualifiedSym.Kind = TSymbol.TKind.Constant) then
+      begin
+        AValue := QualifiedSym.ConstVal;
+        Exit(True);
+      end;
     end;
+
+    Exit(False);
+  end;
+
+  if AExpr is TASTCallExpr then
+  begin
+    var Call := TASTCallExpr(AExpr);
+
+    if SameText(Call.CalleeName, 'sizeof') and (Call.Arguments.Count = 1) then
+    begin
+      var Arg := Call.Arguments[0];
+
+      if Arg is TASTIdentifier then
+      begin
+        var Sym := FCurrentScope.Resolve(TASTIdentifier(Arg).Name);
+
+        if Sym <> nil then
+        begin
+          if Sym.Kind = TSymbol.TKind.Type then
+            AValue := TConstValue.MakeInt(Sym.SymbolType.Size)
+
+          else if Sym.SymbolType <> nil then
+            AValue := TConstValue.MakeInt(Sym.SymbolType.Size);
+
+          Exit(True);
+        end;
+      end;
+    end;
+
+    Exit(False);
   end;
 
   if AExpr is TASTTypeCast then
@@ -752,11 +812,16 @@ begin
 
     if EvaluateConstValue(TypeCast.Expression, AValue) then
     begin
-      if TypeCast.TargetType.Kind in [TASTType.TKind.Pointer, TASTType.TKind.NamedAlias] then
-        AValue.Kind := TConstValue.TKind.Pointer;
+      if (TypeCast.TargetType <> nil) and (TypeCast.TargetType.Kind = TASTType.TKind.Byte) then
+        AValue.ValueInt := AValue.ValueInt and $FF
+
+      else if (TypeCast.TargetType <> nil) and (TypeCast.TargetType.Kind = TASTType.TKind.Word) then
+        AValue.ValueInt := AValue.ValueInt and $FFFF;
 
       Exit(True);
     end;
+
+    Exit(False);
   end;
 
   if AExpr is TASTBinary then
@@ -777,7 +842,7 @@ begin
         var LF: Single;
         var RF: Single;
 
-        if LeftVal. Kind = TConstValue.TKind.Single then LF := LeftVal. ValueFloat else LF := LeftVal.ValueInt;
+        if LeftVal.Kind  = TConstValue.TKind.Single then LF := LeftVal.ValueFloat  else LF := LeftVal.ValueInt;
         if RightVal.Kind = TConstValue.TKind.Single then RF := RightVal.ValueFloat else RF := RightVal.ValueInt;
 
         case Bin.Op of
@@ -789,7 +854,10 @@ begin
             if RF <> 0.0 then
               AValue := TConstValue.MakeFloat(LF / RF)
             else
+            begin
+              Error('Division by zero in constant expression', AExpr);
               Exit(False);
+            end;
         else
           Exit(False);
         end;
@@ -797,7 +865,7 @@ begin
         Exit(True);
       end;
 
-      if (LeftVal.Kind in [TConstValue.TKind.Integer, TConstValue.TKind.Pointer]) and (RightVal.Kind in [TConstValue.TKind.Integer, TConstValue.TKind.Pointer]) then
+      if (LeftVal.Kind in [TConstValue.TKind.Integer, TConstValue.TKind.Pointer, TConstValue.TKind.Boolean]) and (RightVal.Kind in [TConstValue.TKind.Integer, TConstValue.TKind.Pointer, TConstValue.TKind.Boolean]) then
       begin
         var L := LeftVal.ValueInt;
         var R := RightVal.ValueInt;
@@ -806,13 +874,37 @@ begin
           TASTBinary.TOp.Add:       AValue := TConstValue.MakeInt(L + R);
           TASTBinary.TOp.Subtract:  AValue := TConstValue.MakeInt(L - R);
           TASTBinary.TOp.Multiply:  AValue := TConstValue.MakeInt(L * R);
-          TASTBinary.TOp.IntDivide: if R <> 0 then AValue := TConstValue.MakeInt(L div R) else Exit(False);
-          TASTBinary.TOp.Modulo:    if R <> 0 then AValue := TConstValue.MakeInt(L mod R) else Exit(False);
-          TASTBinary.TOp.Shl:       AValue := TConstValue.MakeInt(L shl R);
-          TASTBinary.TOp.Shr:       AValue := TConstValue.MakeInt(L shr R);
-          TASTBinary.TOp.And:       AValue := TConstValue.MakeInt(L and R);
-          TASTBinary.TOp.Or:        AValue := TConstValue.MakeInt(L or R);
-          TASTBinary.TOp.Xor:       AValue := TConstValue.MakeInt(L xor R);
+
+          TASTBinary.TOp.IntDivide:
+            if R <> 0 then
+              AValue := TConstValue.MakeInt(L div R)
+            else
+            begin
+              Error('Division by zero in constant expression', AExpr);
+              Exit(False);
+            end;
+
+          TASTBinary.TOp.Modulo:
+            if R <> 0 then
+              AValue := TConstValue.MakeInt(L mod R)
+            else
+            begin
+              Error('Division by zero in constant expression', AExpr);
+              Exit(False);
+            end;
+
+          TASTBinary.TOp.Shl: AValue := TConstValue.MakeInt(L shl R);
+          TASTBinary.TOp.Shr: AValue := TConstValue.MakeInt(L shr R);
+          TASTBinary.TOp.And: AValue := TConstValue.MakeInt(L and R);
+          TASTBinary.TOp.Or:  AValue := TConstValue.MakeInt(L or R);
+          TASTBinary.TOp.Xor: AValue := TConstValue.MakeInt(L xor R);
+
+          TASTBinary.TOp.Equal:        AValue := TConstValue.MakeBool(L = R);
+          TASTBinary.TOp.NotEqual:     AValue := TConstValue.MakeBool(L <> R);
+          TASTBinary.TOp.Less:         AValue := TConstValue.MakeBool(Integer(L) < Integer(R));
+          TASTBinary.TOp.LessEqual:    AValue := TConstValue.MakeBool(Integer(L) <= Integer(R));
+          TASTBinary.TOp.Greater:      AValue := TConstValue.MakeBool(Integer(L) > Integer(R));
+          TASTBinary.TOp.GreaterEqual: AValue := TConstValue.MakeBool(Integer(L) >= Integer(R));
         else
           Exit(False);
         end;
@@ -820,47 +912,111 @@ begin
         Exit(True);
       end;
     end;
+
+    Exit(False);
   end;
 
   if AExpr is TASTUnary then
   begin
     var Un := TASTUnary(AExpr);
-    var Val: TConstValue;
+    var SubVal: TConstValue;
 
-    if EvaluateConstValue(Un.Operand, Val) then
+    if EvaluateConstValue(Un.Operand, SubVal) then
     begin
       case Un.Op of
         TASTUnary.TOp.Negate:
-        begin
-          if Val.Kind = TConstValue.TKind.Single then
-            AValue := TConstValue.MakeFloat(-Val.ValueFloat)
-
-          else if Val.Kind in [TConstValue.TKind.Integer, TConstValue.TKind.Pointer] then
-            AValue := TConstValue.MakeInt(Cardinal(-Int32(Val.ValueInt)))
-
+          if SubVal.Kind = TConstValue.TKind.Single then
+            AValue := TConstValue.MakeFloat(-SubVal.ValueFloat)
           else
-            Exit(False);
-        end;
+            AValue := TConstValue.MakeInt(Cardinal(-Int32(SubVal.ValueInt)));
 
         TASTUnary.TOp.Not:
-        begin
-          if Val.Kind = TConstValue.TKind.Boolean then
-            AValue := TConstValue.MakeBool(not Val.ValueBool)
-
-          else if Val.Kind in [TConstValue.TKind.Integer, TConstValue.TKind.Pointer] then
-            AValue := TConstValue.MakeInt(not Val.ValueInt)
-
+          if SubVal.Kind = TConstValue.TKind.Boolean then
+            AValue := TConstValue.MakeBool(not SubVal.ValueBool)
           else
-            Exit(False);
-        end;
+            AValue := TConstValue.MakeInt(not SubVal.ValueInt);
       else
         Exit(False);
       end;
+
       Exit(True);
     end;
+
+    Exit(False);
   end;
 
-  Error('Expression must be a compile-time constant', AExpr);
+  Result := False;
+end;
+function TSemanticAnalyzer.FoldExpression(var AExpr: TASTExpression): Boolean;
+var
+  ConstVal: TConstValue;
+  OldLine:  Integer;
+  OldCol:   Integer;
+  OldExpr:  TASTExpression;
+begin
+  Result := False;
+
+  if AExpr = nil then
+    Exit;
+
+  if AExpr is TASTLiteral then
+    Exit(True);
+
+  if AExpr is TASTBinary then
+  begin
+    var Bin := TASTBinary(AExpr);
+
+    var L := Bin.Left;
+    var R := Bin.Right;
+
+    if FoldExpression(L) then Bin.Left := L;
+    if FoldExpression(R) then Bin.Right := R;
+  end
+  else if AExpr is TASTUnary then
+  begin
+    var Un := TASTUnary(AExpr);
+    var Op := Un.Operand;
+
+    if FoldExpression(Op) then Un.Operand := Op;
+  end;
+
+  if EvaluateConstValue(AExpr, ConstVal) then
+  begin
+    OldLine := AExpr.Line;
+    OldCol  := AExpr.Col;
+    OldExpr := AExpr;
+
+    case ConstVal.Kind of
+      TConstValue.TKind.Integer: AExpr := TASTLiteral.CreateInt  (ConstVal.ValueInt,   OldLine, OldCol);
+      TConstValue.TKind.Single:  AExpr := TASTLiteral.CreateFloat(ConstVal.ValueFloat, OldLine, OldCol);
+      TConstValue.TKind.String:  AExpr := TASTLiteral.CreateStr  (ConstVal.ValueStr,   OldLine, OldCol);
+      TConstValue.TKind.Boolean: AExpr := TASTLiteral.CreateBool (ConstVal.ValueBool,  OldLine, OldCol);
+      TConstValue.TKind.Pointer: AExpr := TASTLiteral.CreateInt  (ConstVal.ValueInt,   OldLine, OldCol);
+    else
+      Exit(False);
+    end;
+
+    OldExpr.Free;
+    Result := True;
+  end;
+end;
+
+procedure TSemanticAnalyzer.FoldExpressionList(AList: TObjectList<TASTExpression>);
+begin
+  if AList = nil then
+    Exit;
+
+  for var i := 0 to AList.Count - 1 do
+  begin
+    var Expr := AList[i];
+
+    if not (Expr is TASTLiteral) and FoldExpression(Expr) then
+    begin
+      AList.OwnsObjects := False;
+      AList[i] := Expr;
+      AList.OwnsObjects := True;
+    end;
+  end;
 end;
 
 function TSemanticAnalyzer.CheckTypeCompatibility(TargetType, SourceType: TType): Boolean;
@@ -1009,6 +1165,8 @@ end;
 
 function TSemanticAnalyzer.AnalyzeArrayAccess(AArrayAcc: TASTArrayAccess): TType;
 begin
+  FoldExpressionList(AArrayAcc.IndexExprs);
+
   var CurrentType := AnalyzeExpression(AArrayAcc.ArrayExpr);
 
   for var i := 0 to AArrayAcc.IndexExprs.Count - 1 do
@@ -1086,6 +1244,8 @@ function TSemanticAnalyzer.AnalyzeCallExpr(ACall: TASTCallExpr): TType;
 var
   CalleeLower: String;
 begin
+  FoldExpressionList(ACall.Arguments);
+
   CalleeLower := LowerCase(ACall.CalleeName);
 
   if CalleeLower = 'length' then
@@ -1384,6 +1544,11 @@ end;
 
 procedure TSemanticAnalyzer.AnalyzeAssign(AAssign: TASTAssign);
 begin
+  var Expr := AAssign.Expression;
+
+  if not (Expr is TASTLiteral) and FoldExpression(Expr) then
+    AAssign.Expression := Expr;
+
   if AAssign.Target is TASTMemberAccess then
   begin
     var MemberAcc := TASTMemberAccess(AAssign.Target);
@@ -1411,6 +1576,11 @@ end;
 
 procedure TSemanticAnalyzer.AnalyzeIf(AIf: TASTIf);
 begin
+  var Cond := AIf.Condition;
+
+  if not (Cond is TASTLiteral) and FoldExpression(Cond) then
+    AIf.Condition := Cond;
+
   var CondType := AnalyzeExpression(AIf.Condition);
 
   if not CondType.IsBoolean then
@@ -1424,6 +1594,10 @@ end;
 
 procedure TSemanticAnalyzer.AnalyzeWhile(AWhile: TASTWhile);
 begin
+  var Cond := AWhile.Condition;
+  FoldExpression(Cond);
+  AWhile.Condition := Cond;
+
   var CondType := AnalyzeExpression(AWhile.Condition);
 
   if not CondType.IsBoolean then
@@ -1434,6 +1608,10 @@ end;
 
 procedure TSemanticAnalyzer.AnalyzeRepeat(ARepeat: TASTRepeat);
 begin
+  var Cond := ARepeat.Condition;
+  FoldExpression(Cond);
+  ARepeat.Condition := Cond;
+
   for var Stmt in ARepeat.Statements do
     AnalyzeStatement(Stmt);
 
@@ -1445,6 +1623,15 @@ end;
 
 procedure TSemanticAnalyzer.AnalyzeFor(AFor: TASTFor);
 begin
+  var StartExp := AFor.StartExpr;
+  var StopExp  := AFor.StopExpr;
+
+  FoldExpression(StartExp);
+  FoldExpression(StopExp);
+
+  AFor.StartExpr := StartExp;
+  AFor.StopExpr  := StopExp;
+
   var LoopVarSym := FCurrentScope.Resolve(AFor.LoopVar);
 
   if LoopVarSym = nil then
@@ -1507,6 +1694,10 @@ begin
   begin
     var ConstDecl := TASTConstDecl(ADecl);
     var ValType: TType;
+
+    var ValExpr := ConstDecl.Value;
+    FoldExpression(ValExpr);
+    ConstDecl.Value := ValExpr;
 
     if ConstDecl.ConstType <> nil then
       ValType := ResolveType(ConstDecl.ConstType)
@@ -1603,6 +1794,13 @@ begin
     var VarDecl := TASTVarDecl(ADecl);
     var VType   := ResolveType(VarDecl.VarType);
 
+     if VarDecl.InitialValue <> nil then
+    begin
+      var InitVal := VarDecl.InitialValue;
+      FoldExpression(InitVal);
+      VarDecl.InitialValue := InitVal;
+    end;
+
     for var Name in VarDecl.Names do
     begin
       var Sym := TSymbol.Create(Name, TSymbol.TKind.Variable, VType);
@@ -1690,6 +1888,8 @@ begin
   FCurrentScope := RoutineScope;
 
   try
+    var RegParamCount := 0;
+
     if ARoutine.IsRecordMethod and (Length(ARoutine.ParentTypeName) > 0) then
     begin
       var ParentTypeSym := FGlobalScope.Resolve(ARoutine.ParentTypeName);
@@ -1703,10 +1903,10 @@ begin
         SelfSym.IsVarParam := True;
 
         Inc(FCurrentScope.FLocalSize, 4);
-
         SelfSym.StackOffset := -Integer(FCurrentScope.FLocalSize);
 
         FCurrentScope.Define(SelfSym);
+        RegParamCount := 1;
       end;
     end;
 
@@ -1717,18 +1917,19 @@ begin
       ResultSym.Storage := TSymbol.TStorage.Local;
 
       Inc(FCurrentScope.FLocalSize, 4);
-
       ResultSym.StackOffset := -Integer(FCurrentScope.FLocalSize);
 
       FCurrentScope.Define(ResultSym);
 
       var FuncNameSym := TSymbol.Create(ARoutine.Name, TSymbol.TKind.Variable, RetType);
 
-      FuncNameSym.Storage := TSymbol.TStorage.Local;
+      FuncNameSym.Storage     := TSymbol.TStorage.Local;
       FuncNameSym.StackOffset := ResultSym.StackOffset;
 
       FCurrentScope.Define(FuncNameSym);
     end;
+
+    var StackParamOffset: Integer := 8;
 
     for var i := 0 to ARoutine.Params.Count - 1 do
     begin
@@ -1738,11 +1939,19 @@ begin
       var PSym := TSymbol.Create(PDecl.Name, TSymbol.TKind.Parameter, PType);
 
       PSym.Storage    := TSymbol.TStorage.Parameter;
-      PSym.ParamIndex := i + Ord(ARoutine.IsRecordMethod);
+      PSym.ParamIndex := i + RegParamCount;
       PSym.IsVarParam := (PDecl.Modifier in [TASTParamDecl.TModifier.Var, TASTParamDecl.TModifier.Out]);
 
-      Inc(FCurrentScope.FLocalSize, 4);
-      PSym.StackOffset := -Integer(FCurrentScope.FLocalSize);
+      if PSym.ParamIndex < 4 then
+      begin
+        Inc(FCurrentScope.FLocalSize, 4);
+        PSym.StackOffset := -Integer(FCurrentScope.FLocalSize);
+      end
+      else
+      begin
+        PSym.StackOffset := StackParamOffset;
+        Inc(StackParamOffset, 4);
+      end;
 
       if not FCurrentScope.Define(PSym) then
         Error(Format('Duplicate parameter "%s"', [PDecl.Name]), PDecl);
@@ -1753,6 +1962,7 @@ begin
 
     if Assigned(ARoutine.Body) then
       AnalyzeBlock(ARoutine.Body);
+
   finally
     FCurrentScope := FCurrentScope.Parent;
   end;

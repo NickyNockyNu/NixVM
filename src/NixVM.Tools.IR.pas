@@ -409,13 +409,17 @@ begin
       if AlignPadByte <> 0 then
         Result := Result + ', $' + IntToHex(AlignPadByte, 2);
     end;
-
   else
     Result := '';
   end;
 
   if Length(Comment) > 0 then
-    Result := Result + ' ; ' + Comment;
+  begin
+    if Length(Result) > 0 then
+      Result := Result + #9;
+
+    Result := Result + '; ' + Comment;
+  end;
 end;
 
 function TIRItem.Size: Cardinal;
@@ -530,7 +534,7 @@ begin
   Item := Default(TIRItem);
 
   Item.Kind    := TIRItem.TKind.None;
-  Item.Comment := AComment;
+  Item.Comment := Trim(AComment);
 
   Result := Add(Item);
 end;

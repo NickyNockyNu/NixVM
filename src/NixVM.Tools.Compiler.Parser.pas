@@ -809,56 +809,43 @@ end;
 
 function TParser.ParseArrayType: TASTType;
 var
-  StartTok: TLexer.TToken;
-  LowVals, HighVals: TList<Integer>;
+  StartTok:  TLexer.TToken;
+  LowExprs:  TList<TASTExpression>;
+  HighExprs: TList<TASTExpression>;
 begin
   StartTok := FCurTok;
 
   Expect(TLexer.TToken.TKind.Array);
   Expect(TLexer.TToken.TKind.LBracket, 'Expected "[" after array');
 
-  LowVals  := TList<Integer>.Create;
-  HighVals := TList<Integer>.Create;
+  LowExprs  := TList<TASTExpression>.Create;
+  HighExprs := TList<TASTExpression>.Create;
   try
     repeat
-      var LowTok := FCurTok;
-      var LowBound: Integer := 0;
-
-      if Expect(TLexer.TToken.TKind.IntegerLiteral, 'Expected integer lower bound for array') then
-        LowBound := Integer(LowTok.ValueInt);
-
+      LowExprs.Add(ParseExpression);
       Expect(TLexer.TToken.TKind.DotDot, 'Expected ".." in array subrange');
-
-      var HighTok := FCurTok;
-      var HighBound: Integer := 0;
-
-      if Expect(TLexer.TToken.TKind.IntegerLiteral, 'Expected integer upper bound for array') then
-        HighBound := Integer(HighTok.ValueInt);
-
-      LowVals.Add(LowBound);
-      HighVals.Add(HighBound);
+      HighExprs.Add(ParseExpression);
     until not Match(TLexer.TToken.TKind.Comma);
 
     Expect(TLexer.TToken.TKind.RBracket, 'Expected "]" closing array dimensions');
     Expect(TLexer.TToken.TKind.Of, 'Expected "of" after array dimensions');
 
     var FinalElemType := ParseType;
-
     Result := FinalElemType;
 
-    for var i := LowVals.Count - 1 downto 0 do
+    for var i := LowExprs.Count - 1 downto 0 do
     begin
       var ArrType := TASTType.Create(TASTType.TKind.Array, StartTok.Line, StartTok.Col);
 
-      ArrType.SubrangeLow  := LowVals[i];
-      ArrType.SubrangeHigh := HighVals[i];
+      ArrType.LowBoundExpr  := LowExprs[i];
+      ArrType.HighBoundExpr := HighExprs[i];
       ArrType.ElementType  := Result;
 
       Result := ArrType;
     end;
   finally
-    LowVals.Free;
-    HighVals.Free;
+    LowExprs.Free;
+    HighExprs.Free;
   end;
 end;
 
@@ -1489,16 +1476,13 @@ begin
   begin
     var StartTok := FCurTok;
     var ConstName := FCurTok.ValueStr;
-
     NextToken;
 
     var ConstType: TASTType := nil;
-
     if Match(TLexer.TToken.TKind.Colon) then
       ConstType := ParseType;
 
     Expect(TLexer.TToken.TKind.Equal, 'Expected "=" in const declaration');
-
     var ValueExpr := ParseExpression;
 
     Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after const declaration');

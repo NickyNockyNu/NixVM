@@ -28,24 +28,22 @@ uses
   System.SysUtils,
   System.Classes,
   System.IOUtils,
-
   NixVM.Core.Registers,
   NixVM.Core.Instructions,
   NixVM.Core.Strings,
   NixVM.Core.Memory,
   NixVM.Core.System,
   NixVM.Core.ROM,
-
   NixVM.Tools.IR,
   NixVM.Tools.Assembler,
   NixVM.Tools.Disasm,
   NixVM.Tools.Compiler,
-
   NixVM.Tools.Compiler.Lexer,
   NixVM.Tools.Compiler.AST,
   NixVM.Tools.Compiler.Parser,
   NixVM.Tools.Compiler.Semantics,
-  NixVM.Tools.Compiler.CodeGen;
+  NixVM.Tools.Compiler.CodeGen,
+  NixVM.Tools.Compiler.Optimizer in '..\src\NixVM.Tools.Compiler.Optimizer.pas';
 
 procedure PrintBanner;
 begin
@@ -294,6 +292,9 @@ begin
       Writeln(Format('SUCCESS: Cartridge written to "%s"', [OutputFile]));
       Writeln;
       Writeln(Compiler.ROMHeader.ToString);
+
+      if Compiler.Optimize then
+        Writeln('Optimizations: ', Compiler.SizeBeforeOpt, ' -> ', Compiler.SizeAfterOpt);
     end;
 
     Result := 0;

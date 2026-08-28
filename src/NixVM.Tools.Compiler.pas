@@ -41,7 +41,8 @@ uses
   NixVM.Tools.Compiler.Parser,
   NixVM.Tools.Compiler.Semantics,
   NixVM.Tools.Compiler.AST,
-  NixVM.Tools.Compiler.CodeGen;
+  NixVM.Tools.Compiler.CodeGen,
+  NixVM.Tools.Compiler.Optimizer;
 
 type
   TGetUnitSource = function(const AUnitName: String; out ASource, AFileName: String): Boolean of object;
@@ -57,6 +58,11 @@ type
     FLoadedUnits:     TObjectDictionary<String, TASTUnit>;
     FCompileOrder:    TList<TASTUnit>;
     FLoadingStack:    TList<String>;
+
+    FOptimize: Boolean;
+
+    FSizeBeforeOpt: Integer;
+    FSizeAfterOpt:  Integer;
 
     function  LoadUnitRecursive(const AUnitName: String): TASTUnit;
     function  ResolveUnitSource(const AUnitName: String; out ASource, AFilePath: String): Boolean;
@@ -81,6 +87,11 @@ type
 
     property SearchPaths:     TList<String>  read FSearchPaths;
     property OnGetUnitSource: TGetUnitSource read FOnGetUnitSource write FOnGetUnitSource;
+
+    property Optimize: Boolean read FOptimize write FOptimize;
+
+    property SizeBeforeOpt: Integer read FSizeBeforeOpt;
+    property SizeAfterOpt:  Integer read FSizeAfterOpt;
   end;
   {$ENDREGION}
 
@@ -174,6 +185,8 @@ begin
   ROMHeader.Reset;
 
   AddDefaultSearchPaths;
+
+  FOptimize := True;
 end;
 
 destructor TCompiler.Destroy;
@@ -248,13 +261,20 @@ begin
         Shaker.Free;
       end;
 
-      CodeGen := TCodeGenerator.Create(ProgAST, FCompileOrder, Analyzer);
+      CodeGen := TCodeGenerator.Create(ProgAST, FCompileOrder, Analyzer, ASource, AName);
 
       try
         if Assigned(FIR) then
           FIR.Free;
 
         FIR := CodeGen.Generate;
+
+        FSizeBeforeOpt := FIR.Size;
+
+        if FOptimize then
+          TPeepholeOptimizer.Optimize(FIR);
+
+        FSizeAfterOpt := FIR.Size;
       finally
         CodeGen.Free;
       end;
