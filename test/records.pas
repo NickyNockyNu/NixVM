@@ -20,6 +20,8 @@ type
   private
     fx, fy: Integer;
     
+    u: TUnused;
+    
     function GetY: Integer;
     begin
       Result := fy;
@@ -43,13 +45,10 @@ begin
 end;
 
 var
-  a: TUnused;
+  c: TPoint;
   i: Integer;
   p: array[0..2] of TPoint;
 begin
-  a.a := 42;
-  Writeln('%d', a.AA);
-  
   for i := 0 to 2 do
   begin
     with p[i] do
@@ -58,6 +57,9 @@ begin
     
       Writeln('%d: %d, %d', i, x, y);
     
+      with u do
+        a := i;
+        
       y := x + y;
     
       Writeln('  %d', y);
@@ -66,5 +68,9 @@ begin
 
   for i := 0 to 2 do
     with p[i] do
-      Writeln('%d: %d, %d', i, fx, fy);
+      Writeln('%d: %d, %d, %d', i, fx, fy, u.a);
+      
+  c := p[1];
+  
+  Writeln('%d, %d', c.x, c.y);
 end.

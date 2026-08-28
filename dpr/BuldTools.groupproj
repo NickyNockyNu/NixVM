@@ -1,0 +1,72 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{E41DCAD2-070C-4E0B-8B04-ABB1E16F0EE4}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="nvmc.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="nvmd.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="nvmtest.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="nvma.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="nvmc">
+        <MSBuild Projects="nvmc.dproj"/>
+    </Target>
+    <Target Name="nvmc:Clean">
+        <MSBuild Projects="nvmc.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="nvmc:Make">
+        <MSBuild Projects="nvmc.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="nvmd">
+        <MSBuild Projects="nvmd.dproj"/>
+    </Target>
+    <Target Name="nvmd:Clean">
+        <MSBuild Projects="nvmd.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="nvmd:Make">
+        <MSBuild Projects="nvmd.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="nvmtest">
+        <MSBuild Projects="nvmtest.dproj"/>
+    </Target>
+    <Target Name="nvmtest:Clean">
+        <MSBuild Projects="nvmtest.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="nvmtest:Make">
+        <MSBuild Projects="nvmtest.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="nvma">
+        <MSBuild Projects="nvma.dproj"/>
+    </Target>
+    <Target Name="nvma:Clean">
+        <MSBuild Projects="nvma.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="nvma:Make">
+        <MSBuild Projects="nvma.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="nvmc;nvmd;nvmtest;nvma"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="nvmc:Clean;nvmd:Clean;nvmtest:Clean;nvma:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="nvmc:Make;nvmd:Make;nvmtest:Make;nvma:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

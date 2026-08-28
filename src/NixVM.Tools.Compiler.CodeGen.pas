@@ -71,7 +71,6 @@ type
     FSourceLines:     TStrings;
     FFileName:        String;
     FLastLine:        Integer;
-    FIsZeroFrameLeaf: Boolean;
 
     procedure EmitSourceComment(ANode: TASTNode);
 
@@ -1573,6 +1572,37 @@ end;
 
 procedure TCodeGenerator.GenAssign(AAssign: TASTAssign);
 begin
+  if (AAssign = nil) or (AAssign.Target = nil) or (AAssign.Expression = nil) then
+    Exit;
+
+  if (AAssign.Target.ResolvedType <> nil) and (AAssign.Target.ResolvedType.Kind in [TASTType.TKind.Record, TASTType.TKind.Array]) then
+  begin
+    var StructSize: Cardinal;
+
+    var Sym := FAnalyzer.GlobalScope.Resolve(AAssign.Target.ResolvedType.TypeName);
+
+    if (Sym <> nil) and (Sym.SymbolType <> nil) then
+      StructSize := Sym.SymbolType.Size
+    else
+      StructSize := AAssign.Target.ResolvedType.Size;
+
+    if StructSize > 0 then
+    begin
+      GenAddressOf(AAssign.Target);
+      FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
+
+      GenAddressOf(AAssign.Expression);
+      FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
+
+      FIR.AddInstrRn(TCPUInstruction.TOpCode.popr, 2);
+
+      FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R2, StructSize);
+      FIR.AddInstrRImm(TCPUInstruction.TOpCode.syscall, Cardinal(TSysCalls.ID.MemoryCopy));
+    end;
+
+    Exit;
+  end;
+
   GenExpression(AAssign.Expression);
 
   if AAssign.Op in [TASTAssign.TOp.PlusAssign, TASTAssign.TOp.MinusAssign] then
@@ -2068,7 +2098,46 @@ begin
 
   if AExpr is TASTIdentifier then
   begin
-    var Sym := FCurrentScope.Resolve(TASTIdentifier(AExpr).Name);
+    var TargetName := TASTIdentifier(AExpr).Name;
+
+    for var i := FWithStack.Count - 1 downto 0 do
+    begin
+      var Ctx := FWithStack[i];
+
+      if Ctx.RecordType <> nil then
+      begin
+        var Field: TType.TRecordField;
+
+        if Ctx.RecordType.FindField(TargetName, Field) then
+        begin
+          FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(Ctx.StackOffset));
+
+          if Field.Offset > 0 then
+            FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, Field.Offset);
+
+          Exit;
+        end;
+      end;
+    end;
+
+    var SelfSym := FCurrentScope.Resolve('self');
+
+    if (SelfSym <> nil) and (SelfSym.SymbolType <> nil) and (SelfSym.SymbolType.Kind = TType.TKind.Record) then
+    begin
+      var Field: TType.TRecordField;
+
+      if SelfSym.SymbolType.FindField(TargetName, Field) then
+      begin
+        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
+
+        if Field.Offset > 0 then
+          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, Field.Offset);
+
+        Exit;
+      end;
+    end;
+
+    var Sym := FCurrentScope.Resolve(TargetName);
 
     if Sym <> nil then
     begin
@@ -2086,19 +2155,22 @@ begin
             FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(Sym.StackOffset));
       end;
     end;
-  end
 
-  else if AExpr is TASTMemberAccess then
+    Exit;
+  end;
+
+  if AExpr is TASTMemberAccess then
   begin
     var MemberAcc := TASTMemberAccess(AExpr);
-
     GenAddressOf(MemberAcc.Expression);
 
     if MemberAcc.FieldOffset > 0 then
       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, MemberAcc.FieldOffset);
-  end
 
-  else if AExpr is TASTArrayAccess then
+    Exit;
+  end;
+
+  if AExpr is TASTArrayAccess then
   begin
     var ArrayAcc := TASTArrayAccess(AExpr);
     var Sym: TSymbol := nil;
@@ -2122,12 +2194,18 @@ begin
 
           Exit;
         end
+
         else if (Sym <> nil) and (Sym.Storage = TSymbol.TStorage.Global) then
         begin
-          if ByteOffset = 0 then
-            FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(Sym.GlobalLabel))
-          else
-            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, TRegisters.ID.R0, TRegisters.ID.R0, TLabelString(Sym.GlobalLabel + ' + ' + IntToStr(ByteOffset)));
+          var Idx := FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(Sym.GlobalLabel));
+
+          if ByteOffset <> 0 then
+          begin
+            var Item := FIR.Items[Idx];
+
+            Item.Imm.Delta := ByteOffset;
+            FIR.Items[Idx] := Item;
+          end;
 
           Exit;
         end;
@@ -2139,10 +2217,11 @@ begin
         FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.sub, TRegisters.ID.R0, Cardinal(ArrayAcc.LowBound));
 
       case ArrayAcc.ElementSize of
-         1: ;
-         2: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 1);
-         4: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 2);
-         8: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 3);
+        1: ;
+        2:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 1);
+        4:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 2);
+        8:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 3);
+        12: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, TRegisters.ID.R0, 12);
         16: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 4);
       else
         if ArrayAcc.ElementSize > 1 then
@@ -2196,9 +2275,11 @@ begin
       FIR.AddInstrR1(TCPUInstruction.TOpCode.pop, TRegisters.ID.R1);
       FIR.AddInstrR1R2(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, TRegisters.ID.R1);
     end;
-  end
 
-  else if (AExpr is TASTUnary) and (TASTUnary(AExpr).Op = TASTUnary.TOp.Dereference) then
+    Exit;
+  end;
+
+  if (AExpr is TASTUnary) and (TASTUnary(AExpr).Op = TASTUnary.TOp.Dereference) then
     GenExpression(TASTUnary(AExpr).Operand);
 end;
 

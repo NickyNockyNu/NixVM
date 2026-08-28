@@ -74,7 +74,7 @@ type
       DebugBreak = Debug + 0;
       DebugPrint = Debug + 1;
 
-      Memory = %10;
+      Memory = $10;
       MemoryFill    = Memory + 0;
       MemoryCopy    = Memory + 1;
       MemoryCompare = Memory + 2;
