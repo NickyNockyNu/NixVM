@@ -1528,6 +1528,67 @@ begin
           else
             Error('Invalid offset in 3-operand instruction', Tok);
         end;
+
+        TCPUInstruction.TParameters.Rn:
+        begin
+          if not NextToken(Tok) then
+          begin
+            Error('Expected count operand', Tok);
+            Continue;
+          end;
+
+          var Val: Cardinal;
+          var IsConst: Boolean;
+
+          if ResolveIdentOrNumber(Tok, Val, IsConst) and IsConst then
+            IR.AddInstrRn(OpCode, Val)
+          else
+            Error('Expected integer constant (0..15) for Rn parameter', Tok);
+        end;
+
+        TCPUInstruction.TParameters.RnImm:
+        begin
+          if not NextToken(Tok) then
+          begin
+            Error('Expected count operand', Tok);
+            Continue;
+          end;
+
+          var CountVal: Cardinal;
+          var IsConst: Boolean;
+
+          if not (ResolveIdentOrNumber(Tok, CountVal, IsConst) and IsConst) then
+          begin
+            Error('Expected integer constant (0..15) for count', Tok);
+            Continue;
+          end;
+
+          if not NextToken(Tok) or (Tok.Kind <> TTokenKind.Comma) then
+          begin
+            Error('Expected comma', Tok);
+            Continue;
+          end;
+
+          var OpVal: Cardinal; var OpLabel: TLabelString;
+
+          if ParseOperand(OpVal, OpLabel, IsConst) then
+          begin
+            if IsConst then
+              IR.AddInstrRnImm(OpCode, CountVal, OpVal)
+            else
+            begin
+              var Idx := IR.AddInstrRnImm(OpCode, CountVal, 0);
+              var Item := IR.Items[Idx];
+
+              Item.Offset.&Label := OpLabel;
+              Item.Offset.Delta  := Integer(OpVal);
+
+              IR.Items[Idx] := Item;
+            end;
+          end
+          else
+            Error('Expected immediate operand', Tok);
+        end;
       end;
 
       LineHasItem := True;

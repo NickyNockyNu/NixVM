@@ -274,24 +274,29 @@ type
   {$ENDREGION}
 
   {$REGION 'TreeShaker'}
-  TTreeShaker = class
+TTreeShaker = class
+  type
+    TPropSpec = record
+      ReadRoutine:  String;
+      WriteRoutine: String;
+    end;
   private
-    FProgram:    TASTProgram;
-    FUnits:      TList<TASTUnit>;
-    FRoutineMap: TDictionary<String, TASTRoutineDecl>;
-    FVarMap:     TDictionary<String, TASTVarDecl>;
+    FProgram:     TASTProgram;
+    FUnits:       TList<TASTUnit>;
+    FRoutineMap:  TDictionary<String, TASTRoutineDecl>;
+    FVarMap:      TDictionary<String, TASTVarDecl>;
+    FPropertyMap: TDictionary<String, TPropSpec>;
 
-    procedure MarkExpression(AExpr: TASTExpression);
-    procedure MarkStatement(AStmt: TASTStatement);
-    procedure MarkBlock(ABlock: TASTBlock);
-    procedure MarkRoutine(ARoutine: TASTRoutineDecl);
+    procedure MarkExpression(AExpr:    TASTExpression);
+    procedure MarkStatement (AStmt:    TASTStatement);
+    procedure MarkBlock     (ABlock:   TASTBlock);
+    procedure MarkRoutine   (ARoutine: TASTRoutineDecl);
   public
     constructor Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
     destructor  Destroy; override;
 
     procedure Execute;
-  end;
-  {$ENDREGION}
+  end;  {$ENDREGION}
 
 implementation
 
@@ -372,7 +377,7 @@ end;
 
 function TType.IsInteger: Boolean;
 begin
-  Result := FKind in [TKind.Integer, TKind.Cardinal, TKind.SmallInt, TKind.Word, TKind.ShortInt, TKind.Byte, TKind.Enum];
+  Result := FKind in [TKind.Integer, TKind.Cardinal, TKind.SmallInt, TKind.Word, TKind.ShortInt, TKind.Byte, TKind.Enum, TKind.Char];
 end;
 
 function TType.IsFloat: Boolean;
@@ -526,6 +531,13 @@ begin
 end;
 
 procedure TSemanticAnalyzer.InitBuiltinTypes;
+var
+  ProcType : TType;
+  FuncInt:   TType;
+  FuncStr:   TType;
+  FuncChar:  TType;
+  FuncBool:  TType;
+  FuncFloat: TType;
 begin
   FBuiltinTypes.Add('integer',  TType.Create(TType.TKind.Integer,  'Integer',  4));
   FBuiltinTypes.Add('single',   TType.Create(TType.TKind.Single,   'Single',   4));
@@ -544,26 +556,55 @@ begin
   for var Pair in FBuiltinTypes do
     FGlobalScope.Define(TSymbol.Create(Pair.Value.Name, TSymbol.TKind.Type, Pair.Value));
 
-  var ProcType := TType.Create(TType.TKind.Procedure, 'Procedure', 0);
-
+  ProcType := TType.Create(TType.TKind.Procedure, 'Procedure', 0);
   ProcType.ReturnType := FBuiltinTypes['void'];
+
+  FuncInt := TType.Create(TType.TKind.Function, 'Function', 0);
+  FuncInt.ReturnType := FBuiltinTypes['integer'];
+
+  FuncStr := TType.Create(TType.TKind.Function, 'Function', 0);
+  FuncStr.ReturnType := FBuiltinTypes['string'];
+
+  FuncChar := TType.Create(TType.TKind.Function, 'Function', 0);
+  FuncChar.ReturnType := FBuiltinTypes['char'];
+
+  FuncBool := TType.Create(TType.TKind.Function, 'Function', 0);
+  FuncBool.ReturnType := FBuiltinTypes['boolean'];
+
+  FuncFloat := TType.Create(TType.TKind.Function, 'Function', 0);
+  FuncFloat.ReturnType := FBuiltinTypes['single'];
+
 
   FGlobalScope.Define(TSymbol.Create('writeln', TSymbol.TKind.Procedure, ProcType));
   FGlobalScope.Define(TSymbol.Create('write',   TSymbol.TKind.Procedure, ProcType));
+
   FGlobalScope.Define(TSymbol.Create('halt',    TSymbol.TKind.Procedure, ProcType));
   FGlobalScope.Define(TSymbol.Create('yield',   TSymbol.TKind.Procedure, ProcType));
   FGlobalScope.Define(TSymbol.Create('inc',     TSymbol.TKind.Procedure, ProcType));
   FGlobalScope.Define(TSymbol.Create('dec',     TSymbol.TKind.Procedure, ProcType));
 
-  var FuncInt := TType.Create(TType.TKind.Function, 'Function', 0);
-  FuncInt.ReturnType := FBuiltinTypes['integer'];
-
-  var FuncStr := TType.Create(TType.TKind.Function, 'Function', 0);
-  FuncStr.ReturnType := FBuiltinTypes['string'];
-
   FGlobalScope.Define(TSymbol.Create('length', TSymbol.TKind.Function, FuncInt));
   FGlobalScope.Define(TSymbol.Create('copy',   TSymbol.TKind.Function, FuncStr));
   FGlobalScope.Define(TSymbol.Create('format', TSymbol.TKind.Function, FuncStr));
+
+  FGlobalScope.Define(TSymbol.Create('sin',  TSymbol.TKind.Function, FuncFloat));
+  FGlobalScope.Define(TSymbol.Create('cos',  TSymbol.TKind.Function, FuncFloat));
+  FGlobalScope.Define(TSymbol.Create('tan',  TSymbol.TKind.Function, FuncFloat));
+  FGlobalScope.Define(TSymbol.Create('atan', TSymbol.TKind.Function, FuncFloat));
+  FGlobalScope.Define(TSymbol.Create('exp',  TSymbol.TKind.Function, FuncFloat));
+  FGlobalScope.Define(TSymbol.Create('ln',   TSymbol.TKind.Function, FuncFloat));
+  FGlobalScope.Define(TSymbol.Create('sqrt', TSymbol.TKind.Function, FuncFloat));
+
+  FGlobalScope.Define(TSymbol.Create('round', TSymbol.TKind.Function, FuncInt));
+  FGlobalScope.Define(TSymbol.Create('trunc', TSymbol.TKind.Function, FuncInt));
+
+  FGlobalScope.Define(TSymbol.Create('low',      TSymbol.TKind.Function, FuncInt));
+  FGlobalScope.Define(TSymbol.Create('high',     TSymbol.TKind.Function, FuncInt));
+  FGlobalScope.Define(TSymbol.Create('ord',      TSymbol.TKind.Function, FuncInt));
+  FGlobalScope.Define(TSymbol.Create('chr',      TSymbol.TKind.Function, FuncChar));
+  FGlobalScope.Define(TSymbol.Create('succ',     TSymbol.TKind.Function, FuncInt));
+  FGlobalScope.Define(TSymbol.Create('pred',     TSymbol.TKind.Function, FuncInt));
+  FGlobalScope.Define(TSymbol.Create('assigned', TSymbol.TKind.Function, FuncBool));
 end;
 
 procedure TSemanticAnalyzer.Error(const AMsg: String; ANode: TASTNode);
@@ -781,8 +822,9 @@ begin
   if AExpr is TASTCallExpr then
   begin
     var Call := TASTCallExpr(AExpr);
+    var CalleeLower := Lowercase(Call.CalleeName);
 
-    if SameText(Call.CalleeName, 'sizeof') and (Call.Arguments.Count = 1) then
+    if (CalleeLower = 'sizeof') and (Call.Arguments.Count = 1) then
     begin
       var Arg := Call.Arguments[0];
 
@@ -800,6 +842,152 @@ begin
 
           Exit(True);
         end;
+      end;
+    end;
+
+    if (CalleeLower = 'sin')  or (CalleeLower = 'cos')   or (CalleeLower = 'tan')   or
+       (CalleeLower = 'atan') or (CalleeLower = 'exp')   or (CalleeLower = 'ln')    or
+       (CalleeLower = 'sqrt') or (CalleeLower = 'round') or (CalleeLower = 'trunc') then
+   begin
+      if Call.Arguments.Count = 1 then
+      begin
+        var ArgVal: TConstValue;
+
+        if EvaluateConstValue(Call.Arguments[0], ArgVal) then
+        begin
+          var FVal: Single;
+
+          if ArgVal.Kind = TConstValue.TKind.Single then
+            FVal := ArgVal.ValueFloat
+          else if ArgVal.Kind = TConstValue.TKind.Integer then
+            FVal := ArgVal.ValueInt
+          else
+            Exit(False);
+
+               if CalleeLower = 'sin'   then AValue := TConstValue.MakeFloat(System.Sin(FVal))
+          else if CalleeLower = 'cos'   then AValue := TConstValue.MakeFloat(System.Cos(FVal))
+          else if CalleeLower = 'tan'   then AValue := TConstValue.MakeFloat(System.Tangent(FVal))
+          else if CalleeLower = 'atan'  then AValue := TConstValue.MakeFloat(System.ArcTan(FVal))
+          else if CalleeLower = 'exp'   then AValue := TConstValue.MakeFloat(System.Exp(FVal))
+          else if CalleeLower = 'ln'    then begin if FVal > 0 then AValue := TConstValue.MakeFloat(System.Ln(FVal)) else Exit(False); end
+          else if CalleeLower = 'sqrt'  then begin if FVal >= 0 then AValue := TConstValue.MakeFloat(System.Sqrt(FVal)) else Exit(False); end
+          else if CalleeLower = 'round' then AValue := TConstValue.MakeInt(Cardinal(System.Round(FVal)))
+          else if CalleeLower = 'trunc' then AValue := TConstValue.MakeInt(Cardinal(System.Trunc(FVal)));
+
+          Exit(True);
+        end;
+      end;
+   end;
+
+    if (CalleeLower = 'low') or (CalleeLower = 'high') then
+    begin
+      if Call.Arguments.Count = 1 then
+      begin
+        var Arg := Call.Arguments[0];
+
+        if Arg is TASTIdentifier then
+        begin
+          var Sym := FCurrentScope.Resolve(TASTIdentifier(Arg).Name);
+          if (Sym <> nil) and (Sym.SymbolType <> nil) then
+          begin
+            if Sym.SymbolType.Kind = TType.TKind.Array then
+            begin
+              if CalleeLower = 'low' then
+                AValue := TConstValue.MakeInt(Cardinal(Sym.SymbolType.SubrangeLow))
+              else
+                AValue := TConstValue.MakeInt(Cardinal(Sym.SymbolType.SubrangeHigh));
+
+              Exit(True);
+            end;
+
+            if Sym.SymbolType.Kind = TType.TKind.Enum then
+            begin
+              if CalleeLower = 'low' then
+                AValue := TConstValue.MakeInt(0)
+              else
+                AValue := TConstValue.MakeInt(Cardinal(Sym.SymbolType.EnumElements.Count - 1));
+
+              Exit(True);
+            end;
+          end;
+        end;
+      end;
+
+      Exit(False);
+    end;
+
+    if (CalleeLower = 'length') and (Call.Arguments.Count = 1) then
+    begin
+      var Arg := Call.Arguments[0];
+
+      if Arg is TASTIdentifier then
+      begin
+        var Sym := FCurrentScope.Resolve(TASTIdentifier(Arg).Name);
+
+        if (Sym <> nil) and (Sym.SymbolType <> nil) and (Sym.SymbolType.Kind = TType.TKind.Array) then
+        begin
+          var Count := (Sym.SymbolType.SubrangeHigh - Sym.SymbolType.SubrangeLow) + 1;
+
+          if Count < 0 then
+            Count := 0;
+
+          AValue := TConstValue.MakeInt(Cardinal(Count));
+
+          Exit(True);
+        end;
+      end;
+    end;
+
+    if (CalleeLower = 'ord') and (Call.Arguments.Count = 1) then
+    begin
+      var SubVal: TConstValue;
+
+      if EvaluateConstValue(Call.Arguments[0], SubVal) then
+      begin
+        if SubVal.Kind = TConstValue.TKind.String then
+        begin
+          if Length(SubVal.ValueStr) > 0 then
+            AValue := TConstValue.MakeInt(Ord(SubVal.ValueStr[1]))
+          else
+            AValue := TConstValue.MakeInt(0);
+        end
+        else
+          AValue := TConstValue.MakeInt(SubVal.ValueInt);
+
+        Exit(True);
+      end;
+    end;
+
+    if (CalleeLower = 'chr') and (Call.Arguments.Count = 1) then
+    begin
+      var SubVal: TConstValue;
+
+      if EvaluateConstValue(Call.Arguments[0], SubVal) then
+      begin
+        AValue := TConstValue.MakeStr(Char(SubVal.ValueInt and $FF));
+        Exit(True);
+      end;
+    end;
+
+    if (CalleeLower = 'succ') and (Call.Arguments.Count = 1) then
+    begin
+      var SubVal: TConstValue;
+
+      if EvaluateConstValue(Call.Arguments[0], SubVal) then
+      begin
+        AValue := TConstValue.MakeInt(SubVal.ValueInt + 1);
+        Exit(True);
+      end;
+    end;
+
+    if (CalleeLower = 'pred') and (Call.Arguments.Count = 1) then
+    begin
+      var SubVal: TConstValue;
+
+      if EvaluateConstValue(Call.Arguments[0], SubVal) then
+      begin
+        AValue := TConstValue.MakeInt(SubVal.ValueInt - 1);
+        Exit(True);
       end;
     end;
 
@@ -947,6 +1135,7 @@ begin
 
   Result := False;
 end;
+
 function TSemanticAnalyzer.FoldExpression(var AExpr: TASTExpression): Boolean;
 var
   ConstVal: TConstValue;
@@ -989,9 +1178,14 @@ begin
     case ConstVal.Kind of
       TConstValue.TKind.Integer: AExpr := TASTLiteral.CreateInt  (ConstVal.ValueInt,   OldLine, OldCol);
       TConstValue.TKind.Single:  AExpr := TASTLiteral.CreateFloat(ConstVal.ValueFloat, OldLine, OldCol);
-      TConstValue.TKind.String:  AExpr := TASTLiteral.CreateStr  (ConstVal.ValueStr,   OldLine, OldCol);
       TConstValue.TKind.Boolean: AExpr := TASTLiteral.CreateBool (ConstVal.ValueBool,  OldLine, OldCol);
       TConstValue.TKind.Pointer: AExpr := TASTLiteral.CreateInt  (ConstVal.ValueInt,   OldLine, OldCol);
+
+      TConstValue.TKind.String:
+        if Length(ConstVal.ValueStr) = 1 then
+          AExpr := TASTLiteral.CreateChar(ConstVal.ValueStr[1], OldLine, OldCol)
+        else
+          AExpr := TASTLiteral.CreateStr(ConstVal.ValueStr, OldLine, OldCol);
     else
       Exit(False);
     end;
@@ -1039,7 +1233,16 @@ begin
   if (SourceType.Kind = TType.TKind.NilType) and (TargetType.Kind in [TType.TKind.Pointer, TType.TKind.String]) then
     Exit(True);
 
-   if (TargetType.Kind = TType.TKind.String) and (SourceType.Kind = TType.TKind.Char) then
+  if (TargetType.Kind = TType.TKind.String) and (SourceType.Kind = TType.TKind.Char) then
+    Exit(True);
+
+  if (TargetType.Kind = TType.TKind.Char) and (SourceType.Kind = TType.TKind.String) then
+    Exit(True);
+
+  if (TargetType.Kind = TType.TKind.Char) and (SourceType.Kind = TType.TKind.Byte) then
+    Exit(True);
+
+  if (TargetType.Kind = TType.TKind.Byte) and (SourceType.Kind = TType.TKind.Char) then
     Exit(True);
 
   Result := False;
@@ -1248,6 +1451,53 @@ begin
 
   CalleeLower := LowerCase(ACall.CalleeName);
 
+  if ACall.BaseExpr <> nil then
+  begin
+    var BaseType := AnalyzeExpression(ACall.BaseExpr);
+
+    if (BaseType.Kind = TType.TKind.Pointer) and (BaseType.ElementType <> nil) then
+      BaseType := BaseType.ElementType;
+
+    if BaseType.Kind = TType.TKind.Record then
+    begin
+      var MethodDecl: TASTRoutineDecl;
+
+      if (BaseType.Methods <> nil) and BaseType.Methods.TryGetValue(LowerCase(ACall.CalleeName), MethodDecl) then
+      begin
+        for var Arg in ACall.Arguments do
+          AnalyzeExpression(Arg);
+
+        if MethodDecl.IsFunction and Assigned(MethodDecl.ReturnType) then
+          Exit(ResolveType(MethodDecl.ReturnType))
+        else
+          Exit(FBuiltinTypes['void']);
+      end;
+
+      Error(Format('Record "%s" has no method named "%s"', [BaseType.Name, ACall.CalleeName]), ACall);
+      Exit(FBuiltinTypes['void']);
+    end;
+  end;
+
+  if (CalleeLower = 'sin')  or (CalleeLower = 'cos')   or (CalleeLower = 'tan')   or
+     (CalleeLower = 'atan') or (CalleeLower = 'exp')   or (CalleeLower = 'ln')    or
+     (CalleeLower = 'sqrt') or (CalleeLower = 'round') or (CalleeLower = 'trunc') then
+  begin
+    if ACall.Arguments.Count <> 1 then
+      Error(Format('Function "%s" expects exactly 1 argument', [ACall.CalleeName]), ACall)
+    else
+    begin
+      var ArgType := AnalyzeExpression(ACall.Arguments[0]);
+
+      if not ArgType.IsNumeric then
+        Error(Format('Argument to "%s" must be a numeric expression', [ACall.CalleeName]), ACall.Arguments[0]);
+    end;
+
+    if (CalleeLower = 'round') or (CalleeLower = 'trunc') then
+      Exit(FBuiltinTypes['integer'])
+    else
+      Exit(FBuiltinTypes['single']);
+  end;
+
   if CalleeLower = 'length' then
   begin
     if ACall.Arguments.Count <> 1 then
@@ -1289,6 +1539,93 @@ begin
     Exit(FBuiltinTypes['string']);
   end;
 
+  if (CalleeLower = 'inc') or (CalleeLower = 'dec') then
+  begin
+    if (ACall.Arguments.Count < 1) or (ACall.Arguments.Count > 2) then
+      Error(Format('Procedure "%s" expects 1 or 2 arguments', [ACall.CalleeName]), ACall)
+    else
+    begin
+      var TargetType := AnalyzeExpression(ACall.Arguments[0]);
+
+      if (not TargetType.IsInteger) and (TargetType.Kind <> TType.TKind.Pointer) and (TargetType.Kind <> TType.TKind.Enum) then
+        Error(Format('First argument to "%s" must be an ordinal variable or pointer', [ACall.CalleeName]), ACall.Arguments[0]);
+
+      if ACall.Arguments.Count = 2 then
+      begin
+        var StepType := AnalyzeExpression(ACall.Arguments[1]);
+
+        if not StepType.IsInteger then
+          Error('Step count must be an integer expression', ACall.Arguments[1]);
+      end;
+    end;
+
+    Exit(FBuiltinTypes['void']);
+  end;
+
+  if (CalleeLower = 'low') or (CalleeLower = 'high') then
+  begin
+    if ACall.Arguments.Count <> 1 then
+      Error(Format('Function "%s" expects exactly 1 argument', [ACall.CalleeName]), ACall)
+    else
+    begin
+      var ArgType := AnalyzeExpression(ACall.Arguments[0]);
+
+      if (ArgType.Kind <> TType.TKind.Array) and (not ArgType.IsString) and (ArgType.Kind <> TType.TKind.Enum) then
+        Error(Format('Argument to "%s" must be an array, string, or enum', [ACall.CalleeName]), ACall.Arguments[0]);
+    end;
+
+    Exit(FBuiltinTypes['integer']);
+  end;
+
+  if CalleeLower = 'ord' then
+  begin
+    if ACall.Arguments.Count <> 1 then
+      Error('Ord() expects exactly 1 argument', ACall)
+    else
+      AnalyzeExpression(ACall.Arguments[0]);
+
+    Exit(FBuiltinTypes['integer']);
+  end;
+
+  if CalleeLower = 'chr' then
+  begin
+    if ACall.Arguments.Count <> 1 then
+      Error('Chr() expects exactly 1 argument', ACall)
+    else
+    begin
+      var ArgType := AnalyzeExpression(ACall.Arguments[0]);
+
+      if not ArgType.IsInteger then
+        Error('Argument to Chr() must be an integer', ACall.Arguments[0]);
+    end;
+
+    Exit(FBuiltinTypes['char']);
+  end;
+
+  if (CalleeLower = 'succ') or (CalleeLower = 'pred') then
+  begin
+    if ACall.Arguments.Count <> 1 then
+      Error(Format('%s() expects exactly 1 argument', [ACall.CalleeName]), ACall);
+
+    var ArgType := AnalyzeExpression(ACall.Arguments[0]);
+    Exit(ArgType);
+  end;
+
+  if CalleeLower = 'assigned' then
+  begin
+    if ACall.Arguments.Count <> 1 then
+      Error('Assigned() expects exactly 1 pointer/string argument', ACall)
+    else
+    begin
+      var ArgType := AnalyzeExpression(ACall.Arguments[0]);
+
+      if (ArgType.Kind <> TType.TKind.Pointer) and (not ArgType.IsString) then
+        Error('Argument to Assigned() must be a pointer or string', ACall.Arguments[0]);
+    end;
+
+    Exit(FBuiltinTypes['boolean']);
+  end;
+
   var Sym := FCurrentScope.Resolve(ACall.CalleeName);
 
   if Sym = nil then
@@ -1316,7 +1653,7 @@ begin
   if (Sym.Declaration <> nil) and not Sym.IsVarArgs then
     if ACall.Arguments.Count <> Sym.Declaration.Params.Count then
       Error(Format('Routine "%s" expects %d arguments, but got %d', [ACall.CalleeName, Sym.Declaration.Params.Count, ACall.Arguments.Count]), ACall);
- 
+
   for var Arg in ACall.Arguments do
     AnalyzeExpression(Arg);
 
@@ -2055,47 +2392,75 @@ begin
 end;
 {$ENDREGION}
 
-{$REGION 'TTreeShaker'}
+{$REGION 'TreeShaker'}
 constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
+  procedure RegisterDecls(ADecls: TObjectList<TASTDeclaration>);
+  begin
+    for var Decl in ADecls do
+    begin
+      if Decl is TASTRoutineDecl then
+      begin
+        var R := TASTRoutineDecl(Decl);
+        var MangledName := R.Name;
+
+        if R.IsRecordMethod and (Length(R.ParentTypeName) > 0) then
+          MangledName := R.ParentTypeName + '_' + R.Name;
+
+        FRoutineMap.AddOrSetValue(LowerCase(MangledName), R);
+      end
+
+      else if Decl is TASTTypeDecl then
+      begin
+        var TD := TASTTypeDecl(Decl);
+
+        for var MNode in TD.DeclType.RecordMethods do
+          if MNode is TASTRoutineDecl then
+          begin
+            var R := TASTRoutineDecl(MNode);
+            var MangledName := TD.Name + '_' + R.Name;
+
+            FRoutineMap.AddOrSetValue(LowerCase(MangledName), R);
+          end;
+
+        for var PNode in TD.DeclType.RecordProperties do
+          if PNode is TASTProperty then
+          begin
+            var Prop := TASTProperty(PNode);
+            var Spec: TPropSpec;
+
+            Spec.ReadRoutine  := TD.Name + '_' + Prop.ReadSpec;
+            Spec.WriteRoutine := TD.Name + '_' + Prop.WriteSpec;
+
+            FPropertyMap.AddOrSetValue(LowerCase(TD.Name + '_' + Prop.Name), Spec);
+          end;
+      end
+      else if Decl is TASTVarDecl then
+        for var Name in TASTVarDecl(Decl).Names do
+          FVarMap.AddOrSetValue(LowerCase(Name), TASTVarDecl(Decl));
+    end;
+  end;
 begin
   inherited Create;
 
-  FProgram    := AProgram;
-  FUnits      := AUnits;
-  FRoutineMap := TDictionary<String, TASTRoutineDecl>.Create;
-  FVarMap     := TDictionary<String, TASTVarDecl>.Create;
+  FProgram     := AProgram;
+  FUnits       := AUnits;
+  FRoutineMap  := TDictionary<String, TASTRoutineDecl>.Create;
+  FVarMap      := TDictionary<String, TASTVarDecl>.Create;
+  FPropertyMap := TDictionary<String, TPropSpec>.Create;
 
   if FUnits <> nil then
     for var U in FUnits do
     begin
-      for var Decl in U.InterfaceDecls do
-        if Decl is TASTRoutineDecl then
-          FRoutineMap.AddOrSetValue(LowerCase(TASTRoutineDecl(Decl).Name), TASTRoutineDecl(Decl))
-
-        else if Decl is TASTVarDecl then
-          for var Name in TASTVarDecl(Decl).Names do
-            FVarMap.AddOrSetValue(LowerCase(Name), TASTVarDecl(Decl));
-
-      for var Decl in U.ImplementationDecls do
-        if Decl is TASTRoutineDecl then
-          FRoutineMap.AddOrSetValue(LowerCase(TASTRoutineDecl(Decl).Name), TASTRoutineDecl(Decl))
-
-        else if Decl is TASTVarDecl then
-          for var Name in TASTVarDecl(Decl).Names do
-            FVarMap.AddOrSetValue(LowerCase(Name), TASTVarDecl(Decl));
+      RegisterDecls(U.InterfaceDecls);
+      RegisterDecls(U.ImplementationDecls);
     end;
 
-  for var Decl in FProgram.Declarations do
-    if Decl is TASTRoutineDecl then
-      FRoutineMap.AddOrSetValue(LowerCase(TASTRoutineDecl(Decl).Name), TASTRoutineDecl(Decl))
-
-    else if Decl is TASTVarDecl then
-      for var Name in TASTVarDecl(Decl).Names do
-        FVarMap.AddOrSetValue(LowerCase(Name), TASTVarDecl(Decl));
+  RegisterDecls(FProgram.Declarations);
 end;
 
 destructor TTreeShaker.Destroy;
 begin
+  FPropertyMap.Free;
   FRoutineMap.Free;
   FVarMap.Free;
 
@@ -2134,13 +2499,60 @@ begin
   else if AExpr is TASTCallExpr then
   begin
     var Call := TASTCallExpr(AExpr);
-    var Routine: TASTRoutineDecl;
+    var Routine: TASTRoutineDecl := nil;
+    var Callee := Call.CalleeName;
 
-    if FRoutineMap.TryGetValue(LowerCase(Call.CalleeName), Routine) then
+    if Call.BaseExpr <> nil then
+    begin
+      var BaseType := Call.BaseExpr.ResolvedType;
+
+      if (BaseType <> nil) and (BaseType.Kind = TASTType.TKind.Pointer) and (BaseType.ElementType <> nil) then
+        BaseType := BaseType.ElementType;
+
+      if BaseType <> nil then
+        Callee := BaseType.TypeName + '_' + Call.CalleeName;
+    end;
+
+    if FRoutineMap.TryGetValue(LowerCase(Callee), Routine) then
       MarkRoutine(Routine);
+
+    if Call.BaseExpr <> nil then
+      MarkExpression(Call.BaseExpr);
 
     for var Arg in Call.Arguments do
       MarkExpression(Arg);
+  end
+
+  else if AExpr is TASTMemberAccess then
+  begin
+    var MemAcc := TASTMemberAccess(AExpr);
+
+    if (MemAcc.Expression.ResolvedType <> nil) then
+    begin
+      var BaseType := MemAcc.Expression.ResolvedType;
+
+      if (BaseType.Kind = TASTType.TKind.Pointer) and (BaseType.ElementType <> nil) then
+        BaseType := BaseType.ElementType;
+
+      var Key := LowerCase(BaseType.TypeName + '_' + MemAcc.MemberName);
+
+      var PropSpec: TPropSpec;
+
+      if FPropertyMap.TryGetValue(Key, PropSpec) then
+      begin
+        var GetterRoutine: TASTRoutineDecl;
+
+        if FRoutineMap.TryGetValue(LowerCase(PropSpec.ReadRoutine), GetterRoutine) then
+          MarkRoutine(GetterRoutine);
+      end;
+
+      var MethodRoutine: TASTRoutineDecl;
+
+      if FRoutineMap.TryGetValue(Key, MethodRoutine) then
+        MarkRoutine(MethodRoutine);
+    end;
+
+    MarkExpression(MemAcc.Expression);
   end
 
   else if AExpr is TASTBinary then
@@ -2163,9 +2575,6 @@ begin
 
     MarkExpression(Un.Operand);
   end
-
-  else if AExpr is TASTMemberAccess then
-    MarkExpression(TASTMemberAccess(AExpr).Expression)
 
   else if AExpr is TASTArrayAccess then
   begin
@@ -2192,8 +2601,34 @@ begin
 
   else if AStmt is TASTAssign then
   begin
-    MarkExpression(TASTAssign(AStmt).Target);
-    MarkExpression(TASTAssign(AStmt).Expression);
+    var Assign := TASTAssign(AStmt);
+
+    if Assign.Target is TASTMemberAccess then
+    begin
+      var MemAcc := TASTMemberAccess(Assign.Target);
+
+      if (MemAcc.Expression.ResolvedType <> nil) then
+      begin
+        var BaseType := MemAcc.Expression.ResolvedType;
+
+        if (BaseType.Kind = TASTType.TKind.Pointer) and (BaseType.ElementType <> nil) then
+          BaseType := BaseType.ElementType;
+
+        var Key := LowerCase(BaseType.TypeName + '_' + MemAcc.MemberName);
+        var PropSpec: TPropSpec;
+
+        if FPropertyMap.TryGetValue(Key, PropSpec) then
+        begin
+          var SetterRoutine: TASTRoutineDecl;
+
+          if FRoutineMap.TryGetValue(LowerCase(PropSpec.WriteRoutine), SetterRoutine) then
+            MarkRoutine(SetterRoutine);
+        end;
+      end;
+    end;
+
+    MarkExpression(Assign.Target);
+    MarkExpression(Assign.Expression);
   end
 
   else if AStmt is TASTIf then

@@ -307,7 +307,7 @@ begin
         end;
       end;
 
-      if Instr.OpCode.Definition.Params in [TCPUInstruction.TParameters.Imm, TCPUInstruction.TParameters.R1Imm, TCPUInstruction.TParameters.R1R2Imm] then
+      if Instr.OpCode.Definition.Params in [TCPUInstruction.TParameters.Imm, TCPUInstruction.TParameters.R1Imm, TCPUInstruction.TParameters.R1R2Imm, TCPUInstruction.TParameters.RnImm] then
       begin
         if CurrAddr + 4 <= EndAddr then
         begin
@@ -325,8 +325,18 @@ begin
         end;
       end;
 
+//      if Instr.OpCode.Definition.Params = TCPUInstruction.TParameters.RnImm then
+//      begin
+//        if CurrAddr + 4 <= EndAddr then
+//        begin
+//          Item.Offset.Value := AMemory.ReadDWord(CurrAddr);
+//          Inc(CurrAddr, 4);
+//        end;
+//      end;
+
       if (Instr.OpCode = TCPUInstruction.TOpCode.syscall) and (Instr.RegB = TRegisters.ID.Imm) then
         Item.Comment := TSyscalls.ID(Item.Imm.Value).ToString
+
       else if (Instr.OpCode = TCPUInstruction.TOpCode.int) and (Instr.RegB = TRegisters.ID.Imm) then
         Item.Comment := TInterrupts.ID(Item.Imm.Value and $F).ToString;
 

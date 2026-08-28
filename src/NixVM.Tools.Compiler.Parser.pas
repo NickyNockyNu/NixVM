@@ -58,11 +58,12 @@ type
 
     procedure Error(const AMsg: String; ALine: Integer = 0; ACol: Integer = 0); overload;
     procedure Error(const AMsg: String; const ATok: TLexer.TToken); overload;
-    //procedure Error(const AMsg: String; ANode: TASTNode); overload;
 
     function EvaluateConstant(AExpr: TASTExpression): TConstValue;
 
     procedure ProcessDirective(const ADirText: String; const ATok: TLexer.TToken);
+
+    function IsIdentToken(AKind: TLexer.TToken.TKind): Boolean; inline;
 
     {$REGION 'Types'}
     function ParseType:       TASTType;
@@ -413,6 +414,11 @@ begin
 
   else
     Error(Format('Unknown compiler directive "{$%s}"', [DirName]), ATok);
+end;
+
+function TParser.IsIdentToken(AKind: TLexer.TToken.TKind): Boolean;
+begin
+  Result := AKind in [TLexer.TToken.TKind.Identifier, TLexer.TToken.TKind.Read, TLexer.TToken.TKind.Write];
 end;
 
 function TParser.Parse: TASTCompilationUnit;
@@ -1014,7 +1020,7 @@ begin
   if Match(TLexer.TToken.TKind.Nil) then
     Exit(TASTLiteral.CreateNil(Tok.Line, Tok.Col));
 
-  if Check(TLexer.TToken.TKind.Identifier) then
+  if Check(TLexer.TToken.TKind.Identifier) or Check(TLexer.TToken.TKind.Read) or Check(TLexer.TToken.TKind.Write) then
   begin
     var IdentName := FCurTok.ValueStr;
     NextToken;
@@ -1057,15 +1063,30 @@ begin
 
     if Match(TLexer.TToken.TKind.Dot) then
     begin
-      if Check(TLexer.TToken.TKind.Identifier) then
+      if Check(TLexer.TToken.TKind.Identifier) or Check(TLexer.TToken.TKind.Read) or Check(TLexer.TToken.TKind.Write) then
       begin
         var MemberName := FCurTok.ValueStr;
         NextToken;
-        Result := TASTMemberAccess.Create(Result, MemberName, Tok.Line, Tok.Col);
+
+        if Match(TLexer.TToken.TKind.LParen) then
+        begin
+          var MethodCall := TASTCallExpr.Create(MemberName, Tok.Line, Tok.Col);
+          MethodCall.BaseExpr := Result;
+
+          if not Check(TLexer.TToken.TKind.RParen) then
+            repeat
+              MethodCall.Arguments.Add(ParseExpression);
+            until not Match(TLexer.TToken.TKind.Comma);
+
+          Expect(TLexer.TToken.TKind.RParen, 'Expected ")" closing method arguments');
+          Result := MethodCall;
+        end
+        else
+          Result := TASTMemberAccess.Create(Result, MemberName, Tok.Line, Tok.Col);
       end
       else
       begin
-        Error('Expected field identifier after "."', FCurTok);
+        Error('Expected field or method identifier after "."', FCurTok);
         Break;
       end;
     end
@@ -1417,8 +1438,19 @@ begin
   if Target is TASTIdentifier then
   begin
     var Call := TASTCallExpr.Create(TASTIdentifier(Target).Name, StartTok.Line, StartTok.Col);
-    Target.Free;
 
+    Target.Free;
+    Exit(TASTProcCall.Create(Call, StartTok.Line, StartTok.Col));
+  end;
+
+  if Target is TASTMemberAccess then
+  begin
+    var MemAcc := TASTMemberAccess(Target);
+    var Call := TASTCallExpr.Create(MemAcc.MemberName, StartTok.Line, StartTok.Col);
+
+    Call.BaseExpr := MemAcc.Expression;
+    MemAcc.Expression := nil;
+    Target.Free;
     Exit(TASTProcCall.Create(Call, StartTok.Line, StartTok.Col));
   end;
 

@@ -148,6 +148,9 @@ type
     function AddInstrR1R2Imm(AOpCode: TCPUInstruction.TOpCode; ARegA, ARegB: TRegisters.ID;       AOffsetVal:   Cardinal):     Integer; overload;
     function AddInstrR1R2Imm(AOpCode: TCPUInstruction.TOpCode; ARegA, ARegB: TRegisters.ID; const AOffsetLabel: TLabelString): Integer; overload;
 
+    function AddInstrRn   (AOpCode: TCPUInstruction.TOpCode; ACount:          Cardinal): Integer;
+    function AddInstrRnImm(AOpCode: TCPUInstruction.TOpCode; ACount, AImmVal: Cardinal): Integer;
+
     function AddDataBytes (const ABytes:  array of Byte):     Integer;
     function AddDataWords (const AWords:  array of Word):     Integer;
     function AddDataDWords(const ADWords: array of Cardinal): Integer;
@@ -320,6 +323,12 @@ begin
           else
             Result := Mnemonic + #9 + RegA.ToString + ', ' + RegB.ToString + ', ' + FormatValue(Offset);
         end;
+
+        TCPUInstruction.TParameters.Rn:
+          Result := Mnemonic + #9 + IntToStr(RegA);
+
+        TCPUInstruction.TParameters.RnImm:
+          Result := Mnemonic + #9 + IntToStr(RegA) + ', ' + FormatValue(Offset, True);
       else
         Result := Mnemonic;
       end;
@@ -432,10 +441,12 @@ begin
       if RegB = TRegisters.ID.Imm then
         Inc(Result, 4);
 
-      if OpCode.Definition.Params in [TCPUInstruction.TParameters.Imm, TCPUInstruction.TParameters.R1Imm, TCPUInstruction.TParameters.R1R2Imm] then
+      if OpCode.Definition.Params in [TCPUInstruction.TParameters.Imm,
+                                     TCPUInstruction.TParameters.R1Imm,
+                                     TCPUInstruction.TParameters.R1R2Imm,
+                                     TCPUInstruction.TParameters.RnImm] then
         Inc(Result, 4);
     end;
-
     TKind.&Label:
       Result := 0;
 
@@ -713,6 +724,33 @@ begin
   Item.RegA          := ARegA;
   Item.RegB          := ARegB;
   Item.Offset.&Label := AOffsetLabel;
+
+  Result := Add(Item);
+end;
+
+function TIRList.AddInstrRn(AOpCode: TCPUInstruction.TOpCode; ACount: Cardinal): Integer;
+var
+  Item: TIRItem;
+begin
+  Item := Default(TIRItem);
+
+  Item.Kind   := TIRItem.TKind.Instruction;
+  Item.OpCode := AOpCode;
+  Item.RegA   := TRegisters.ID(ACount and $0F);
+
+  Result := Add(Item);
+end;
+
+function TIRList.AddInstrRnImm(AOpCode: TCPUInstruction.TOpCode; ACount, AImmVal: Cardinal): Integer;
+var
+  Item: TIRItem;
+begin
+  Item := Default(TIRItem);
+
+  Item.Kind         := TIRItem.TKind.Instruction;
+  Item.OpCode       := AOpCode;
+  Item.RegA         := TRegisters.ID(ACount and $0F);
+  Item.Offset.Value := AImmVal;
 
   Result := Add(Item);
 end;
@@ -1008,7 +1046,7 @@ begin
           Inc(CurrAddr, 4);
         end;
 
-        if Item.OpCode.Definition.Params in [TCPUInstruction.TParameters.Imm, TCPUInstruction.TParameters.R1Imm, TCPUInstruction.TParameters.R1R2Imm] then
+        if Item.OpCode.Definition.Params in [TCPUInstruction.TParameters.Imm, TCPUInstruction.TParameters.R1Imm, TCPUInstruction.TParameters.R1R2Imm, TCPUInstruction.TParameters.RnImm] then
         begin
           AMemory.WriteDWord(CurrAddr, Item.Offset.Value);
           Inc(CurrAddr, 4);

@@ -32,7 +32,7 @@ type
   {$REGION 'TCPUInstruction'}
   TCPUInstruction = record
   type
-    TParameters = (None, Imm, R1, R1R2, R1Imm, RImm, R1R2Imm);
+    TParameters = (None, Imm, R1, R1R2, R1Imm, RImm, R1R2Imm, Rn, RnImm);
 
     TDefinition = record
       Mnemonic:  String[8];
@@ -315,9 +315,9 @@ type
       {82}(Mnemonic:'int';     Params:TParameters.RImm),
       {83}(Mnemonic:'ret'),
       {84}(Mnemonic:'iret'),
-      {85}(Mnemonic:'enter';   Params:TParameters.Imm),
+      {85}(Mnemonic:'enter';   Params:TParameters.RnImm),
       {86}(Mnemonic:'leave'),
-      {87}(Mnemonic:'zenter';  Params:TParameters.Imm),
+      {87}(Mnemonic:'zenter';  Params:TParameters.RnImm),
       {88}(),
       {89}(),
       {8A}(),
@@ -331,8 +331,8 @@ type
       {91}(Mnemonic:'pop';    Params:TParameters.R1),
       {92}(Mnemonic:'pushf'),
       {93}(Mnemonic:'popf'),
-      {94}(Mnemonic:'pushr';  Params:TParameters.Imm),
-      {95}(Mnemonic:'popr';   Params:TParameters.Imm),
+      {94}(Mnemonic:'pushr';  Params:TParameters.Rn),
+      {95}(Mnemonic:'popr';   Params:TParameters.Rn),
       {96}(),
       {97}(),
       {98}(),

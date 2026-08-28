@@ -204,6 +204,35 @@ begin
     begin
       var NextItem := AIR[NextIdx];
 
+      // Forward MOV into LDO: mov Reg2, Reg1 + ldo RegDest, Reg2, Ofs ==> ldo RegDest, Reg1, Ofs
+      if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB <> TRegisters.ID.Imm) and
+         (NextItem.OpCode in [TCPUInstruction.TOpCode.ldo, TCPUInstruction.TOpCode.ldob, TCPUInstruction.TOpCode.ldow]) and
+         (NextItem.RegB = Item.RegA) then
+      begin
+        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) or (NextItem.RegA = Item.RegA) then
+        begin
+          var Replacement := NextItem;
+
+          Replacement.RegB := Item.RegB;
+          AIR.Delete(NextIdx);
+          AIR[i] := Replacement;
+
+          Result := True;
+          Continue;
+        end;
+      end;
+
+      // Dead Local Store before LEAVE (sto bp, Rx, Ofs + leave ==> Delete sto)
+      if (Item.OpCode in [TCPUInstruction.TOpCode.sto, TCPUInstruction.TOpCode.stob, TCPUInstruction.TOpCode.stow]) and
+         (Item.RegA = TRegisters.ID.BP) and
+         (NextItem.OpCode = TCPUInstruction.TOpCode.leave) then
+      begin
+        AIR.Delete(i);
+
+        Result := True;
+        Continue;
+      end;
+
       // PUSH Rx + POP Rx ==> ELIMINATE
       if (Item.OpCode = TCPUInstruction.TOpCode.push) and (NextItem.OpCode = TCPUInstruction.TOpCode.pop) and
          (Item.RegB = NextItem.RegA) then
@@ -245,6 +274,34 @@ begin
         Continue;
       end;
 
+      //  enter N, Size + ldo Rx, bp, -4  ==>  mov Rx, r0 (since R0 was just passed in)
+      if (Item.OpCode in [TCPUInstruction.TOpCode.enter, TCPUInstruction.TOpCode.zenter]) and (Item.RegA >= 1) and
+         (NextItem.OpCode = TCPUInstruction.TOpCode.ldo) and (NextItem.RegB = TRegisters.ID.BP) and
+         (NextItem.Offset.Value = $FFFFFFFC) and (NextItem.Offset.&Label = '') then
+      begin
+        if NextItem.RegA = TRegisters.ID.R0 then
+        begin
+          AIR.Delete(NextIdx);
+
+          Result := True;
+          Continue;
+        end
+        else
+        begin
+          var Replacement := Default(TIRItem);
+
+          Replacement.Kind   := TIRItem.TKind.Instruction;
+          Replacement.OpCode := TCPUInstruction.TOpCode.mov;
+          Replacement.RegA   := NextItem.RegA;
+          Replacement.RegB   := TRegisters.ID.R0;
+
+          AIR[NextIdx] := Replacement;
+
+          Result := True;
+          Continue;
+        end;
+      end;
+
       // Direct Global Load: mov R1, _var + ld R0, R1 ==> ld R0, _var
       if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB = TRegisters.ID.Imm) and
          (NextItem.OpCode in [TCPUInstruction.TOpCode.ld, TCPUInstruction.TOpCode.ldb, TCPUInstruction.TOpCode.ldw]) and
@@ -269,27 +326,27 @@ begin
       end;
 
       // Direct Global Store: mov R1, _var + st R1, R0 ==> st _var, R0
-      if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB = TRegisters.ID.Imm) and
-         (NextItem.OpCode in [TCPUInstruction.TOpCode.st, TCPUInstruction.TOpCode.stb, TCPUInstruction.TOpCode.stw]) and
-         (NextItem.RegA = Item.RegA) then
-      begin
-        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) then
-        begin
-          var Replacement := Default(TIRItem);
-
-          Replacement.Kind   := TIRItem.TKind.Instruction;
-          Replacement.OpCode := NextItem.OpCode;
-          Replacement.RegA   := TRegisters.ID.Imm;
-          Replacement.RegB   := NextItem.RegB;
-          Replacement.Imm    := Item.Imm;
-
-          AIR.Delete(NextIdx);
-          AIR[i] := Replacement;
-
-          Result := True;
-          Continue;
-        end;
-      end;
+//      if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB = TRegisters.ID.Imm) and
+//         (NextItem.OpCode in [TCPUInstruction.TOpCode.st, TCPUInstruction.TOpCode.stb, TCPUInstruction.TOpCode.stw]) and
+//         (NextItem.RegA = Item.RegA) then
+//      begin
+//        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) then
+//        begin
+//          var Replacement := Default(TIRItem);
+//
+//          Replacement.Kind   := TIRItem.TKind.Instruction;
+//          Replacement.OpCode := NextItem.OpCode;
+//          Replacement.RegA   := TRegisters.ID.Imm;
+//          Replacement.RegB   := NextItem.RegB;
+//          Replacement.Imm    := Item.Imm;
+//
+//          AIR.Delete(NextIdx);
+//          AIR[i] := Replacement;
+//
+//          Result := True;
+//          Continue;
+//        end;
+//      end;
 
       // Consecutive ADD/SUB with Immediates (add R0, 4 + add R0, 8 ==> add R0, 12)
       if (Item.OpCode = TCPUInstruction.TOpCode.add) and (NextItem.OpCode = TCPUInstruction.TOpCode.add) and

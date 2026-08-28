@@ -341,16 +341,19 @@ type
   {$REGION 'Call'}
   TASTCallExpr = class(TASTExpression)
   private
+    FBaseExpr:   TASTExpression;
     FCalleeName: String;
     FArguments:  TObjectList<TASTExpression>;
   public
     constructor Create(const ACalleeName: String; ALine: Integer = 0; ACol: Integer = 0);
     destructor  Destroy; override;
 
-    property CalleeName: String                     read FCalleeName write FCalleeName;
+    property BaseExpr:   TASTExpression              read FBaseExpr   write FBaseExpr;
+    property CalleeName: String                      read FCalleeName write FCalleeName;
     property Arguments:  TObjectList<TASTExpression> read FArguments;
   end;
   {$ENDREGION}
+
   {$ENDREGION}
 
   {$REGION 'Statements'}
@@ -1124,7 +1127,10 @@ end;
 
 destructor TASTCallExpr.Destroy;
 begin
-  FArguments.Free;
+  if Assigned(FBaseExpr) then
+    FBaseExpr.Free;
+
+    FArguments.Free;
 
   inherited;
 end;

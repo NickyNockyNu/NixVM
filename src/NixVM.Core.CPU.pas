@@ -1288,39 +1288,47 @@ begin
 end;
 
 procedure TCPU.DoENTER;
+var
+  ParamCount: Cardinal;
+  FrameSize:  Cardinal;
 begin
   Push(Registers.BP);
   Registers.BP := Registers.SP;
-  Registers.SP := Registers.BP - NextDWord;
+
+  ParamCount := FCurrentCPUInstruction.RegA;
+  FrameSize  := NextDWord;
+
+  for var i := 0 to Integer(ParamCount) - 1 do
+    FMemory.WriteDWord(Registers.BP - Cardinal((i + 1) * 4), Registers.R[i]);
+
+  Registers.SP := Registers.BP - FrameSize;
+end;
+
+procedure TCPU.DoZENTER;
+var
+  ParamCount: Cardinal;
+  FrameSize:  Cardinal;
+begin
+  Push(Registers.BP);
+  Registers.BP := Registers.SP;
+
+  ParamCount := FCurrentCPUInstruction.RegA;
+  FrameSize  := NextDWord;
+
+  if FrameSize > 0 then
+  begin
+    Registers.SP := Registers.BP - FrameSize;
+    FMemory.Fill(Registers.SP, FrameSize, 0);
+  end;
+
+  for var i := 0 to Integer(ParamCount) - 1 do
+    FMemory.WriteDWord(Registers.BP - Cardinal((i + 1) * 4), Registers.R[i]);
 end;
 
 procedure TCPU.DoLEAVE;
 begin
   Registers.SP := Registers.BP;
   Registers.BP := Pop;
-end;
-
-procedure TCPU.DoZENTER;
-var
-  FrameSize: Cardinal;
-begin
-  Push(Registers.BP);
-
-  Registers.BP := Registers.SP;
-  FrameSize    := NextDWord;
-
-  if FrameSize > 0 then
-  begin
-    if Registers.SP < (FMemory.Stack.Address - FMemory.Stack.Size) + FrameSize then
-    begin
-      Panic(TSystemState.TPanicCode.StackOverflow);
-      Exit;
-    end;
-
-    Dec(Registers.SP, FrameSize);
-
-    FMemory.Fill(Registers.SP, FrameSize, 0);
-  end;
 end;
 {$ENDREGION}
 
@@ -1349,7 +1357,8 @@ procedure TCPU.DoPUSHR;
 var
   Count: Cardinal;
 begin
-  Count := NextDWord;
+  Count := FCurrentCPUInstruction.RegA;
+
   if Count > 16 then
     Count := 16;
 
@@ -1361,7 +1370,8 @@ procedure TCPU.DoPOPR;
 var
   Count: Cardinal;
 begin
-  Count := NextDWord;
+  Count := FCurrentCPUInstruction.RegA;
+
   if Count > 16 then
     Count := 16;
 
