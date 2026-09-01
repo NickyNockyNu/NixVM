@@ -142,6 +142,7 @@ type
         &Mod,
         &Shl,
         &Shr,
+        Sar,
 
         // Arithmetic
         Plus,          // +
@@ -329,6 +330,7 @@ begin
   FKeywords.Add('mod',            TToken.TKind.Mod);
   FKeywords.Add('shl',            TToken.TKind.Shl);
   FKeywords.Add('shr',            TToken.TKind.Shr);
+  FKeywords.Add('sar',            TToken.TKind.Sar);
 end;
 
 class destructor TLexer.Destroy;

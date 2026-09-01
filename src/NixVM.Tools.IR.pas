@@ -966,12 +966,12 @@ begin
 
           Result := False;
         end
-        else
+       else
           LabelMap.Add(FullName, Items[i].Address);
       end;
     end;
 
-    CurrentScope := '';
+   CurrentScope := '';
 
     for var i := 0 to Count - 1 do
     begin
@@ -979,7 +979,7 @@ begin
       begin
         if (Length(Items[i].Name) > 0) and (Items[i].Name[1] <> '@') then
           CurrentScope := Items[i].Name;
-      end
+     end
 
       else if Items[i].Kind = TIRItem.TKind.Instruction then
       begin

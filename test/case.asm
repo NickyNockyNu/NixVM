@@ -3,7 +3,7 @@
 
 Main:
 
-	; case.pas(18): i := 100;
+	; case.pas(18): zczczxci := 100;
 	mov	r0, 100
 	mov	r1, _var_i
 	st	r1, r0

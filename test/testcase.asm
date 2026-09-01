@@ -1,10 +1,17 @@
+.target "console", 1, 0
+.name   "testcase"
+.version 1, 0
+.base   $4E0
+.heap   0
+.stack  128
+
 	call	Main
 	halt
 
 classifyint:
 	enter	1, $4
 
-	; testcase.pas(12): Write('%d: ', a);
+	; testcase.pas(12): Print('%d: ', a);
 	ldo	r0, bp, -4
 	push	r0
 	mov	r0, _strconst_1
@@ -27,7 +34,7 @@ classifyint:
 	jmp	@case_next_3
 @case_branch_2:
 
-	; testcase.pas(14): 3, 5, 7: Writeln('Small prime');
+	; testcase.pas(14): 3, 5, 7: Println('Small prime');
 	mov	r0, _strconst_2
 	syscall	$1	; _SysCall_DebugPrint
 	jmp	@endcase_1
@@ -41,13 +48,13 @@ classifyint:
 	jmp	@case_next_5
 @case_branch_4:
 
-	; testcase.pas(15): 13..19:  Writeln('Teen');
+	; testcase.pas(15): 13..19:  Println('Teen');
 	mov	r0, _strconst_3
 	syscall	$1	; _SysCall_DebugPrint
 	jmp	@endcase_1
 @case_next_5:
 
-	; testcase.pas(17): Writeln('Not classified');
+	; testcase.pas(17): Println('Not classified');
 	mov	r0, _strconst_4
 	syscall	$1	; _SysCall_DebugPrint
 @endcase_1:

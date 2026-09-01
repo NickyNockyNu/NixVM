@@ -26,10 +26,10 @@ begin
   s := TState.Running;
   s := Succ(s);  // Paused (2)
   
-  Writeln('i=%d, c=%c, Ord(c)=%d, s=%d', i, c, Ord(c), Ord(s));
-  Writeln('Low(Arr)=%d, High(Arr)=%d, Length(Arr)=%d', Low(Arr), High(Arr), Length(Arr));
+  Println('i=%d, c=%c, Ord(c)=%d, s=%d', i, c, Ord(c), Ord(s));
+  Println('Low(Arr)=%d, High(Arr)=%d, Length(Arr)=%d', Low(Arr), High(Arr), Length(Arr));
   
   p := nil;
   if not Assigned(p) then
-    Writeln('Assigned check OK');
+    Println('Assigned check OK');
 end.

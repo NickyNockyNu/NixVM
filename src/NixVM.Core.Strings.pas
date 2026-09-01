@@ -36,6 +36,8 @@ function FloatToStr(AValue: Single; APrec: Integer = 2; ATrim: Boolean = True): 
 
 function TrimWhitespace(const AString: String): String;
 
+function ParseNumber(const S: String; out AValue: Cardinal): Boolean;
+
 implementation
 
 function Lowercase(const AString: String): String;
@@ -145,6 +147,97 @@ begin
       Result := Copy(Result, 1, i);
       Break;
     end;
+end;
+
+function ParseNumber(const S: String; out AValue: Cardinal): Boolean;
+var
+  U:          String;
+  Code:       Integer;
+  SingleVal:  Single;
+  Multiplier: Cardinal;
+begin
+  Result     := False;
+  AValue     := 0;
+  Multiplier := 1;
+
+  if Length(S) = 0 then
+    Exit;
+
+  U := Lowercase(TrimWhitespace(S));
+
+  if (Length(U) > 1) and (U[Length(U)] = 'k') then
+  begin
+    Multiplier := 1024;
+
+    U := Copy(U, 1, Length(U) - 1);
+  end
+  else if (Length(U) > 1) and (U[Length(U)] = 'm') then
+  begin
+    Multiplier := 1024 * 1024;
+
+    U := Copy(U, 1, Length(U) - 1);
+  end;
+
+  if Length(U) = 0 then
+    Exit;
+
+  if (Length(U) > 2) and (U[1] = '0') and (U[2] = 'x') then
+    U := '$' + Copy(U, 3, Length(U));
+
+  if (Length(U) > 1) and (U[1] = '%') then
+  begin
+    AValue := 0;
+
+    for var i := 2 to Length(U) do
+    begin
+      if (U[i] <> '0') and (U[i] <> '1') then
+        Exit(False);
+
+      AValue := (AValue shl 1) or Cardinal(Ord(U[i]) - Ord('0'));
+    end;
+
+    AValue := AValue * Multiplier;
+
+    Exit(True);
+  end
+
+  else if (Length(U) > 2) and (U[1] = '0') and (U[2] = 'b') then
+  begin
+    AValue := 0;
+
+    for var i := 3 to Length(U) do
+    begin
+      if (U[i] <> '0') and (U[i] <> '1') then
+        Exit(False);
+
+      AValue := (AValue shl 1) or Cardinal(Ord(U[i]) - Ord('0'));
+    end;
+
+    AValue := AValue * Multiplier;
+
+    Exit(True);
+  end;
+
+  Val(U, AValue, Code);
+
+  if Code = 0 then
+  begin
+    AValue := AValue * Multiplier;
+
+    Exit(True);
+  end;
+
+  Val(U, SingleVal, Code);
+
+  if Code = 0 then
+  begin
+    if Multiplier > 1 then
+      SingleVal := SingleVal * Multiplier;
+
+    AValue := PCardinal(@SingleVal)^;
+
+    Exit(True);
+  end;
 end;
 
 end.

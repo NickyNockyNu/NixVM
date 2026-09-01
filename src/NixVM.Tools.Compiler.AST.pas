@@ -276,6 +276,7 @@ type
       &Xor,
       &Shl,
       &Shr,
+      Sar,
       Equal,
       NotEqual,
       Less,
@@ -770,7 +771,36 @@ type
   {$ENDREGION}
   {$ENDREGION}
 
+function SAR(L, R: Cardinal): Cardinal;
+
 implementation
+
+// TODO: Probably not the best place for this but every other unit that needs it uses this unit.
+function SAR(L, R: Cardinal): Cardinal;
+var
+  Value: Int64;
+begin
+  if R = 0 then
+    Exit(L);
+
+  Value := L;
+
+  if R < 32 then
+  begin
+    if Value < 0 then
+      Result := Cardinal((Value shr R) or ($FFFFFFFF shl (32 - R)))
+    else
+      Result := Cardinal(Value shr R);
+  end
+  else
+  begin
+    if Value < 0 then
+      Result := $FFFFFFFF
+    else
+      Result := 0;
+  end;
+end;
+
 
 {$REGION 'ConstValue'}
 class function TConstValue.MakeInt(AVal: Cardinal): TConstValue;

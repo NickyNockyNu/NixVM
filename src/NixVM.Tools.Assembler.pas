@@ -31,16 +31,18 @@ uses
   System.Generics.Collections,
   System.IOUtils,
 
+  NixVM.Core.System,
   NixVM.Core.Registers,
   NixVM.Core.Instructions,
   NixVM.Core.Memory,
   NixVM.Core.ROM,
 
+  NixVM.Tools.Compiler.Optimiser,
   NixVM.Tools.IR;
 
 type
   {$REGION 'Assembler'}
-  TAssembler = class abstract
+  TAssembler = class
   type
     {$REGION 'Lexer Types'}
     TTokenKind = (
@@ -64,111 +66,181 @@ type
       Col:      Integer;
     end;
     {$ENDREGION}
+  private
+    FIR:     TIRList;
+    FErrors: TStrings;
+
+    FBasePath: String;
+
+    FOptimise: Boolean;
+
+    FSizeBeforeOpt: Integer;
+    FSizeAfterOpt:  Integer;
   public
-    class function ParseNumber(const S: String; out AValue: Cardinal): Boolean; static;
+    ROMHeader: TROMHeader;
+
+    constructor Create;
+    destructor  Destroy; override;
+
+    function Assemble    (const ASource:   String): Boolean;
+    function AssembleFile(const AFileName: String): Boolean;
+
+    function Link(AMemory: TMemory;        AResize:     Boolean = True): Boolean; overload;
+    function Link(AStream: TStream;        AWithHeader: Boolean = True): Boolean; overload;
+    function Link(const AFileName: String; AWithHeader: Boolean = True): Boolean; overload;
 
     class function Parse(const ASource: String; out AErrors: TStrings; const AFileName: String = ''; const ABasePath: String = ''; AIncludeStack: TStrings = nil; ASharedErrors: TStringList = nil; AROMHeader: PROMHeader = nil): TIRList;
     class function ParseFile(const AFileName: String; out AErrors: TStrings; AROMHeader: PROMHeader = nil): TIRList; static;
 
-    class function Assemble(const ASource: String; AMemory: TCustomMemory; AStartAddress: Cardinal; out AErrors: TStrings; const ABasePath: String = ''; AROMHeader: PROMHeader = nil): Cardinal; static;
+    property IR:     TIRList  read FIR;
+    property Errors: TStrings read FErrors;
+
+    property BasePath: String read FBasePath write FBasePath;
+
+    property Optimise: Boolean read FOptimise write FOptimise;
+
+    property SizeBeforeOpt: Integer read FSizeBeforeOpt;
+    property SizeAfterOpt:  Integer read FSizeAfterOpt;
   end;
   {$ENDREGION}
 
 implementation
 
-{$REGION 'Number Parser'}
-class function TAssembler.ParseNumber(const S: String; out AValue: Cardinal): Boolean;
-var
-  U:          String;
-  Code:       Integer;
-  SingleVal:  Single;
-  Multiplier: Cardinal;
-begin
-  Result     := False;
-  AValue     := 0;
-  Multiplier := 1;
-
-  if Length(S) = 0 then
-    Exit;
-
-  U := UpperCase(Trim(S));
-
-  if (Length(U) > 1) and (U[Length(U)] = 'K') then
-  begin
-    Multiplier := 1024;
-
-    U := Copy(U, 1, Length(U) - 1);
-  end
-  else if (Length(U) > 1) and (U[Length(U)] = 'M') then
-  begin
-    Multiplier := 1024 * 1024;
-
-    U := Copy(U, 1, Length(U) - 1);
-  end;
-
-  if Length(U) = 0 then
-    Exit;
-
-  if (Length(U) > 2) and (U[1] = '0') and (U[2] = 'X') then
-    U := '$' + Copy(U, 3, Length(U));
-
-  if (Length(U) > 1) and (U[1] = '%') then
-  begin
-    AValue := 0;
-
-    for var i := 2 to Length(U) do
-    begin
-      if not CharInSet(U[i], ['0', '1']) then
-        Exit(False);
-
-      AValue := (AValue shl 1) or Cardinal(Ord(U[i]) - Ord('0'));
-    end;
-
-    AValue := AValue * Multiplier;
-
-    Exit(True);
-  end
-  else if (Length(U) > 2) and (U[1] = '0') and (U[2] = 'B') then
-  begin
-    AValue := 0;
-
-    for var i := 3 to Length(U) do
-    begin
-      if not CharInSet(U[i], ['0', '1']) then
-        Exit(False);
-
-      AValue := (AValue shl 1) or Cardinal(Ord(U[i]) - Ord('0'));
-    end;
-
-    AValue := AValue * Multiplier;
-
-    Exit(True);
-  end;
-
-  Val(U, AValue, Code);
-
-  if Code = 0 then
-  begin
-    AValue := AValue * Multiplier;
-
-    Exit(True);
-  end;
-
-  Val(U, SingleVal, Code);
-
-  if Code = 0 then
-  begin
-    if Multiplier > 1 then
-      SingleVal := SingleVal * Multiplier;
-
-    AValue := PCardinal(@SingleVal)^;
-
-    Exit(True);
-  end;
-end;
-{$ENDREGION}
+uses
+  NixVM.Core.Strings;
 
 {$REGION 'Assembler'}
+constructor TAssembler.Create;
+begin
+  inherited;
+
+  FErrors := TStringList.Create;
+  ROMHeader.Reset;
+
+  FOptimise := False;
+end;
+
+destructor TAssembler.Destroy;
+begin
+  if Assigned(FIR) then
+    FIR.Free;
+
+  FErrors.Free;
+  inherited;
+end;
+
+function TAssembler.Assemble(const ASource: String): Boolean;
+begin
+  if Assigned(FIR) then
+    FIR.Free;
+
+  FIR := Parse(ASource, FErrors, '', FBasePath, nil, nil, @ROMHeader);
+
+  FSizeBeforeOpt := FIR.Size;
+
+  if FOptimise then
+    TPeepholeOptimiser.Optimise(FIR);
+
+  FSizeAfterOpt := FIR.Size;
+  Result := FErrors.Count = 0;
+end;
+
+function TAssembler.AssembleFile(const AFileName: String): Boolean;
+var
+  SourceText:   String;
+  FullFilePath: String;
+begin
+  if not FileExists(AFileName) then
+  begin
+    FErrors.Clear;
+    FErrors.Add(Format('File not found: "%s"', [AFileName]));
+    Exit(False);
+  end;
+
+  FullFilePath := TPath.GetFullPath(AFileName);
+  FBasePath    := ExtractFilePath(FullFilePath);
+
+  SourceText := TFile.ReadAllText(FullFilePath);
+  Result     := Assemble(SourceText);
+end;
+
+function TAssembler.Link(AMemory: TMemory; AResize: Boolean): Boolean;
+begin
+  Result := False;
+  FErrors.Clear;
+
+  if not Assigned(FIR) then
+    Exit;
+
+  if AResize then
+    AMemory.Resize(FIR.Size, ROMHeader.HeapSize, ROMHeader.StackSize)
+  else
+  begin
+    ROMHeader.HeapSize  := AMemory.Heap.Size;
+    ROMHeader.StackSize := AMemory.Stack.Size;
+  end;
+
+  if not FIR.ResolveLabels(AMemory.UserAddress, FErrors) then
+    Exit;
+
+  ROMHeader.UserAddress := AMemory.UserAddress;
+  ROMHeader.UserSize    := FIR.Emit(AMemory, AMemory.UserAddress);
+  Result := True;
+end;
+
+function TAssembler.Link(AStream: TStream; AWithHeader: Boolean): Boolean;
+var
+  CodeBytes: TBytes;
+  BaseAddr:  Cardinal;
+begin
+  Result := False;
+  FErrors.Clear;
+
+  if not Assigned(FIR) then
+    Exit;
+
+  if ROMHeader.UserAddress > 0 then
+    BaseAddr := ROMHeader.UserAddress
+  else
+    BaseAddr := (SizeOf(TCoreSystemMemory) + 3) and not Cardinal(3);
+
+  if not FIR.ResolveLabels(BaseAddr, FErrors) then
+    Exit;
+
+  CodeBytes          := FIR.EmitToBytes;
+  ROMHeader.UserSize := Length(CodeBytes);
+
+  if AWithHeader then
+    AStream.WriteBuffer(ROMHeader, SizeOf(TROMHeader));
+
+  if Length(CodeBytes) > 0 then
+    AStream.WriteBuffer(CodeBytes[0], Length(CodeBytes));
+
+  Result := True;
+end;
+
+function TAssembler.Link(const AFileName: String; AWithHeader: Boolean): Boolean;
+var
+  FS: TFileStream;
+begin
+  try
+    FS := TFileStream.Create(AFileName, fmCreate);
+  except
+    on E: EFCreateError do
+    begin
+      FErrors.Add(E.Message);
+      Exit(False);
+    end;
+  end;
+
+  try
+    Result := Link(FS, AWithHeader);
+  finally
+    FS.Free;
+  end;
+end;
+
+{$REGION 'Parse'}
 class function TAssembler.Parse(const ASource: String; out AErrors: TStrings; const AFileName: String; const ABasePath: String; AIncludeStack: TStrings; ASharedErrors: TStringList; AROMHeader: PROMHeader): TIRList;
 var
   IR:            TIRList;
@@ -272,11 +344,24 @@ var
     ATok.Col  := StartCol;
     C         := ASource[SrcPos];
 
+    // Single-character delimiters (only match '-' if NOT followed by a digit or hex prefix)
     case C of
       ',': begin ATok.Kind := TTokenKind.Comma; ATok.ValueStr := ','; Inc(SrcPos); Inc(CurCol); Exit(True); end;
       ':': begin ATok.Kind := TTokenKind.Colon; ATok.ValueStr := ':'; Inc(SrcPos); Inc(CurCol); Exit(True); end;
       '+': begin ATok.Kind := TTokenKind.Plus;  ATok.ValueStr := '+'; Inc(SrcPos); Inc(CurCol); Exit(True); end;
-      '-': begin ATok.Kind := TTokenKind.Minus; ATok.ValueStr := '-'; Inc(SrcPos); Inc(CurCol); Exit(True); end;
+      '-':
+      begin
+        if not ((SrcPos + 1 <= SrcLen) and CharInSet(ASource[SrcPos + 1], ['0'..'9', '$', '%'])) then
+        begin
+          ATok.Kind := TTokenKind.Minus;
+          ATok.ValueStr := '-';
+
+          Inc(SrcPos);
+          Inc(CurCol);
+
+          Exit(True);
+        end;
+      end;
     end;
 
     if CharInSet(C, ['"', '''']) then
@@ -331,7 +416,6 @@ var
       while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9', 'a'..'f', 'A'..'F']) do
       begin
         HexStr := HexStr + ASource[SrcPos];
-
         Inc(SrcPos);
         Inc(CurCol);
       end;
@@ -357,7 +441,6 @@ var
       end;
 
       var NumVal: Cardinal;
-
       if ParseNumber(HexStr, NumVal) then
       begin
         ATok.Kind     := TTokenKind.Number;
@@ -404,7 +487,6 @@ var
       end;
 
       var NumVal: Cardinal;
-
       if ParseNumber(BinStr, NumVal) then
       begin
         ATok.Kind     := TTokenKind.Number;
@@ -415,7 +497,7 @@ var
       end;
     end;
 
-    if CharInSet(C, ['0'..'9']) or ((C = '-') and (SrcPos + 1 <= SrcLen) and CharInSet(ASource[SrcPos + 1], ['0'..'9'])) then
+    if CharInSet(C, ['0'..'9']) or ((C = '-') and (SrcPos + 1 <= SrcLen) and CharInSet(ASource[SrcPos + 1], ['0'..'9', '$', '%'])) then
     begin
       var NumStr := '';
 
@@ -458,27 +540,45 @@ var
           Inc(CurCol);
         end;
 
-        while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9']) do
+        if (SrcPos <= SrcLen) and (ASource[SrcPos] = '$') then
         begin
-          NumStr := NumStr + ASource[SrcPos];
-
-          Inc(SrcPos);
-          Inc(CurCol);
-        end;
-
-        if (SrcPos + 1 <= SrcLen) and (ASource[SrcPos] = '.') and CharInSet(ASource[SrcPos + 1], ['0'..'9']) then
-        begin
-          NumStr := NumStr + '.';
+          NumStr := NumStr + '$';
 
           Inc(SrcPos);
           Inc(CurCol);
 
+          while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9', 'a'..'f', 'A'..'F']) do
+          begin
+            NumStr := NumStr + ASource[SrcPos];
+
+            Inc(SrcPos);
+            Inc(CurCol);
+          end;
+        end
+        else
+        begin
           while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9']) do
           begin
             NumStr := NumStr + ASource[SrcPos];
 
             Inc(SrcPos);
             Inc(CurCol);
+          end;
+
+          if (SrcPos + 1 <= SrcLen) and (ASource[SrcPos] = '.') and CharInSet(ASource[SrcPos + 1], ['0'..'9']) then
+          begin
+            NumStr := NumStr + '.';
+
+            Inc(SrcPos);
+            Inc(CurCol);
+
+            while (SrcPos <= SrcLen) and CharInSet(ASource[SrcPos], ['0'..'9']) do
+            begin
+              NumStr := NumStr + ASource[SrcPos];
+
+              Inc(SrcPos);
+              Inc(CurCol);
+            end;
           end;
         end;
       end;
@@ -498,7 +598,6 @@ var
       end;
 
       var NumVal: Cardinal;
-
       if ParseNumber(NumStr, NumVal) then
       begin
         ATok.Kind     := TTokenKind.Number;
@@ -568,7 +667,6 @@ var
     begin
       AVal     := ATok.ValueNum;
       AIsConst := True;
-
       Exit(True);
     end;
 
@@ -598,6 +696,25 @@ var
     if not NextToken(FirstTok) then
       Exit(False);
 
+    if FirstTok.Kind = TTokenKind.Minus then
+    begin
+      var NextTok: TToken;
+      if NextToken(NextTok) then
+      begin
+        var SubVal: Cardinal;
+        var SubIsConst: Boolean;
+        if ResolveIdentOrNumber(NextTok, SubVal, SubIsConst) and SubIsConst then
+        begin
+          AVal     := Cardinal(-Int32(SubVal));
+          AIsConst := True;
+
+          Exit(True);
+        end;
+      end;
+
+      Exit(False);
+    end;
+
     if FirstTok.Kind = TTokenKind.Number then
     begin
       AVal     := FirstTok.ValueNum;
@@ -611,6 +728,7 @@ var
       if Constants.TryGetValue(LowerCase(FirstTok.ValueStr), AVal) then
       begin
         AIsConst := True;
+
         Exit(True);
       end;
 
@@ -621,7 +739,6 @@ var
       if (Next.Kind = TTokenKind.Plus) or (Next.Kind = TTokenKind.Minus) then
       begin
         var IsMinus := (Next.Kind = TTokenKind.Minus);
-
         NextToken(Next);
 
         var OffsetTok: TToken;
@@ -686,7 +803,6 @@ begin
           IR.AddBlankLine;
 
         LineHasItem := False;
-
         Continue;
       end;
 
@@ -695,7 +811,9 @@ begin
         if LineHasItem and (IR.Count > 0) then
         begin
           var LastItem := IR.Items[IR.Count - 1];
+
           LastItem.Comment := Tok.ValueStr;
+
           IR.Items[IR.Count - 1] := LastItem;
         end
         else
@@ -719,8 +837,8 @@ begin
       begin
         IR.AddLabel(TLabelString(Tok.ValueStr));
         NextToken(Tok);
-        LineHasItem := True;
 
+        LineHasItem := True;
         Continue;
       end;
 
@@ -775,7 +893,6 @@ begin
             end;
 
             Peek := PeekToken;
-
             if Peek.Kind = TTokenKind.Comma then
               NextToken(Tok)
             else
@@ -812,7 +929,6 @@ begin
             end;
 
             Peek := PeekToken;
-
             if Peek.Kind = TTokenKind.Comma then
               NextToken(Tok)
             else
@@ -832,7 +948,6 @@ begin
       if (LowerIdent = '.dd') or (LowerIdent = '.dword') then
       begin
         var DWordList: TList<Cardinal> := TList<Cardinal>.Create;
-
         try
           repeat
             if not NextToken(Tok) then
@@ -850,7 +965,6 @@ begin
             end;
 
             Peek := PeekToken;
-
             if Peek.Kind = TTokenKind.Comma then
               NextToken(Tok)
             else
@@ -870,7 +984,6 @@ begin
       if (LowerIdent = '.float') or (LowerIdent = '.single') then
       begin
         var FloatList: TList<Single> := TList<Single>.Create;
-
         try
           repeat
             if not NextToken(Tok) then
@@ -888,7 +1001,6 @@ begin
             end;
 
             Peek := PeekToken;
-
             if Peek.Kind = TTokenKind.Comma then
               NextToken(Tok)
             else
@@ -909,7 +1021,6 @@ begin
       begin
         var IsAsciiZ := (LowerIdent = '.asciiz') or (LowerIdent = '.strz') or (LowerIdent = '.dsz');
         var ByteList := TList<Byte>.Create;
-
         try
           repeat
             if not NextToken(Tok) then
@@ -933,7 +1044,6 @@ begin
             end;
 
             Peek := PeekToken;
-
             if Peek.Kind = TTokenKind.Comma then
               NextToken(Tok)
             else
@@ -1010,7 +1120,6 @@ begin
 
         IR.AddAlign(Boundary, PadByte);
         LineHasItem := True;
-
         Continue;
       end;
 
@@ -1142,7 +1251,6 @@ begin
               AROMHeader^.Harness.Major := Word(MajorVal and $FFFF);
 
             Peek := PeekToken;
-
             if Peek.Kind = TTokenKind.Comma then
             begin
               NextToken(Tok);
@@ -1381,7 +1489,6 @@ begin
           if (Peek.Kind = TTokenKind.Identifier) and ParseRegister(Peek, RegB) then
           begin
             NextToken(Tok);
-
             IR.AddInstrRImm(OpCode, RegB);
           end
           else
@@ -1418,7 +1525,6 @@ begin
           end;
 
           var RegA: TRegisters.ID;
-
           if not ParseRegister(Tok, RegA) then
           begin
             Error(Format('Invalid destination register "%s"', [Tok.ValueStr]), Tok);
@@ -1437,7 +1543,6 @@ begin
           if (Peek.Kind = TTokenKind.Identifier) and ParseRegister(Peek, RegB) then
           begin
             NextToken(Tok);
-
             IR.AddInstrR1R2(OpCode, RegA, RegB);
           end
           else
@@ -1494,7 +1599,6 @@ begin
           end;
 
           var RegB: TRegisters.ID;
-
           if not ParseRegister(Tok, RegB) then
           begin
             Error(Format('Invalid base register "%s"', [Tok.ValueStr]), Tok);
@@ -1569,7 +1673,8 @@ begin
             Continue;
           end;
 
-          var OpVal: Cardinal; var OpLabel: TLabelString;
+          var OpVal:   Cardinal;
+          var OpLabel: TLabelString;
 
           if ParseOperand(OpVal, OpLabel, IsConst) then
           begin
@@ -1600,6 +1705,7 @@ begin
   AErrors := Errors;
   Result  := IR;
 end;
+{$ENDREGION}
 
 class function TAssembler.ParseFile(const AFileName: String; out AErrors: TStrings; AROMHeader: PROMHeader): TIRList;
 var
@@ -1614,27 +1720,7 @@ begin
   end;
 
   SourceText := TFile.ReadAllText(AFileName);
-
-  Result := Parse(SourceText, AErrors, AFileName, ExtractFilePath(AFileName), nil, nil, AROMHeader);
-end;
-
-class function TAssembler.Assemble(const ASource: String; AMemory: TCustomMemory; AStartAddress: Cardinal; out AErrors: TStrings; const ABasePath: String; AROMHeader: PROMHeader): Cardinal;
-var
-  IR: TIRList;
-begin
-   IR := Parse(ASource, AErrors, '', ABasePath, nil, nil, AROMHeader);
-
-  try
-    if (AErrors <> nil) and (AErrors.Count > 0) then
-      Exit(0);
-
-    if not IR.ResolveLabels(AStartAddress, AErrors) then
-      Exit(0);
-
-    Result := IR.Emit(AMemory, AStartAddress);
-  finally
-    IR.Free;
-  end;
+  Result     := Parse(SourceText, AErrors, AFileName, ExtractFilePath(AFileName), nil, nil, AROMHeader);
 end;
 {$ENDREGION}
 

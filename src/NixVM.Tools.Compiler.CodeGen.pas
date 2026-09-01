@@ -797,6 +797,7 @@ begin
       TASTBinary.TOp.Xor:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.&xor, TRegisters.ID.R0, LitVal);
       TASTBinary.TOp.Shl:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl,  TRegisters.ID.R0, LitVal);
       TASTBinary.TOp.Shr:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shr,  TRegisters.ID.R0, LitVal);
+      TASTBinary.TOp.Sar:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.isar, TRegisters.ID.R0, LitVal);
 
       TASTBinary.TOp.Equal,
       TASTBinary.TOp.NotEqual,
@@ -851,11 +852,12 @@ begin
     TASTBinary.TOp.IntDivide: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.div,  TRegisters.ID.R0, TRegisters.ID.R1);
     TASTBinary.TOp.Modulo:    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mod,  TRegisters.ID.R0, TRegisters.ID.R1);
 
-    TASTBinary.TOp.And: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.and, TRegisters.ID.R0, TRegisters.ID.R1);
-    TASTBinary.TOp.Or:  FIR.AddInstrR1R2(TCPUInstruction.TOpCode.or,  TRegisters.ID.R0, TRegisters.ID.R1);
-    TASTBinary.TOp.Xor: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.xor, TRegisters.ID.R0, TRegisters.ID.R1);
-    TASTBinary.TOp.Shl: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, TRegisters.ID.R1);
-    TASTBinary.TOp.Shr: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.shr, TRegisters.ID.R0, TRegisters.ID.R1);
+    TASTBinary.TOp.And: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.and,  TRegisters.ID.R0, TRegisters.ID.R1);
+    TASTBinary.TOp.Or:  FIR.AddInstrR1R2(TCPUInstruction.TOpCode.or,   TRegisters.ID.R0, TRegisters.ID.R1);
+    TASTBinary.TOp.Xor: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.xor,  TRegisters.ID.R0, TRegisters.ID.R1);
+    TASTBinary.TOp.Shl: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.shl,  TRegisters.ID.R0, TRegisters.ID.R1);
+    TASTBinary.TOp.Shr: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.shr,  TRegisters.ID.R0, TRegisters.ID.R1);
+    TASTBinary.TOp.Sar: FIR.AddInstrR1R2(TCPUInstruction.TOpCode.isar, TRegisters.ID.R0, TRegisters.ID.R1);
 
     TASTBinary.TOp.Equal,
     TASTBinary.TOp.NotEqual,
@@ -1037,7 +1039,7 @@ begin
     Exit;
   end;
 
-  if (CalleeLower = 'writeln') or (CalleeLower = 'write') or (CalleeLower = 'format') then
+  if (CalleeLower = 'println') or (CalleeLower = 'print') or (CalleeLower = 'format') then
   begin
     if ACall.Arguments.Count > 0 then
     begin
@@ -1074,9 +1076,13 @@ begin
           FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
         end;
 
-        if (CalleeLower = 'writeln') and (ACall.Arguments[0] is TASTLiteral) then
+        if {((CalleeLower = 'println') or (CalleeLower = 'print')) and} (ACall.Arguments[0] is TASTLiteral) then
         begin
-          var FmtStr := TASTLiteral(ACall.Arguments[0]).ValueStr + #13#10;
+          var FmtStr := TASTLiteral(ACall.Arguments[0]).ValueStr;
+
+          if (CalleeLower = 'println') then
+            FmtStr := FmtStr + #13#10;
+
           var StrLbl := GetStringLabel(FmtStr);
 
           FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(StrLbl));
@@ -1855,10 +1861,11 @@ end;
 
 procedure TCodeGenerator.GenForIn(AForIn: TASTForIn);
 var
-  Loop: TLoopContext;
+  Loop:       TLoopContext;
   LoopVarSym: TSymbol;
-  CollType: TType;
-  IsArray, IsSet, IsString: Boolean;
+  CollType:   TType;
+  IsSet:      Boolean;
+  IsString:   Boolean;
 begin
   LoopVarSym := FCurrentScope.Resolve(AForIn.LoopVar);
 
@@ -1883,7 +1890,6 @@ begin
       CollType := Sym.SymbolType;
   end;
 
-  IsArray  := False;
   IsSet    := False;
   IsString := False;
 
@@ -1891,7 +1897,6 @@ begin
   begin
     IsSet    :=  AForIn.Collection.ResolvedType.IsSet;
     IsString :=  AForIn.Collection.ResolvedType.IsString;
-    IsArray  := (AForIn.Collection.ResolvedType.Kind = TASTType.TKind.Array);
   end;
 
   if CollType <> nil then
@@ -1901,9 +1906,6 @@ begin
 
     if CollType.IsString then
       IsString := True;
-
-    if CollType.Kind = TType.TKind.Array then
-      IsArray := True;
   end;
 
   Loop.StartLabel    := GenUniqueLabel('@forin_start');

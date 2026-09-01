@@ -26,7 +26,25 @@ unit NixVM.Core.ROM;
 interface
 
 type
-  {$REGION 'Header'}
+  {$REGION 'TargetInfo'}
+  PTargetInfo = ^TTargetInfo;
+  TTargetInfo = packed record
+    Magic: Cardinal;
+
+    UserAddress:  Cardinal;
+
+    HarnessMajor: Word;
+    HarnessMinor: Word;
+
+    OEMSize: Cardinal;
+
+    Reserved: Cardinal;
+
+    procedure Reset;
+  end;
+  {$ENDREGION}
+
+  {$REGION 'ROMHeader'}
   PROMHeader = ^TROMHeader;
   TROMHeader = packed record
   type
@@ -61,6 +79,8 @@ type
 
     procedure Reset;
 
+    function Load(const AFileName: String): Boolean;
+
     function IsValid: Boolean; inline;
 
     function ToString: String;
@@ -70,9 +90,23 @@ type
 implementation
 
 uses
+  NixVM.Core.System,
   NixVM.Core.Strings;
 
-{$REGION 'Header'}
+{$REGION 'TargetInfo'}
+procedure TTargetInfo.Reset;
+begin
+  FillChar(Self, SizeOf(Self), 0);
+
+  Magic := Cardinal(TROMHeader.Magic);
+
+  UserAddress := (SizeOf(TCoreSystemMemory) + 3) and not Cardinal(3);
+
+  HarnessMajor := 1;
+end;
+{$ENDREGION}
+
+{$REGION 'ROMHeader'}
 {$REGION 'Version'}
 function TROMHeader.TVersion.GetName: String;
 begin
@@ -107,8 +141,44 @@ begin
 
   ROM.Major := 1;
 
+  UserAddress := (SizeOf(TCoreSystemMemory) + 3) and not Cardinal(3);
+
   HeapSize  := 64 * 1024;
   StackSize := 16 * 1024;
+end;
+
+function TROMHeader.Load(const AFileName: String): Boolean;
+var
+  F:         file;
+  OldMode:   Byte;
+  BytesRead: Integer;
+begin
+  Result   := False;
+
+  OldMode  := FileMode;
+  FileMode := 0;
+
+  AssignFile(F, AFileName);
+
+  try
+    {$I-}System.Reset(F, 1);{$I+}
+
+    if IOResult <> 0 then
+      Exit;
+
+    try
+      BlockRead(F, Self, SizeOf(Self), BytesRead);
+
+      if (BytesRead <> SizeOf(Self)) or not IsValid then
+        Exit;
+    finally
+      CloseFile(F);
+    end;
+  finally
+    FileMode := OldMode;
+  end;
+
+  Result := True;
 end;
 
 function TROMHeader.IsValid: Boolean;

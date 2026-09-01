@@ -285,7 +285,19 @@ begin
   if Length(FROMFile) > 0  then
   begin
     if not LoadROM(FROMFile) then
-      FCPU.Halt; // TODO: Do we make a panic ID for this?
+      FCPU.Halt;
+  end
+
+  else if ParamCount >= 1 then
+  begin
+    if not LoadROM(ParamStr(1)) then
+      CPU.Halt;
+  end
+
+  else
+  begin
+    DebugPrint('No ROM.'#13#10);
+    CPU.Halt;
   end;
 end;
 
@@ -389,8 +401,6 @@ begin
   FileMode := 0;
   FROMFile := '';
 
-  DebugPrint('Loading "' + AnsiString(AROMFile) + '" ... ');
-
   AssignFile(F, AROMFile);
 
   try
@@ -398,8 +408,7 @@ begin
 
     if IOResult <> 0 then
     begin
-      DebugPrint('FAIL'#13#10);
-      DebugPrint('Unable to open file'#13#10);
+      DebugPrint('Unable to open file "' + AnsiString(AROMFile) + '"'#13#10);
 
       Exit;
     end;
@@ -409,7 +418,6 @@ begin
 
       if (BytesRead <> SizeOf(TROMHeader)) or not Header.IsValid then
       begin
-        DebugPrint('FAIL'#13#10);
         DebugPrint('Not a valid NixVM ROM'#13#10);
 
         Exit;
@@ -417,7 +425,6 @@ begin
 
       if Header.UserAddress <> FMemory.UserAddress then
       begin
-        DebugPrint('FAIL'#13#10);
         DebugPrint('Incompatable memory layout'#13#10);
 
         Exit;
@@ -425,9 +432,8 @@ begin
 
       if Length(Header.Harness.Name) > 0 then
       begin
-        if Header.Harness.Name <> HarnessName then
+        if Lowercase(Header.Harness.Name) <> Lowercase(HarnessName) then
         begin
-          DebugPrint('FAIL'#13#10);
           DebugPrint(AnsiString('Requires harness: "' + Header.Harness.Name + '" is "' + HarnessName + '"'#13#10));
 
           Exit;
@@ -435,7 +441,6 @@ begin
 
         if (Header.Harness.Major > HarnessMajor) or ((Header.Harness.Major = HarnessMajor) and (Header.Harness.Minor > HarnessMinor)) then
         begin
-          DebugPrint('FAIL'#13#10);
           DebugPrint(AnsiString('Requires harness version:' + IntToStr(Header.Harness.Major) + '.' + IntToStr(Header.Harness.Minor) + #13#10));
 
           Exit;
@@ -445,8 +450,8 @@ begin
       if Header.UserSize = 0 then
         Header.UserSize := FileSize(F) - SizeOf(TROMHeader);
 
-      if Header.HeapSize  = 0 then Header.HeapSize  := 64 * 1024;
-      if Header.StackSize = 0 then Header.StackSize := 16 * 1024;
+      //if Header.HeapSize  = 0 then Header.HeapSize  := 64 * 1024;
+      //if Header.StackSize = 0 then Header.StackSize := 16 * 1024;
 
       FMemory.Resize(Header.UserSize, Header.HeapSize, Header.StackSize);
       FMemory.Reset;
@@ -457,14 +462,11 @@ begin
 
         if Cardinal(BytesRead) <> Header.UserSize then
         begin
-          DebugPrint('FAIL'#13#10);
           DebugPrint('Unable to read data'#13#10);
 
           Exit(False);
         end;
       end;
-
-      DebugPrint('OK'#13#10);
 
       FROMFile := AROMFile;
       Result   := True;

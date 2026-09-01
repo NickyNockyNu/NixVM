@@ -1,15 +1,15 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
-        <ProjectGuid>{0607F69C-6D6C-4857-A624-4C829DF581D2}</ProjectGuid>
+        <ProjectGuid>{FB44DC74-E5BC-41DD-AD6A-D738C0BE1208}</ProjectGuid>
         <ProjectVersion>20.3</ProjectVersion>
         <FrameworkType>None</FrameworkType>
         <Base>True</Base>
         <Config Condition="'$(Config)'==''">Base</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
-        <ProjectName Condition="'$(ProjectName)'==''">nvma</ProjectName>
+        <ProjectName Condition="'$(ProjectName)'==''">nvm</ProjectName>
         <TargetedPlatforms>3</TargetedPlatforms>
         <AppType>Console</AppType>
-        <MainSource>nvma.dpr</MainSource>
+        <MainSource>nvm.dpr</MainSource>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
         <Base>true</Base>
@@ -33,7 +33,7 @@
         <DCC_F>false</DCC_F>
         <DCC_K>false</DCC_K>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
-        <SanitizedProjectName>nvma</SanitizedProjectName>
+        <SanitizedProjectName>nvm</SanitizedProjectName>
         <DCC_UnitSearchPath>..\src\;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_AssertionsAtRuntime>false</DCC_AssertionsAtRuntime>
         <DCC_DebugInformation>0</DCC_DebugInformation>
@@ -77,7 +77,7 @@
         <BorlandProject>
             <Delphi.Personality>
                 <Source>
-                    <Source Name="MainSource">nvma.dpr</Source>
+                    <Source Name="MainSource">nvm.dpr</Source>
                 </Source>
             </Delphi.Personality>
             <Deployment Version="5">

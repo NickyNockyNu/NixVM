@@ -307,6 +307,10 @@ begin
 
   FCurrentCPUInstruction := NextWord;
 
+{$IF DEFINED(DEBUG)}
+  Writeln(FCurrentCPUInstruction.ToString);
+{$ENDIF}
+
   if FCurrentCPUInstruction.RegB = TRegisters.ID.Imm then
     Registers.r[TRegisters.ID.Imm] := NextDWord;
 
@@ -433,6 +437,7 @@ begin
 
 {$IF DEFINED(DEBUG)}
   SysCall(TSysCalls.ID.DebugBreak);
+  Readln;
 {$ENDIF}
 end;
 

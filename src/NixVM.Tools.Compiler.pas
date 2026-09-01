@@ -42,7 +42,7 @@ uses
   NixVM.Tools.Compiler.Semantics,
   NixVM.Tools.Compiler.AST,
   NixVM.Tools.Compiler.CodeGen,
-  NixVM.Tools.Compiler.Optimizer;
+  NixVM.Tools.Compiler.Optimiser;
 
 type
   TGetUnitSource = function(const AUnitName: String; out ASource, AFileName: String): Boolean of object;
@@ -59,7 +59,7 @@ type
     FCompileOrder:    TList<TASTUnit>;
     FLoadingStack:    TList<String>;
 
-    FOptimize: Boolean;
+    FOptimise: Boolean;
 
     FSizeBeforeOpt: Integer;
     FSizeAfterOpt:  Integer;
@@ -82,13 +82,15 @@ type
     function Link(AStream: TStream;        AWithHeader: Boolean = True): Boolean; overload;
     function Link(const AFileName: String; AWithHeader: Boolean = True): Boolean; overload;
 
+    function ToAsmString: String;
+
     property IR:     TIRList  read FIR;
     property Errors: TStrings read FErrors;
 
     property SearchPaths:     TList<String>  read FSearchPaths;
     property OnGetUnitSource: TGetUnitSource read FOnGetUnitSource write FOnGetUnitSource;
 
-    property Optimize: Boolean read FOptimize write FOptimize;
+    property Optimise: Boolean read FOptimise write FOptimise;
 
     property SizeBeforeOpt: Integer read FSizeBeforeOpt;
     property SizeAfterOpt:  Integer read FSizeAfterOpt;
@@ -186,7 +188,7 @@ begin
 
   AddDefaultSearchPaths;
 
-  FOptimize := True;
+  FOptimise := True;
 end;
 
 destructor TCompiler.Destroy;
@@ -271,8 +273,8 @@ begin
 
         FSizeBeforeOpt := FIR.Size;
 
-        if FOptimize then
-          TPeepholeOptimizer.Optimize(FIR);
+        if FOptimise then
+          TPeepholeOptimiser.Optimise(FIR);
 
         FSizeAfterOpt := FIR.Size;
       finally
@@ -389,6 +391,36 @@ begin
     Result := Link(FS, AWithHeader);
   finally
     FS.Free;
+  end;
+end;
+
+function TCompiler.ToAsmString: String;
+var
+  SB: TStringBuilder;
+begin
+  if not Assigned(FIR) then
+    Exit('');
+
+  SB := TStringBuilder.Create;
+  try
+    if Length(ROMHeader.Harness.Name) > 0 then
+      SB.AppendLine(Format('.target "%s", %d, %d', [ROMHeader.Harness.Name, ROMHeader.Harness.Major, ROMHeader.Harness.Minor]));
+
+    if Length(ROMHeader.ROM.Name) > 0 then
+      SB.AppendLine(Format('.name   "%s"', [ROMHeader.ROM.Name]));
+
+    SB.AppendLine(Format('.version %d, %d', [ROMHeader.ROM.Major, ROMHeader.ROM.Minor]));
+    SB.AppendLine(Format('.base   $%x', [ROMHeader.UserAddress]));
+    SB.AppendLine(Format('.heap   %d', [ROMHeader.HeapSize]));
+    SB.AppendLine(Format('.stack  %d', [ROMHeader.StackSize]));
+
+    SB.AppendLine;
+
+    SB.Append(FIR.ToString);
+
+    Result := SB.ToString;
+  finally
+    SB.Free;
   end;
 end;
 {$ENDREGION}

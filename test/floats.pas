@@ -12,15 +12,15 @@ begin
   fa := 9.876;
   ia := 1234;
   
-  Writeln('%f %d', fa, ia);
+  println('%f %d', fa, ia);
   
   fb := Single(ia);
   ib := Integer(fa);
   
-  Writeln('%f %d', fb, ib);
+  println('%f %d', fb, ib);
   
   ia := trunc(fa);
   ib := round(fa);
 
-  Writeln('%d %d', ia, ib);
+  println('%d %d', ia, ib);
 end.

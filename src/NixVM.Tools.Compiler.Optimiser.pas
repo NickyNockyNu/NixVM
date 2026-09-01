@@ -1,6 +1,6 @@
 {
-  NixVM.Tools.Compiler.Optimizer.pas
-    IR peephole optimizer
+  NixVM.Tools.Compiler.Optimiser.pas
+    IR peephole optimiser
 
     Copyright (c) 2026 Nicholas Smith (writetonik@gmail.com)
     https://github.com/NickyNockyNu/NixVM
@@ -19,7 +19,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 }
 
-unit NixVM.Tools.Compiler.Optimizer;
+unit NixVM.Tools.Compiler.Optimiser;
 
 {$INCLUDE 'NixVM.Options.inc'}
 
@@ -35,24 +35,24 @@ uses
   NixVM.Tools.IR;
 
 type
-  TPeepholeOptimizer = class
+  TPeepholeOptimiser = class
   private
     class function NextCodeIndex(AIR: TIRList; AIndex: Integer): Integer; static;
     class function InstructionReadsReg(const AItem: TIRItem; AReg: TRegisters.ID): Boolean; static;
     class function InstructionOverwritesReg(const AItem: TIRItem; AReg: TRegisters.ID): Boolean; static;
     class function IsRegLiveDownstream(AIR: TIRList; AStartIndex: Integer; AReg: TRegisters.ID): Boolean; static;
 
-    class function OptimizePass                (AIR: TIRList): Boolean; static;
+    class function OptimisePass                (AIR: TIRList): Boolean; static;
     class function EliminateUnreachableCode    (AIR: TIRList): Boolean; static;
     class function ThreadJumps                 (AIR: TIRList): Boolean; static;
     class function EliminateUnreferencedSymbols(AIR: TIRList): Boolean; static;
   public
-    class function Optimize(AIR: TIRList): Integer; static;
+    class function Optimise(AIR: TIRList): Integer; static;
   end;
 
 implementation
 
-class function TPeepholeOptimizer.NextCodeIndex(AIR: TIRList; AIndex: Integer): Integer;
+class function TPeepholeOptimiser.NextCodeIndex(AIR: TIRList; AIndex: Integer): Integer;
 begin
   Result := AIndex + 1;
 
@@ -64,7 +64,7 @@ begin
     Result := -1;
 end;
 
-class function TPeepholeOptimizer.InstructionReadsReg(const AItem: TIRItem; AReg: TRegisters.ID): Boolean;
+class function TPeepholeOptimiser.InstructionReadsReg(const AItem: TIRItem; AReg: TRegisters.ID): Boolean;
 begin
   Result := False;
 
@@ -107,7 +107,7 @@ begin
     Exit(True);
 end;
 
-class function TPeepholeOptimizer.InstructionOverwritesReg(const AItem: TIRItem; AReg: TRegisters.ID): Boolean;
+class function TPeepholeOptimiser.InstructionOverwritesReg(const AItem: TIRItem; AReg: TRegisters.ID): Boolean;
 begin
   Result := False;
   if AItem.Kind <> TIRItem.TKind.Instruction then
@@ -134,7 +134,7 @@ begin
     Exit(AItem.RegA = AReg);
 end;
 
-class function TPeepholeOptimizer.IsRegLiveDownstream(AIR: TIRList; AStartIndex: Integer; AReg: TRegisters.ID): Boolean;
+class function TPeepholeOptimiser.IsRegLiveDownstream(AIR: TIRList; AStartIndex: Integer; AReg: TRegisters.ID): Boolean;
 begin
   Result := False;
 
@@ -158,7 +158,7 @@ begin
   end;
 end;
 
-class function TPeepholeOptimizer.OptimizePass(AIR: TIRList): Boolean;
+class function TPeepholeOptimiser.OptimisePass(AIR: TIRList): Boolean;
 var
   i: Integer;
 begin
@@ -195,7 +195,8 @@ begin
 
     // Redundant Arithmetic with 0 (+0, -0, shift 0)
     if (Item.OpCode in [TCPUInstruction.TOpCode.add, TCPUInstruction.TOpCode.sub,
-                        TCPUInstruction.TOpCode.shl, TCPUInstruction.TOpCode.shr]) and
+                        TCPUInstruction.TOpCode.shl, TCPUInstruction.TOpCode.shr,
+                        TCPUInstruction.TOpCode.isar]) and
        (Item.RegB = TRegisters.ID.Imm) and (Item.Imm.Value = 0) and (Item.Imm.&Label = '') then
     begin
       AIR.Delete(i);
@@ -437,7 +438,7 @@ begin
   end;
 end;
 
-class function TPeepholeOptimizer.EliminateUnreachableCode(AIR: TIRList): Boolean;
+class function TPeepholeOptimiser.EliminateUnreachableCode(AIR: TIRList): Boolean;
 var
   i: Integer;
 begin
@@ -472,7 +473,7 @@ begin
   end;
 end;
 
-class function TPeepholeOptimizer.ThreadJumps(AIR: TIRList): Boolean;
+class function TPeepholeOptimiser.ThreadJumps(AIR: TIRList): Boolean;
 var
   LabelMap: TDictionary<TLabelString, Integer>;
   i:        Integer;
@@ -519,7 +520,7 @@ begin
   end;
 end;
 
-class function TPeepholeOptimizer.EliminateUnreferencedSymbols(AIR: TIRList): Boolean;
+class function TPeepholeOptimiser.EliminateUnreferencedSymbols(AIR: TIRList): Boolean;
 var
   UsedLabels: TDictionary<TLabelString, Boolean>;
   i:           Integer;
@@ -577,7 +578,7 @@ begin
   end;
 end;
 
-class function TPeepholeOptimizer.Optimize(AIR: TIRList): Integer;
+class function TPeepholeOptimiser.Optimise(AIR: TIRList): Integer;
 var
   Passes: Integer;
   Modified: Boolean;
@@ -587,7 +588,7 @@ begin
   repeat
     Modified := False;
 
-    if OptimizePass(AIR) then
+    if OptimisePass(AIR) then
       Modified := True;
 
     if ThreadJumps(AIR) then

@@ -118,7 +118,8 @@ type
 implementation
 
 uses
-  NixVM.Tools.Assembler;
+  NixVM.Core.Strings;
+  //NixVM.Tools.Assembler;
 
 {$REGION 'Parser'}
 constructor TParser.Create(ALexer: TLexer; AErrors: TStrings);
@@ -330,6 +331,7 @@ begin
         TASTBinary.TOp.Modulo:    if R <> 0 then Exit(TConstValue.MakeInt(L mod R)) else Exit;
         TASTBinary.TOp.Shl:       Exit(TConstValue.MakeInt(L shl R));
         TASTBinary.TOp.Shr:       Exit(TConstValue.MakeInt(L shr R));
+        TASTBinary.TOp.Sar:       Exit(TConstValue.MakeInt(SAR(L, R)));
         TASTBinary.TOp.And:       Exit(TConstValue.MakeInt(L and R));
         TASTBinary.TOp.Or:        Exit(TConstValue.MakeInt(L or  R));
         TASTBinary.TOp.Xor:       Exit(TConstValue.MakeInt(L xor R));
@@ -418,7 +420,7 @@ begin
   begin
     var Val: Cardinal;
 
-    if TAssembler.ParseNumber(DirParam, Val) then
+    if ParseNumber(DirParam, Val) then
       FHeader.HeapSize := Val
     else
       Error(Format('Invalid size "%s" in {$HEAP} directive', [DirParam]), ATok);
@@ -428,7 +430,7 @@ begin
   begin
     var Val: Cardinal;
 
-    if TAssembler.ParseNumber(DirParam, Val) then
+    if ParseNumber(DirParam, Val) then
       FHeader.StackSize := Val
     else
       Error(Format('Invalid size "%s" in {$STACK} directive', [DirParam]), ATok);
@@ -438,7 +440,7 @@ begin
   begin
     var Val: Cardinal;
 
-    if TAssembler.ParseNumber(DirParam, Val) then
+    if ParseNumber(DirParam, Val) then
       FHeader.UserAddress := Val
     else
       Error(Format('Invalid base address "%s" in {$BASE} directive', [DirParam]), ATok);
@@ -1189,6 +1191,7 @@ begin
     else if Match(TLexer.TToken.TKind.And)   then Result := TASTBinary.Create(Result, TASTBinary.TOp.And,       ParseUnary, Tok.Line, Tok.Col)
     else if Match(TLexer.TToken.TKind.Shl)   then Result := TASTBinary.Create(Result, TASTBinary.TOp.Shl,       ParseUnary, Tok.Line, Tok.Col)
     else if Match(TLexer.TToken.TKind.Shr)   then Result := TASTBinary.Create(Result, TASTBinary.TOp.Shr,       ParseUnary, Tok.Line, Tok.Col)
+    else if Match(TLexer.TToken.TKind.Sar)   then Result := TASTBinary.Create(Result, TASTBinary.TOp.Sar,       ParseUnary, Tok.Line, Tok.Col)
     else Break;
   end;
 end;

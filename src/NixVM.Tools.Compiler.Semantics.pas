@@ -587,8 +587,8 @@ begin
   FuncFloat.ReturnType := FBuiltinTypes['single'];
 
 
-  FGlobalScope.Define(TSymbol.Create('writeln', TSymbol.TKind.Procedure, ProcType));
-  FGlobalScope.Define(TSymbol.Create('write',   TSymbol.TKind.Procedure, ProcType));
+  FGlobalScope.Define(TSymbol.Create('println', TSymbol.TKind.Procedure, ProcType));
+  FGlobalScope.Define(TSymbol.Create('print',   TSymbol.TKind.Procedure, ProcType));
 
   FGlobalScope.Define(TSymbol.Create('halt',    TSymbol.TKind.Procedure, ProcType));
   FGlobalScope.Define(TSymbol.Create('yield',   TSymbol.TKind.Procedure, ProcType));
@@ -1133,6 +1133,8 @@ begin
 
           TASTBinary.TOp.Shl: AValue := TConstValue.MakeInt(L shl R);
           TASTBinary.TOp.Shr: AValue := TConstValue.MakeInt(L shr R);
+          TASTBinary.TOp.Sar: AValue := TConstValue.MakeInt(SAR(L, R));
+
           TASTBinary.TOp.And: AValue := TConstValue.MakeInt(L and R);
           TASTBinary.TOp.Or:  AValue := TConstValue.MakeInt(L or R);
           TASTBinary.TOp.Xor: AValue := TConstValue.MakeInt(L xor R);
@@ -1912,7 +1914,8 @@ begin
     TASTBinary.TOp.IntDivide,
     TASTBinary.TOp.Modulo,
     TASTBinary.TOp.Shl,
-    TASTBinary.TOp.Shr:
+    TASTBinary.TOp.Shr,
+    TASTBinary.TOp.Sar:
     begin
       if (not LeftType.IsInteger) or (not RightType.IsInteger) then
         Error('Operator requires integer operands', ABinary);

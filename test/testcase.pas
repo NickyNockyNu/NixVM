@@ -1,4 +1,4 @@
-program testcase targets Test;
+program testcase targets console;
 
 {$HEAP 0}
 {$STACK 128}
@@ -9,12 +9,12 @@ type
 
 procedure classifyint(a: Integer);
 begin
-  Write('%d: ', a);
+  Print('%d: ', a);
   case a of
-    3, 5, 7: Writeln('Small prime');
-    13..19:  Writeln('Teen');
+    3, 5, 7: Println('Small prime');
+    13..19:  Println('Teen');
   else
-    Writeln('Not classified');
+    Println('Not classified');
   end;    
 
 end;
