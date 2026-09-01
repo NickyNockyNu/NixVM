@@ -423,14 +423,14 @@ begin
 
   StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + StubFile + '.exe');
 
-  if Verbose then
-  begin
-    Writeln;
-    Writeln(' Harness: ', StubFile);
-    Writeln('   Input: ', InputFile);
-    Writeln('  Output: ', OutputFile);
-    Writeln;
-  end;
+//  if Verbose then
+//  begin
+//    Writeln;
+//    Writeln(' Harness: ', StubFile);
+//    Writeln('   Input: ', InputFile);
+//    Writeln('  Output: ', OutputFile);
+//    Writeln;
+//  end;
 
   var Errors := TStringList.Create;
 
