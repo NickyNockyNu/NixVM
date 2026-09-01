@@ -112,8 +112,9 @@ end;
 
 procedure DoCompile;
 var
-  Compiler: TCompiler;
-  Assemble: Boolean;
+  Compiler:   TCompiler;
+  Assemble:   Boolean;
+  TargetInfo: TTargetInfo;
 begin
   AddBuildOptions;
   TParams.AddOpt(TParams.TOption.TKind.Bool, 'a', 'assemble');
@@ -422,15 +423,6 @@ begin
   end;
 
   StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + StubFile + '.exe');
-
-//  if Verbose then
-//  begin
-//    Writeln;
-//    Writeln(' Harness: ', StubFile);
-//    Writeln('   Input: ', InputFile);
-//    Writeln('  Output: ', OutputFile);
-//    Writeln;
-//  end;
 
   var Errors := TStringList.Create;
 

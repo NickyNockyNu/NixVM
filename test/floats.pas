@@ -1,4 +1,4 @@
-program floats targets Test;
+program floats targets console;
 
 {$HEAP 0}
 {$STACK 128}

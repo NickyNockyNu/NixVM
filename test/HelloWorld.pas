@@ -1,4 +1,4 @@
-program HelloWorld targets Test;
+program HelloWorld targets console;
 
 {$HEAP 0}
 {$STACK 128}

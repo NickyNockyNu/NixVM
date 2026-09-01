@@ -1,4 +1,4 @@
-program intrinsics targets Test;
+program intrinsics targets console;
 
 {$HEAP 0}
 {$STACK 128}

@@ -1,4 +1,4 @@
-program sets targets Test;
+program sets targets console;
 
 {$HEAP 0}
 {$STACK 128}

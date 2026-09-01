@@ -4,15 +4,15 @@ program testcase targets console;
 {$STACK 128}
 {$BASE $4E0}
 
-procedure classifyint(a: Integer);
+procedure ClassifyInt(a: Integer);
 begin
   Print('%d: ', a);
   
   case a of
-    3, 5, 7: Println('Small prime');
-    13..19:  Println('Teen');
+    3, 5, 7: PrintLn('Small prime');
+    13..19:  PrintLn('Teen');
   else
-    Println('Not classified');
+    PrintLn('Not classified');
   end;    
 end;
 
@@ -20,5 +20,5 @@ var
   i: Integer;
 begin
   for i := 0 to 20 do
-    classifyint(i);
+    ClassifyInt(i);
 end.
