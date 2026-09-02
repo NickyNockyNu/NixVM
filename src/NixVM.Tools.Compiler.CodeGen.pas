@@ -72,7 +72,7 @@ type
     FFileName:        String;
     FLastLine:        Integer;
 
-    procedure EmitSourceComment(ANode: TASTNode);
+    procedure EmitSourceComment(ANode: TASTNode; ARoot: Boolean = False);
 
     function  GenUniqueLabel(const APrefix: String = '@loc'): String;
     function  GetStringLabel(const AStr: String): String;
@@ -162,7 +162,7 @@ begin
   inherited;
 end;
 
-procedure TCodeGenerator.EmitSourceComment(ANode: TASTNode);
+procedure TCodeGenerator.EmitSourceComment(ANode: TASTNode; ARoot: Boolean = False);
 begin
   if (ANode = nil) or (ANode.Line <= 0) then
     Exit;
@@ -179,7 +179,13 @@ begin
     if LineText <> '' then
     begin
       FIR.AddBlankLine;
-      FIR.AddComment(Format('%s(%d): %s', [FFileName, ANode.Line, Trim(LineText)]));
+
+      var Comment := Format('%s(%d): %s', [FFileName, ANode.Line, Trim(LineText)]);
+
+      if ARoot then
+        Comment := #255 + Comment;
+
+      FIR.AddComment(Comment);
     end;
   end;
 end;
@@ -2333,19 +2339,47 @@ var
     end
 
     else if AType.Kind = TType.TKind.Record then
+    begin
       for var Field in AType.RecordFields do
       begin
         var FieldOffset := ABaseOffset + Integer(Field.Offset);
         FinalizeType(FieldOffset, Field.&Type);
-      end
+      end;
+    end
 
     else if (AType.Kind = TType.TKind.Array) and (AType.ElementType <> nil) and (AType.ElementType.IsString or (AType.ElementType.Kind = TType.TKind.Record)) then
-      for var i := AType.SubrangeLow to AType.SubrangeHigh do
-      begin
-        var ElemOffset := ABaseOffset + ((i - AType.SubrangeLow) * Integer(AType.ElementType.Size));
+    begin
+      var ElemCount := (AType.SubrangeHigh - AType.SubrangeLow) + 1;
 
-        FinalizeType(ElemOffset, AType.ElementType);
+      if ElemCount <= 0 then
+        Exit;
+
+      if ElemCount <= 2 then
+      begin
+        for var i := AType.SubrangeLow to AType.SubrangeHigh do
+        begin
+          var ElemOffset := ABaseOffset + ((i - AType.SubrangeLow) * Integer(AType.ElementType.Size));
+
+          FinalizeType(ElemOffset, AType.ElementType);
+        end;
+      end
+      else
+      begin
+        var LoopLbl := GenUniqueLabel('@finalize_arr');
+        var ElemSize := AType.ElementType.Size;
+
+
+        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, TRegisters.ID.R1, TRegisters.ID.BP, Cardinal(ABaseOffset));
+
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R2, Cardinal(ElemCount));
+
+        FIR.AddLabel(TLabelString(LoopLbl));
+        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ld, TRegisters.ID.R0, TRegisters.ID.R1);
+        FIR.AddSysCall(TSysCalls.ID.StringDispose);
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, TRegisters.ID.R1, ElemSize);
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.loop, TRegisters.ID.R2, TLabelString(LoopLbl));
       end;
+    end;
   end;
 begin
   if ARoutine.IsSysCall then
@@ -2354,14 +2388,16 @@ begin
   FIR.AddBlankLine;
 
   var MangledName := ARoutine.Name;
+
   if ARoutine.IsRecordMethod and (Length(ARoutine.ParentTypeName) > 0) then
     MangledName := ARoutine.ParentTypeName + '_' + ARoutine.Name;
 
+  EmitSourceComment(ARoutine, True);
   FIR.AddLabel(TLabelString(MangledName));
 
-  RoutineSym   := FAnalyzer.GlobalScope.Resolve(MangledName);
-  SavedScope   := FCurrentScope;
-  SavedRoutine := FCurrentRoutine;
+  RoutineSym      := FAnalyzer.GlobalScope.Resolve(MangledName);
+  SavedScope      := FCurrentScope;
+  SavedRoutine    := FCurrentRoutine;
   FCurrentRoutine := ARoutine;
 
   if (RoutineSym <> nil) and (RoutineSym.LocalScope <> nil) then
@@ -2370,6 +2406,7 @@ begin
 
     var BodyIR := TIRList.Create;
     var OldIR  := FIR;
+
     FIR := BodyIR;
 
     try
@@ -2390,7 +2427,11 @@ begin
         end;
       end;
 
+      FIR.AddBlankLine;
+      FIR.AddComment('end (' + MangledName + ')');
+
       for var Decl in ARoutine.Declarations do
+      begin
         if Decl is TASTVarDecl then
         begin
           var VarDecl := TASTVarDecl(Decl);
@@ -2403,6 +2444,7 @@ begin
               FinalizeType(LocalSym.StackOffset, LocalSym.SymbolType);
           end;
         end;
+      end;
 
       if ReturnsString then
         FIR.AddInstrR1(TCPUInstruction.TOpCode.pop, TRegisters.ID.R0);
@@ -2727,8 +2769,10 @@ procedure TCodeGenerator.GenProgram;
             GenRoutine(TASTRoutineDecl(MNode));
   end;
 
+const
+  EntryPoint = '__program_begin_';
 begin
-  FIR.AddInstrRImm(TCPUInstruction.TOpCode.call, 'Main');
+  FIR.AddInstrRImm(TCPUInstruction.TOpCode.call, EntryPoint);
   FIR.AddInstr(TCPUInstruction.TOpCode.halt);
 
   if FUnits <> nil then
@@ -2763,7 +2807,11 @@ begin
     end;
 
   FIR.AddBlankLine;
-  FIR.AddLabel('Main');
+
+  if Assigned(FProgram.Body) then
+    EmitSourceComment(FProgram.Body, True);
+
+  FIR.AddLabel(EntryPoint);
 
   var SavedScope := FCurrentScope;
   FCurrentScope := FAnalyzer.GlobalScope;

@@ -1407,15 +1407,23 @@ end;
 
 function TParser.ParseFor: TASTStatement;
 var
-  StartTok: TLexer.TToken;
-  LoopVar:  String;
-  StartExp: TASTExpression;
-  StopExp:  TASTExpression;
-  &Downto:  Boolean;
-  Body:     TASTStatement;
+  StartTok:     TLexer.TToken;
+  LoopVar:      String;
+  IsInlineVar:  Boolean;
+  ExplicitType: TASTType;
+  StartExp:     TASTExpression;
+  StopExp:      TASTExpression;
+  &Downto:      Boolean;
+  Body:         TASTStatement;
 begin
-  StartTok := FCurTok;
+  StartTok     := FCurTok;
+  IsInlineVar  := False;
+  ExplicitType := nil;
+
   Expect(TLexer.TToken.TKind.For);
+
+  if Match(TLexer.TToken.TKind.Var) then
+    IsInlineVar := True;
 
   var VarTok := FCurTok;
 
@@ -1424,14 +1432,23 @@ begin
 
   LoopVar := VarTok.ValueStr;
 
+  if IsInlineVar and Match(TLexer.TToken.TKind.Colon) then
+    ExplicitType := ParseType;
+
   if Match(TLexer.TToken.TKind.In) then
   begin
     var CollectionExpr := ParseExpression;
 
     Expect(TLexer.TToken.TKind.Do, 'Expected "do" after for..in collection');
+
     Body := ParseStatement;
 
-    Exit(TASTForIn.Create(LoopVar, CollectionExpr, Body, StartTok.Line, StartTok.Col));
+    var ForInStmt := TASTForIn.Create(LoopVar, CollectionExpr, Body, StartTok.Line, StartTok.Col);
+
+    ForInStmt.IsInlineVar  := IsInlineVar;
+    ForInStmt.ExplicitType := ExplicitType;
+
+    Exit(ForInStmt);
   end;
 
   Expect(TLexer.TToken.TKind.Assign, 'Expected ":=" or "in" after loop variable');
@@ -1452,7 +1469,13 @@ begin
   Expect(TLexer.TToken.TKind.Do, 'Expected "do" after for range');
 
   Body := ParseStatement;
-  Result := TASTFor.Create(LoopVar, StartExp, StopExp, &Downto, Body, StartTok.Line, StartTok.Col);
+
+  var ForStmt := TASTFor.Create(LoopVar, StartExp, StopExp, &Downto, Body, StartTok.Line, StartTok.Col);
+
+  ForStmt.IsInlineVar  := IsInlineVar;
+  ForStmt.ExplicitType := ExplicitType;
+
+  Result := ForStmt;
 end;
 
 function TParser.ParseCase: TASTStatement;
@@ -1850,8 +1873,11 @@ begin
 
     if Match(TLexer.TToken.TKind.SysCall) then
     begin
-      Result.IsSysCall := True;
+      Result.IsSysCall   := True;
       Result.SysCallExpr := ParseExpression;
+
+      if Result.SysCallExpr is TASTLiteral then
+        Result.SysCallID := TASTLiteral(Result.SysCallExpr).ValueInt;
 
       Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after syscall declaration');
 

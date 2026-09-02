@@ -595,7 +595,6 @@ var
   function WriteStringEntry(const AKey, AValue: String): Integer;
   var
     StartPos: Int64;
-    ValPos:   Int64;
     EndPos:   Int64;
     wLen:     Word;
     wValLen:  Word;
@@ -615,7 +614,6 @@ var
     WriteWideString(AKey);
 
     PadDWord;
-    ValPos := Stream.Position;
     WriteWideString(AValue);
 
     EndPos := Stream.Position;
@@ -629,7 +627,7 @@ var
   end;
 
 var
-  RootStart, RootValPos, RootEnd: Int64;
+  RootStart, RootEnd:             Int64;
   StrInfoStart, StrInfoEnd:       Int64;
   TableStart, TableEnd:           Int64;
   VarInfoStart, VarInfoEnd:       Int64;
@@ -665,7 +663,6 @@ begin
     WriteWideString('VS_VERSION_INFO');
 
     PadDWord;
-    RootValPos := Stream.Position;
 
     FillChar(FixedInfo, SizeOf(FixedInfo), 0);
 

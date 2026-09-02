@@ -479,36 +479,44 @@ type
   {$REGION 'for'}
   TASTFor = class(TASTStatement)
   private
-    FLoopVar:   String;
-    FStartExpr: TASTExpression;
-    FStopExpr:  TASTExpression;
-    FDownto:    Boolean;
-    FBody:      TASTStatement;
+    FLoopVar:      String;
+    FStartExpr:    TASTExpression;
+    FStopExpr:     TASTExpression;
+    FDownto:       Boolean;
+    FBody:         TASTStatement;
+    FIsInlineVar:  Boolean;
+    FExplicitType: TASTType;
   public
     constructor Create(const ALoopVar: String; AStartExpr, AStopExpr: TASTExpression; ADownto: Boolean; ABody: TASTStatement; ALine: Integer = 0; ACol: Integer = 0);
     destructor  Destroy; override;
 
-    property LoopVar:   String         read FLoopVar   write FLoopVar;
-    property StartExpr: TASTExpression read FStartExpr write FStartExpr;
-    property StopExpr:  TASTExpression read FStopExpr  write FStopExpr;
-    property &Downto:   Boolean        read FDownto    write FDownto;
-    property Body:      TASTStatement  read FBody      write FBody;
+    property LoopVar:      String         read FLoopVar      write FLoopVar;
+    property StartExpr:    TASTExpression read FStartExpr    write FStartExpr;
+    property StopExpr:     TASTExpression read FStopExpr     write FStopExpr;
+    property &Downto:      Boolean        read FDownto       write FDownto;
+    property Body:         TASTStatement  read FBody         write FBody;
+    property IsInlineVar:  Boolean        read FIsInlineVar  write FIsInlineVar;
+    property ExplicitType: TASTType       read FExplicitType write FExplicitType;
   end;
   {$ENDREGION}
 
   {$REGION 'for in'}
   TASTForIn = class(TASTStatement)
   private
-    FLoopVar:     String;
-    FCollection:  TASTExpression;
-    FBody:        TASTStatement;
+    FLoopVar:      String;
+    FCollection:   TASTExpression;
+    FBody:         TASTStatement;
+    FIsInlineVar:  Boolean;
+    FExplicitType: TASTType;
   public
     constructor Create(const ALoopVar: String; ACollection: TASTExpression; ABody: TASTStatement; ALine: Integer = 0; ACol: Integer = 0);
     destructor  Destroy; override;
 
-    property LoopVar:    String         read FLoopVar    write FLoopVar;
-    property Collection: TASTExpression read FCollection write FCollection;
-    property Body:       TASTStatement  read FBody       write FBody;
+    property LoopVar:      String         read FLoopVar      write FLoopVar;
+    property Collection:   TASTExpression read FCollection   write FCollection;
+    property Body:         TASTStatement  read FBody         write FBody;
+    property IsInlineVar:  Boolean        read FIsInlineVar  write FIsInlineVar;
+    property ExplicitType: TASTType       read FExplicitType write FExplicitType;
   end;
   {$ENDREGION}
 
@@ -1414,6 +1422,9 @@ begin
   if Assigned(FBody) then
     FBody.Free;
 
+  if Assigned(FExplicitType) then
+    FExplicitType.Free;
+
   inherited;
 end;
 {$ENDREGION}
@@ -1435,6 +1446,9 @@ begin
 
   if Assigned(FBody) then
     FBody.Free;
+
+  if Assigned(FExplicitType) then
+    FExplicitType.Free;
 
   inherited;
 end;

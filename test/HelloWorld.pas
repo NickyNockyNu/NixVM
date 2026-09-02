@@ -2,11 +2,16 @@ program HelloWorld targets console;
 
 {$HEAP 0}
 {$STACK 128}
-{$BASE $4E0}
 
 uses
   System;
 
+procedure Main;
 begin
-  Writeln('Hello, World!');
+  Println('Hello, World!');
+  Halt(123);
+end;
+
+begin
+  Main;
 end.

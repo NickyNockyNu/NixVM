@@ -1,7 +1,7 @@
 program harness.console;
 
 {$APPTYPE CONSOLE}
-{$R *.res}
+{.$R *.res}
 
 uses
   NixVM.Harness,

@@ -303,7 +303,7 @@ end;
 
 procedure TCustomHarness<TSystemMemory>.Finalize;
 begin
-
+  ExitCode := FMemory.CoreSystem^.SystemState.UserCode;
 end;
 
 procedure TCustomHarness<TSystemMemory>.Started;

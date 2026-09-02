@@ -1,12 +1,12 @@
 .target "console", 1, 0
 .name "testcase"
-.icon "GameIcon.ico"
+.version 1, 0
 .description "Testing ""case"" syntax"
 .copyright "(c) Nik"
-.version 1, 0
-.stack  128
+.icon "GameIcon.ico"
 .base   $4E0
 .heap   0
+.stack  128
 
 	call	Main
 	halt

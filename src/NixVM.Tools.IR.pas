@@ -280,6 +280,8 @@ function TIRItem.ToString: String;
 var
   Mnemonic: String;
 begin
+  Result := '';
+
   case Kind of
     TKind.None: ;
 
@@ -427,10 +429,13 @@ begin
 
   if Length(Comment) > 0 then
   begin
-    if Length(Result) > 0 then
+    if (Length(Result) > 0) then
       Result := Result + #9;
 
-    Result := Result + '; ' + Comment;
+    if Comment[1] = #255 then
+      Result := Result + '; ' + Copy(Comment, 2, Length(Comment))
+    else
+      Result := Result + '; ' + Comment;
   end;
 end;
 
@@ -610,11 +615,19 @@ var
 begin
   Item := Default(TIRItem);
 
-  Item.Kind      := TIRItem.TKind.Instruction;
-  Item.OpCode    := AOpCode;
-  Item.RegA      := ARegA;
-  Item.RegB      := TRegisters.ID.Imm;
-  Item.Imm.Value := AImmVal;
+  Item.Kind   := TIRItem.TKind.Instruction;
+  Item.OpCode := AOpCode;
+  Item.RegA   := ARegA;
+
+  if AOpCode.Definition.Params = TCPUInstruction.TParameters.R1Imm then
+  begin
+    Item.Offset.Value := AImmVal;
+  end
+  else
+  begin
+    Item.RegB      := TRegisters.ID.Imm;
+    Item.Imm.Value := AImmVal;
+  end;
 
   Result := Add(Item);
 end;
@@ -625,11 +638,19 @@ var
 begin
   Item := Default(TIRItem);
 
-  Item.Kind       := TIRItem.TKind.Instruction;
-  Item.OpCode     := AOpCode;
-  Item.RegA       := ARegA;
-  Item.RegB       := TRegisters.ID.Imm;
-  Item.Imm.&Label := AImmLabel;
+  Item.Kind   := TIRItem.TKind.Instruction;
+  Item.OpCode := AOpCode;
+  Item.RegA   := ARegA;
+
+  if AOpCode.Definition.Params = TCPUInstruction.TParameters.R1Imm then
+  begin
+    Item.Offset.&Label := AImmLabel;
+  end
+  else
+  begin
+    Item.RegB          := TRegisters.ID.Imm;
+    Item.Imm.&Label    := AImmLabel;
+  end;
 
   Result := Add(Item);
 end;
@@ -1172,7 +1193,8 @@ end;
 
 function TIRList.ToString: String;
 var
-  SB: TStringBuilder;
+  SB:          TStringBuilder;
+  RootComment: Boolean;
 begin
   SB := TStringBuilder.Create;
 
@@ -1181,7 +1203,9 @@ begin
     begin
       var Line := Items[i].ToString;
 
-      if (Items[i].Kind <> TIRItem.TKind.&Label) and (Length(Line) > 0) then
+      RootComment := (Items[i].Kind = TIRItem.TKind.None) and (Length(Items[i].Comment) > 0) and (Items[i].Comment[1] = #255);
+
+      if (Items[i].Kind <> TIRItem.TKind.&Label) and (Length(Line) > 0) and not RootComment then
         SB.Append(#9);
 
       SB.AppendLine(Line);

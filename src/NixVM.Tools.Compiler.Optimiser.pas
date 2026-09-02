@@ -59,7 +59,6 @@ begin
   while (Result < AIR.Count) and (AIR[Result].Kind = TIRItem.TKind.None) and (AIR[Result].Comment = '') do
     Inc(Result);
 
-
   if (Result >= AIR.Count) or (AIR[Result].Kind <> TIRItem.TKind.Instruction) then
     Result := -1;
 end;
@@ -74,23 +73,46 @@ begin
   if (AItem.OpCode = TCPUInstruction.TOpCode.call) or (AItem.OpCode = TCPUInstruction.TOpCode.syscall) then
     Exit(AReg in [TRegisters.ID.R0..TRegisters.ID.R3]);
 
-  if (AItem.OpCode = TCPUInstruction.TOpCode.push) and (AItem.RegB = AReg) then
-    Exit(True);
+  if (AItem.OpCode = TCPUInstruction.TOpCode.push) and (AItem.RegB <> TRegisters.ID.Imm) then
+    Exit(AItem.RegB = AReg);
+
+  if AItem.OpCode = TCPUInstruction.TOpCode.pushr then
+    Exit(AReg < AItem.RegA);
 
   if AItem.OpCode in [TCPUInstruction.TOpCode.st,   TCPUInstruction.TOpCode.stb,  TCPUInstruction.TOpCode.stw,
                       TCPUInstruction.TOpCode.sto,  TCPUInstruction.TOpCode.stob, TCPUInstruction.TOpCode.stow,
                       TCPUInstruction.TOpCode.sti,  TCPUInstruction.TOpCode.stib, TCPUInstruction.TOpCode.stiw,
                       TCPUInstruction.TOpCode.sts,  TCPUInstruction.TOpCode.stsb, TCPUInstruction.TOpCode.stsw] then
-    Exit((AItem.RegA = AReg) or (AItem.RegB = AReg));
+  begin
+    if (AItem.RegA <> TRegisters.ID.Imm) and (AItem.RegA = AReg) then
+      Exit(True);
 
+    if (AItem.RegB <> TRegisters.ID.Imm) and (AItem.RegB = AReg) then
+      Exit(True);
+
+    Exit;
+  end;
 
   if AItem.OpCode in [TCPUInstruction.TOpCode.ld,   TCPUInstruction.TOpCode.ldb,  TCPUInstruction.TOpCode.ldw,
                       TCPUInstruction.TOpCode.ldo,  TCPUInstruction.TOpCode.ldob, TCPUInstruction.TOpCode.ldow,
                       TCPUInstruction.TOpCode.ldi,  TCPUInstruction.TOpCode.ldib, TCPUInstruction.TOpCode.ldiw] then
-    Exit(AItem.RegB = AReg);
+  begin
+    if (AItem.RegB <> TRegisters.ID.Imm) and (AItem.RegB = AReg) then
+      Exit(True);
+
+    Exit;
+  end;
 
   if AItem.OpCode in [TCPUInstruction.TOpCode.cmp, TCPUInstruction.TOpCode.fcmp] then
-    Exit((AItem.RegA = AReg) or (AItem.RegB = AReg));
+  begin
+    if (AItem.RegA <> TRegisters.ID.Imm) and (AItem.RegA = AReg) then
+      Exit(True);
+
+    if (AItem.RegB <> TRegisters.ID.Imm) and (AItem.RegB = AReg) then
+      Exit(True);
+
+    Exit;
+  end;
 
   if AItem.OpCode in [TCPUInstruction.TOpCode.add,  TCPUInstruction.TOpCode.sub,  TCPUInstruction.TOpCode.mul,
                       TCPUInstruction.TOpCode.&div, TCPUInstruction.TOpCode.&mod,
@@ -100,16 +122,37 @@ begin
                       TCPUInstruction.TOpCode.fadd, TCPUInstruction.TOpCode.fsub, TCPUInstruction.TOpCode.fmul,
                       TCPUInstruction.TOpCode.fdiv, TCPUInstruction.TOpCode.bset, TCPUInstruction.TOpCode.bclr,
                       TCPUInstruction.TOpCode.btst] then
-    Exit((AItem.RegA = AReg) or (AItem.RegB = AReg));
+  begin
+    if (AItem.RegA <> TRegisters.ID.Imm) and (AItem.RegA = AReg) then
+      Exit(True);
 
+    if (AItem.RegB <> TRegisters.ID.Imm) and (AItem.RegB = AReg) then
+      Exit(True);
 
-  if AItem.RegB = AReg then
-    Exit(True);
+    Exit;
+  end;
+
+  if AItem.OpCode in [TCPUInstruction.TOpCode.mov,   TCPUInstruction.TOpCode.&not,  TCPUInstruction.TOpCode.ineg,
+                      TCPUInstruction.TOpCode.zextb, TCPUInstruction.TOpCode.zextw,
+                      TCPUInstruction.TOpCode.iextb, TCPUInstruction.TOpCode.iextw,
+                      TCPUInstruction.TOpCode.itof,  TCPUInstruction.TOpCode.ftoi,  TCPUInstruction.TOpCode.frnd,
+                      TCPUInstruction.TOpCode.fsin,  TCPUInstruction.TOpCode.fcos,  TCPUInstruction.TOpCode.ftan,
+                      TCPUInstruction.TOpCode.fatan, TCPUInstruction.TOpCode.fexp,  TCPUInstruction.TOpCode.fln,
+                      TCPUInstruction.TOpCode.fsqrt] then
+  begin
+    if (AItem.RegB <> TRegisters.ID.Imm) and (AItem.RegB = AReg) then
+      Exit(True);
+  end;
+
+  if AItem.OpCode in [TCPUInstruction.TOpCode.jmp, TCPUInstruction.TOpCode.call] then
+    if (AItem.RegB <> TRegisters.ID.Imm) and (AItem.RegB = AReg) then
+      Exit(True);
 end;
 
 class function TPeepholeOptimiser.InstructionOverwritesReg(const AItem: TIRItem; AReg: TRegisters.ID): Boolean;
 begin
   Result := False;
+
   if AItem.Kind <> TIRItem.TKind.Instruction then
     Exit;
 
@@ -117,7 +160,7 @@ begin
     Exit(True);
 
   if AItem.OpCode = TCPUInstruction.TOpCode.popr then
-    Exit(AReg < AItem.Offset.Value);
+    Exit(AReg < AItem.RegA);
 
   if (AItem.OpCode = TCPUInstruction.TOpCode.call) or (AItem.OpCode = TCPUInstruction.TOpCode.syscall) then
     Exit(AReg = TRegisters.ID.R0);
@@ -131,7 +174,9 @@ begin
                       TCPUInstruction.TOpCode.sete,  TCPUInstruction.TOpCode.setne,
                       TCPUInstruction.TOpCode.setl,  TCPUInstruction.TOpCode.setle,
                       TCPUInstruction.TOpCode.setg,  TCPUInstruction.TOpCode.setge] then
+  begin
     Exit(AItem.RegA = AReg);
+  end;
 end;
 
 class function TPeepholeOptimiser.IsRegLiveDownstream(AIR: TIRList; AStartIndex: Integer; AReg: TRegisters.ID): Boolean;
@@ -154,7 +199,7 @@ begin
       Exit(True);
 
     if InstructionOverwritesReg(KItem, AReg) then
-      Exit(False);
+      Exit;
   end;
 end;
 
@@ -163,6 +208,7 @@ var
   i: Integer;
 begin
   Result := False;
+
   i := 0;
 
   while i < AIR.Count do
@@ -195,8 +241,7 @@ begin
 
     // Redundant Arithmetic with 0 (+0, -0, shift 0)
     if (Item.OpCode in [TCPUInstruction.TOpCode.add, TCPUInstruction.TOpCode.sub,
-                        TCPUInstruction.TOpCode.shl, TCPUInstruction.TOpCode.shr,
-                        TCPUInstruction.TOpCode.isar]) and
+                        TCPUInstruction.TOpCode.shl, TCPUInstruction.TOpCode.shr]) and
        (Item.RegB = TRegisters.ID.Imm) and (Item.Imm.Value = 0) and (Item.Imm.&Label = '') then
     begin
       AIR.Delete(i);
@@ -212,8 +257,7 @@ begin
       var NextItem := AIR[NextIdx];
 
       // PUSH Rx + POP Rx ==> ELIMINATE
-      if (Item.OpCode = TCPUInstruction.TOpCode.push) and (NextItem.OpCode = TCPUInstruction.TOpCode.pop) and
-         (Item.RegB = NextItem.RegA) then
+      if (Item.OpCode = TCPUInstruction.TOpCode.push) and (NextItem.OpCode = TCPUInstruction.TOpCode.pop) and (Item.RegB = NextItem.RegA) then
       begin
         AIR.Delete(NextIdx);
         AIR.Delete(i);
@@ -223,10 +267,10 @@ begin
       end;
 
       // PUSH Rx + POP Ry ==> MOV Ry, Rx
-      if (Item.OpCode = TCPUInstruction.TOpCode.push) and (NextItem.OpCode = TCPUInstruction.TOpCode.pop) and
-         (Item.RegB <> NextItem.RegA) then
+      if (Item.OpCode = TCPUInstruction.TOpCode.push) and (NextItem.OpCode = TCPUInstruction.TOpCode.pop) and (Item.RegB <> NextItem.RegA) then
       begin
         var Replacement := Default(TIRItem);
+
         Replacement.Kind   := TIRItem.TKind.Instruction;
         Replacement.OpCode := TCPUInstruction.TOpCode.mov;
         Replacement.RegA   := NextItem.RegA;
@@ -239,11 +283,31 @@ begin
         Continue;
       end;
 
+      // Fold MOV Reg, Imm + PUSH Reg ==> PUSH Imm
+      if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB = TRegisters.ID.Imm) and (NextItem.OpCode = TCPUInstruction.TOpCode.push) and (NextItem.RegB = Item.RegA) then
+      begin
+        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) then
+        begin
+          var Replacement := Default(TIRItem);
+
+          Replacement.Kind   := TIRItem.TKind.Instruction;
+          Replacement.OpCode := TCPUInstruction.TOpCode.push;
+          Replacement.RegB   := TRegisters.ID.Imm;
+          Replacement.Imm    := Item.Imm;
+
+          AIR.Delete(NextIdx);
+          AIR[i] := Replacement;
+
+          Result := True;
+          Continue;
+        end;
+      end;
+
       // Redundant Result Reload (sto bp, Rx, Ofs + ldo Rx, bp, Ofs ==> Delete ldo)
       if (Item.OpCode = TCPUInstruction.TOpCode.sto) and (Item.RegA = TRegisters.ID.BP) and
          (NextItem.OpCode = TCPUInstruction.TOpCode.ldo) and (NextItem.RegB = TRegisters.ID.BP) and
          (Item.RegB = NextItem.RegA) and (Item.Offset.Value = NextItem.Offset.Value) and
-         (Item.Offset.&Label = NextItem.Offset.&Label) then
+         (Item.Offset.&Label = NextItem.Offset.&Label) and (Item.Offset.Delta = NextItem.Offset.Delta) then
       begin
         AIR.Delete(NextIdx);
 
@@ -251,10 +315,36 @@ begin
         Continue;
       end;
 
+      // Forward MOV into LDO: mov Reg2, Reg1 + ldo RegDest, Reg2, Ofs ==> ldo RegDest, Reg1, Ofs
+      if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB <> TRegisters.ID.Imm) and
+         (NextItem.OpCode in [TCPUInstruction.TOpCode.ldo, TCPUInstruction.TOpCode.ldob, TCPUInstruction.TOpCode.ldow]) and (NextItem.RegB = Item.RegA) then
+      begin
+        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) or (NextItem.RegA = Item.RegA) then
+        begin
+          var Replacement := NextItem;
+
+          Replacement.RegB := Item.RegB;
+
+          AIR.Delete(NextIdx);
+          AIR[i] := Replacement;
+
+          Result := True;
+          Continue;
+        end;
+      end;
+
+      // Dead Local Store before LEAVE (sto bp, Rx, Ofs + leave ==> Delete sto)
+      if (Item.OpCode in [TCPUInstruction.TOpCode.sto, TCPUInstruction.TOpCode.stob, TCPUInstruction.TOpCode.stow]) and (Item.RegA = TRegisters.ID.BP) and (NextItem.OpCode = TCPUInstruction.TOpCode.leave) then
+      begin
+        AIR.Delete(i);
+
+        Result := True;
+        Continue;
+      end;
+
       // Direct Global Load: mov R1, _var + ld R0, R1 ==> ld R0, _var
       if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB = TRegisters.ID.Imm) and
-         (NextItem.OpCode in [TCPUInstruction.TOpCode.ld, TCPUInstruction.TOpCode.ldb, TCPUInstruction.TOpCode.ldw]) and
-         (NextItem.RegB = Item.RegA) then
+         (NextItem.OpCode in [TCPUInstruction.TOpCode.ld, TCPUInstruction.TOpCode.ldb, TCPUInstruction.TOpCode.ldw]) and (NextItem.RegB = Item.RegA) then
       begin
         if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) or (Item.RegA = NextItem.RegA) then
         begin
@@ -274,12 +364,123 @@ begin
         end;
       end;
 
+      // Load-Forwarding: ld R0, Addr + mov R1, R0 ==> ld R1, Addr
+      if (Item.OpCode in [TCPUInstruction.TOpCode.ld, TCPUInstruction.TOpCode.ldb, TCPUInstruction.TOpCode.ldw,
+                          TCPUInstruction.TOpCode.ldo, TCPUInstruction.TOpCode.ldob, TCPUInstruction.TOpCode.ldow]) and
+         (NextItem.OpCode = TCPUInstruction.TOpCode.mov) and (NextItem.RegB = Item.RegA) and (NextItem.RegA <> Item.RegA) then
+      begin
+        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) then
+        begin
+          var Replacement := Item;
+
+          Replacement.RegA := NextItem.RegA;
+
+          AIR.Delete(NextIdx);
+          AIR[i] := Replacement;
+
+          Result := True;
+          Continue;
+        end;
+      end;
+
+      // Fold LEA RegB, Base, Offset + LD RegA, RegB ==> LDO RegA, Base, Offset
+      if (Item.OpCode = TCPUInstruction.TOpCode.lea) and
+         (NextItem.OpCode in [TCPUInstruction.TOpCode.ld, TCPUInstruction.TOpCode.ldb, TCPUInstruction.TOpCode.ldw]) and
+         (NextItem.RegB = Item.RegA) then
+      begin
+        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) or (Item.RegA = NextItem.RegA) then
+        begin
+          var LdoOp := TCPUInstruction.TOpCode.ldo;
+
+          if NextItem.OpCode = TCPUInstruction.TOpCode.ldb then
+            LdoOp := TCPUInstruction.TOpCode.ldob
+          else if NextItem.OpCode = TCPUInstruction.TOpCode.ldw then
+            LdoOp := TCPUInstruction.TOpCode.ldow;
+
+          var Replacement := Default(TIRItem);
+
+          Replacement.Kind   := TIRItem.TKind.Instruction;
+          Replacement.OpCode := LdoOp;
+          Replacement.RegA   := NextItem.RegA;
+          Replacement.RegB   := Item.RegB;
+          Replacement.Offset := Item.Offset;
+
+          AIR.Delete(NextIdx);
+          AIR[i] := Replacement;
+
+          Result := True;
+          Continue;
+        end;
+      end;
+
+      // Fold LEA Reg, Base, Ofs + ADD Reg, Imm ==> LEA Reg, Base, (Ofs + Imm)
+      if (Item.OpCode = TCPUInstruction.TOpCode.lea) and (NextItem.OpCode = TCPUInstruction.TOpCode.add) and
+         (NextItem.RegA = Item.RegA) and (NextItem.RegB = TRegisters.ID.Imm) and (NextItem.Imm.&Label = '') then
+      begin
+        Item.Offset.Delta := Item.Offset.Delta + Integer(NextItem.Imm.Value);
+
+        AIR.Delete(NextIdx);
+        AIR[i] := Item;
+
+        Result := True;
+        Continue;
+      end;
+
+      // Duplicate Consecutive LEA
+      if (Item.OpCode = TCPUInstruction.TOpCode.lea) and (NextItem.OpCode = TCPUInstruction.TOpCode.lea) and
+         (Item.RegA = NextItem.RegA) and (Item.RegB = NextItem.RegB) and
+         (Item.Offset.Value = NextItem.Offset.Value) and (Item.Offset.&Label = NextItem.Offset.&Label) and
+         (Item.Offset.Delta = NextItem.Offset.Delta) then
+      begin
+        AIR.Delete(NextIdx);
+
+        Result := True;
+        Continue;
+      end;
+
+      // Fold MOV RegB, Imm + CMP RegA, RegB ==> CMP RegA, Imm
+      if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB = TRegisters.ID.Imm) and
+         (NextItem.OpCode = TCPUInstruction.TOpCode.cmp) and (NextItem.RegB = Item.RegA) then
+      begin
+        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) then
+        begin
+          var Replacement := Default(TIRItem);
+
+          Replacement.Kind   := TIRItem.TKind.Instruction;
+          Replacement.OpCode := TCPUInstruction.TOpCode.cmp;
+          Replacement.RegA   := NextItem.RegA;
+          Replacement.RegB   := TRegisters.ID.Imm;
+          Replacement.Imm    := Item.Imm;
+
+          AIR.Delete(NextIdx);
+          AIR[i] := Replacement;
+
+          Result := True;
+          Continue;
+        end;
+      end;
+
+      // Redundant Flag Compare after ALU (add/sub/and/or/xor/bset/bclr RegA, ... + cmp RegA, 0 ==> delete cmp)
+      if (Item.OpCode in [TCPUInstruction.TOpCode.add,  TCPUInstruction.TOpCode.sub,
+                          TCPUInstruction.TOpCode.&and, TCPUInstruction.TOpCode.&or,  TCPUInstruction.TOpCode.&xor,
+                          TCPUInstruction.TOpCode.bset, TCPUInstruction.TOpCode.bclr]) and
+         (NextItem.OpCode = TCPUInstruction.TOpCode.cmp) and
+         (NextItem.RegA = Item.RegA) and (NextItem.RegB = TRegisters.ID.Imm) and
+         (NextItem.Imm.Value = 0) and (NextItem.Imm.&Label = '') then
+      begin
+        AIR.Delete(NextIdx);
+
+        Result := True;
+        Continue;
+      end;
+
       // Consecutive ADD/SUB with Immediates (add R0, 4 + add R0, 8 ==> add R0, 12)
       if (Item.OpCode = TCPUInstruction.TOpCode.add) and (NextItem.OpCode = TCPUInstruction.TOpCode.add) and
          (Item.RegA = NextItem.RegA) and (Item.RegB = TRegisters.ID.Imm) and (NextItem.RegB = TRegisters.ID.Imm) and
          (Item.Imm.&Label = '') and (NextItem.Imm.&Label = '') then
       begin
         Item.Imm.Value := Item.Imm.Value + NextItem.Imm.Value;
+
         AIR.Delete(NextIdx);
         AIR[i] := Item;
 
@@ -290,9 +491,13 @@ begin
       // Fold MOV Reg, Imm + ADD Reg, Imm ==> MOV Reg, (Imm1 + Imm2)
       if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (NextItem.OpCode = TCPUInstruction.TOpCode.add) and
          (Item.RegA = NextItem.RegA) and (Item.RegB = TRegisters.ID.Imm) and (NextItem.RegB = TRegisters.ID.Imm) and
-         (Item.Imm.&Label = '') and (NextItem.Imm.&Label = '') then
+         (NextItem.Imm.&Label = '') then
       begin
-        Item.Imm.Value := Item.Imm.Value + NextItem.Imm.Value;
+        if Item.Imm.&Label <> '' then
+          Item.Imm.Delta := Item.Imm.Delta + Integer(NextItem.Imm.Value)
+        else
+          Item.Imm.Value := Item.Imm.Value + NextItem.Imm.Value;
+
         AIR.Delete(NextIdx);
         AIR[i] := Item;
 
@@ -368,24 +573,6 @@ begin
         end;
       end;
 
-      // Dead Jump to Next Instruction
-      if (Item.OpCode = TCPUInstruction.TOpCode.jmp) and (Item.RegB = TRegisters.ID.Imm) and (Item.Imm.&Label <> '') then
-      begin
-        var NextLabelIdx := i + 1;
-
-        while (NextLabelIdx < AIR.Count) and (AIR[NextLabelIdx].Kind = TIRItem.TKind.None) and (AIR[NextLabelIdx].Comment = '') do
-          Inc(NextLabelIdx);
-
-        if (NextLabelIdx < AIR.Count) and (AIR[NextLabelIdx].Kind = TIRItem.TKind.&Label) and
-           (AIR[NextLabelIdx].Name = Item.Imm.&Label) then
-        begin
-          AIR.Delete(i);
-
-          Result := True;
-          Continue;
-        end;
-      end;
-
       // Fold SETcc + CMP R0, 0 + JE/JNZ into Direct Conditional Branch
       if (Item.OpCode in [TCPUInstruction.TOpCode.sete, TCPUInstruction.TOpCode.setne,
                           TCPUInstruction.TOpCode.setl, TCPUInstruction.TOpCode.setle,
@@ -398,7 +585,6 @@ begin
         if NextNextIdx >= 0 then
         begin
           var ThirdItem := AIR[NextNextIdx];
-
           if ThirdItem.OpCode in [TCPUInstruction.TOpCode.je, TCPUInstruction.TOpCode.jnz] then
           begin
             var TargetLabel := ThirdItem.Offset.&Label;
@@ -432,6 +618,23 @@ begin
           end;
         end;
       end;
+
+      // Dead Jump to Next Instruction
+      if (Item.OpCode = TCPUInstruction.TOpCode.jmp) and (Item.RegB = TRegisters.ID.Imm) and (Item.Imm.&Label <> '') then
+      begin
+        var NextLabelIdx := i + 1;
+
+        while (NextLabelIdx < AIR.Count) and (AIR[NextLabelIdx].Kind = TIRItem.TKind.None) and (AIR[NextLabelIdx].Comment = '') do
+          Inc(NextLabelIdx);
+
+        if (NextLabelIdx < AIR.Count) and (AIR[NextLabelIdx].Kind = TIRItem.TKind.&Label) and (AIR[NextLabelIdx].Name = Item.Imm.&Label) then
+        begin
+          AIR.Delete(i);
+
+          Result := True;
+          Continue;
+        end;
+      end;
     end;
 
     Inc(i);
@@ -443,6 +646,7 @@ var
   i: Integer;
 begin
   Result := False;
+
   i := 0;
 
   while i < AIR.Count do
@@ -478,7 +682,8 @@ var
   LabelMap: TDictionary<TLabelString, Integer>;
   i:        Integer;
 begin
-  Result   := False;
+  Result := False;
+
   LabelMap := TDictionary<TLabelString, Integer>.Create;
 
   try
@@ -510,6 +715,7 @@ begin
 
               Item.Imm := TargetItem.Imm;
               AIR[i] := Item;
+
               Result := True;
             end;
           end;
@@ -523,25 +729,22 @@ end;
 class function TPeepholeOptimiser.EliminateUnreferencedSymbols(AIR: TIRList): Boolean;
 var
   UsedLabels: TDictionary<TLabelString, Boolean>;
-  i:           Integer;
+  i:          Integer;
 begin
-  Result     := False;
+  Result := False;
+
   UsedLabels := TDictionary<TLabelString, Boolean>.Create;
 
   try
     for i := 0 to AIR.Count - 1 do
-    begin
-      var Item := AIR[i];
-
-      if Item.Kind = TIRItem.TKind.Instruction then
+      if AIR[i].Kind = TIRItem.TKind.Instruction then
       begin
-        if Item.Imm.&Label <> '' then
-          UsedLabels.AddOrSetValue(Item.Imm.&Label, True);
+        if AIR[i].Imm.&Label <> '' then
+          UsedLabels.AddOrSetValue(AIR[i].Imm.&Label, True);
 
-        if Item.Offset.&Label <> '' then
-          UsedLabels.AddOrSetValue(Item.Offset.&Label, True);
+        if AIR[i].Offset.&Label <> '' then
+          UsedLabels.AddOrSetValue(AIR[i].Offset.&Label, True);
       end;
-    end;
 
     i := 0;
 
@@ -570,7 +773,6 @@ begin
           Continue;
         end;
       end;
-
       Inc(i);
     end;
   finally
@@ -580,7 +782,7 @@ end;
 
 class function TPeepholeOptimiser.Optimise(AIR: TIRList): Integer;
 var
-  Passes: Integer;
+  Passes:   Integer;
   Modified: Boolean;
 begin
   Passes := 0;

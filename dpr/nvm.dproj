@@ -62,6 +62,8 @@
         <VerInfo_Locale>1033</VerInfo_Locale>
         <Manifest_File>D:\Passe2\dpr\(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
+        <PostBuildEvent><![CDATA[upx D:\NixVM\bin\nvm.exe
+$(PostBuildEvent)]]></PostBuildEvent>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">

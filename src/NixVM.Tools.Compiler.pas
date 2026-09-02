@@ -431,8 +431,7 @@ begin
     if Length(ROMHeader.ROM.Name) > 0 then
       SB.AppendLine(Format('.name "%s"', [FixQuotes(ROMHeader.ROM.Name)]));
 
-    if Length(FIconFile) > 0 then
-      SB.AppendLine(Format('.icon "%s"', [FixQuotes(FIconFile)]));
+    SB.AppendLine(Format('.version %d, %d', [ROMHeader.ROM.Major, ROMHeader.ROM.Minor]));
 
     if Length(FDescription) > 0 then
       SB.AppendLine(Format('.description "%s"', [FixQuotes(FDescription)]));
@@ -440,7 +439,9 @@ begin
     if Length(FCopyright) > 0 then
       SB.AppendLine(Format('.copyright "%s"', [FixQuotes(FCopyright)]));
 
-    SB.AppendLine(Format('.version %d, %d', [ROMHeader.ROM.Major, ROMHeader.ROM.Minor]));
+    if Length(FIconFile) > 0 then
+      SB.AppendLine(Format('.icon "%s"', [FixQuotes(FIconFile)]));
+
     SB.AppendLine(Format('.base   $%x', [ROMHeader.UserAddress]));
     SB.AppendLine(Format('.heap   %d', [ROMHeader.HeapSize]));
     SB.AppendLine(Format('.stack  %d', [ROMHeader.StackSize]));

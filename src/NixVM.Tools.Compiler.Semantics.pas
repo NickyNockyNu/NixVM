@@ -2111,17 +2111,49 @@ begin
 end;
 
 procedure TSemanticAnalyzer.AnalyzeFor(AFor: TASTFor);
+var
+  LoopVarSym: TSymbol;
+  VarType:    TType;
+  StartType:  TType;
+  StopType:   TType;
 begin
   var StartExp := AFor.StartExpr;
   var StopExp  := AFor.StopExpr;
-
   FoldExpression(StartExp);
   FoldExpression(StopExp);
-
   AFor.StartExpr := StartExp;
   AFor.StopExpr  := StopExp;
 
-  var LoopVarSym := FCurrentScope.Resolve(AFor.LoopVar);
+  StartType := AnalyzeExpression(AFor.StartExpr);
+  StopType  := AnalyzeExpression(AFor.StopExpr);
+
+  if (not StartType.IsInteger) or (not StopType.IsInteger) then
+    Error('For loop range expressions must evaluate to integers', AFor);
+
+  // 1. Handle Inline Variable Declaration (for var i := ...)
+  if AFor.IsInlineVar then
+  begin
+    if AFor.ExplicitType <> nil then
+      VarType := ResolveType(AFor.ExplicitType)
+    else
+      VarType := StartType;
+
+    // Allocate local stack slot inside enclosing routine/program frame
+    var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
+    FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+
+    LoopVarSym := TSymbol.Create(AFor.LoopVar, TSymbol.TKind.Variable, VarType);
+    LoopVarSym.Storage     := TSymbol.TStorage.Local;
+    LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
+
+    if not FCurrentScope.Define(LoopVarSym) then
+      Error(Format('Duplicate loop variable identifier "%s"', [AFor.LoopVar]), AFor);
+
+    AnalyzeStatement(AFor.Body);
+    Exit;
+  end;
+
+  LoopVarSym := FCurrentScope.Resolve(AFor.LoopVar);
 
   if LoopVarSym = nil then
     Error(Format('Undeclared loop variable "%s"', [AFor.LoopVar]), AFor)
@@ -2129,26 +2161,74 @@ begin
   else if not LoopVarSym.SymbolType.IsInteger then
     Error('Loop counter variable must be an integer', AFor);
 
-  var StartType := AnalyzeExpression(AFor.StartExpr);
-  var StopType  := AnalyzeExpression(AFor.StopExpr);
-
-  if (not StartType.IsInteger) or (not StopType.IsInteger) then
-    Error('For loop range expressions must evaluate to integers', AFor);
-
   AnalyzeStatement(AFor.Body);
 end;
 
 procedure TSemanticAnalyzer.AnalyzeForIn(AForIn: TASTForIn);
+var
+  LoopVarSym: TSymbol;
+  VarType:    TType;
+  CollType:   TType;
 begin
-  var LoopVarSym := FCurrentScope.Resolve(AForIn.LoopVar);
+  CollType := AnalyzeExpression(AForIn.Collection);
 
+  // 1. Handle Inline Variable Declaration (for var pt in points ...)
+  if AForIn.IsInlineVar then
+  begin
+    if AForIn.ExplicitType <> nil then
+      VarType := ResolveType(AForIn.ExplicitType)
+    else
+    begin
+      // Infer type from collection element
+      if CollType.Kind = TType.TKind.Array then
+      begin
+        if CollType.ElementType <> nil then
+          VarType := CollType.ElementType
+        else
+          VarType := FBuiltinTypes['integer'];
+      end
+      else if CollType.IsSet then
+      begin
+        if CollType.ElementType <> nil then
+          VarType := CollType.ElementType
+        else
+          VarType := FBuiltinTypes['integer'];
+      end
+      else if CollType.IsString then
+        VarType := FBuiltinTypes['char']
+      else
+        VarType := FBuiltinTypes['integer'];
+    end;
+
+    // Allocate local stack slot inside enclosing routine/program frame
+    var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
+    FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+
+    LoopVarSym := TSymbol.Create(AForIn.LoopVar, TSymbol.TKind.Variable, VarType);
+    LoopVarSym.Storage     := TSymbol.TStorage.Local;
+    LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
+
+    if not FCurrentScope.Define(LoopVarSym) then
+      Error(Format('Duplicate loop variable identifier "%s"', [AForIn.LoopVar]), AForIn);
+
+    if (CollType.Kind = TType.TKind.Array) and (CollType.ElementType <> nil) then
+    begin
+      if not CheckTypeCompatibility(VarType, CollType.ElementType) then
+        Error(Format('Incompatible loop variable type (cannot assign "%s" to "%s")',
+                     [CollType.ElementType.Name, VarType.Name]), AForIn);
+    end;
+
+    AnalyzeStatement(AForIn.Body);
+    Exit;
+  end;
+
+  // 2. Existing Variable in Scope
+  LoopVarSym := FCurrentScope.Resolve(AForIn.LoopVar);
   if LoopVarSym = nil then
   begin
     Error(Format('Undeclared loop variable "%s"', [AForIn.LoopVar]), AForIn);
     Exit;
   end;
-
-  var CollType := AnalyzeExpression(AForIn.Collection);
 
   if CollType.Kind = TType.TKind.Array then
   begin
@@ -2157,13 +2237,11 @@ begin
         Error(Format('Incompatible loop variable type for array element (cannot assign "%s" to "%s")',
                      [CollType.ElementType.Name, LoopVarSym.SymbolType.Name]), AForIn);
   end
-
   else if CollType.IsSet then
   begin
     if (not LoopVarSym.SymbolType.IsInteger) and (LoopVarSym.SymbolType.Kind <> TType.TKind.Enum) then
       Error('Loop variable for set iteration must be an integer, char, or enum', AForIn);
   end
-
   else if CollType.IsString then
   begin
     if (LoopVarSym.SymbolType.Kind <> TType.TKind.Char) and (LoopVarSym.SymbolType.Kind <> TType.TKind.Byte) then
@@ -2467,8 +2545,15 @@ begin
 
     var SysVal: TConstValue;
 
-    if EvaluateConstValue(ARoutine.SysCallExpr, SysVal) then
-      ExistingSym.SysCallID := SysVal.ValueInt
+    if (ARoutine.SysCallExpr <> nil) and EvaluateConstValue(ARoutine.SysCallExpr, SysVal) then
+    begin
+      ExistingSym.SysCallID := SysVal.ValueInt;
+      ARoutine.SysCallID    := SysVal.ValueInt;
+    end
+
+    else if ARoutine.SysCallID > 0 then
+      ExistingSym.SysCallID := ARoutine.SysCallID
+
     else
       Error('SysCall ID must evaluate to a compile-time integer constant', ARoutine);
 

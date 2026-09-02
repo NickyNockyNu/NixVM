@@ -63,6 +63,8 @@
         <Manifest_File>D:\Passe2\dpr\(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
         <Icon_MainIcon>harness.console_Icon.ico</Icon_MainIcon>
+        <PostBuildEvent><![CDATA[D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.console.exe
+$(PostBuildEvent)]]></PostBuildEvent>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">

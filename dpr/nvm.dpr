@@ -24,16 +24,9 @@ program nvm;
 {
   TODO:
 
-  Tool (nvm.exe) features:
-
-    BUILD/MAKE option for direct pascal->executable
-    Icon/Version information support for LINK
-
   Pascal language features:
 
-    Inline var declaration in for loops eg: `for var i := 1 to 10 do` (for loops **ONLY**. I don't like/want them elsewhere)
     Dynamic (heap managed) arrays (1D only?) with support for `SetLength`, `Length`, `High`, `Low`, `Copy`
-    Unary if eg: `str := if b > 5 then 'big' else 'small';
 
   Core features:
 
@@ -142,7 +135,7 @@ begin
   Writeln('Usage: nvm <compile|assemble|disassemble|link|stamp|info> <file> [options]');
   Writeln;
   Writeln('General options:');
-  PrintDefaultOptions;
+  PrintDefaultOptions(False);
   Writeln;
   Writeln('For tool specific options use:');
   Writeln('  nvm --help <compile|assemble|disassemble|link|stamp|info>');
@@ -160,7 +153,6 @@ begin
     Halt(1);
   end;
 end;
-
 
 procedure DoCompile;
 var
