@@ -83,3 +83,5 @@ ide/
 bin/nvmide.*
 test/*.exe
 test/*.nvm
+test/*.asm
+
