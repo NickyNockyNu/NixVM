@@ -31,6 +31,7 @@ uses
   NixVM.Core.Instructions,
   NixVM.Core.CPU,
   NixVM.Core.System,
+  NixVM.Core.ROM,
   NixVM.Harness.Timing;
 
 type
@@ -76,6 +77,8 @@ type
   protected
     procedure Initialize; virtual;
     procedure Finalize;   virtual;
+
+    procedure InitEnvironment(AHeader: PROMHeader = nil);
 
     procedure Started; virtual;
     procedure Stopped; virtual;
@@ -127,7 +130,6 @@ type
 implementation
 
 uses
-  NixVM.Core.ROM,
   NixVM.Core.Strings;
 
 {$REGION 'CustomHarness'}
@@ -306,6 +308,23 @@ begin
   ExitCode := FMemory.CoreSystem^.SystemState.UserCode;
 end;
 
+procedure TCustomHarness<TSystemMemory>.InitEnvironment(AHeader: PROMHeader = nil);
+begin
+  with FMemory.CoreSystem^.Environment do
+  begin
+    Harness.Name  := HarnessName;
+    Harness.Major := HarnessMajor;
+    Harness.Minor := HarnessMinor;
+
+    if AHeader <> nil then
+    begin
+      ROM.Name  := AHeader^.ROM.Name;
+      ROM.Major := AHeader^.ROM.Major;
+      ROM.Minor := AHeader^.ROM.Minor;
+    end;
+  end;
+end;
+
 procedure TCustomHarness<TSystemMemory>.Started;
 begin
 
@@ -344,6 +363,8 @@ begin
       TSysCalls.ID.HeapFree:            FMemory.HeapFree(R0);
       TSysCalls.ID.HeapSize:      R0 := FMemory.HeapSize(R0);
       TSysCalls.ID.HeapAvailable: R0 := FMemory.HeapAvailable;
+      TSysCalls.ID.HeapLoad:      R0 := FMemory.HeapLoad(R0);
+      TSysCalls.ID.HeapSave:      R0 := FMemory.HeapSave(R0, R1);
 
       TSysCalls.ID.StringNew:        R0 := FMemory.StringNew(R0);
       TSysCalls.ID.StringInit:       R0 := FMemory.StringNew(FMemory.ReadString(R0));
@@ -459,9 +480,6 @@ begin
       if Header.UserSize = 0 then
         Header.UserSize := FileSize(F) - SizeOf(TROMHeader);
 
-      //if Header.HeapSize  = 0 then Header.HeapSize  := 64 * 1024;
-      //if Header.StackSize = 0 then Header.StackSize := 16 * 1024;
-
       FMemory.Resize(Header.UserSize, Header.HeapSize, Header.StackSize);
       FMemory.Reset;
 
@@ -479,6 +497,13 @@ begin
 
       FROMFile := AROMFile;
       Result   := True;
+
+      InitEnvironment(@Header);
+
+      if Length(Header.ROM.Name) = 0 then
+        FMemory.Heap.LocalPath := ExtractFilePath(FROMFile) + ExtractFileName(FROMFile, True) + '.'
+      else
+        FMemory.Heap.LocalPath := ExtractFilePath(FROMFile) + Header.ROM.Name + '.';
 
       FCPU.Reset;
     finally
@@ -524,6 +549,8 @@ begin
   try
     FMemory.Reset;
     FCPU.Reset;
+
+    InitEnvironment;
 
     FRunning := True;
 

@@ -38,6 +38,11 @@ function TrimWhitespace(const AString: String): String;
 
 function ParseNumber(const S: String; out AValue: Cardinal): Boolean;
 
+function Sanitise(const AString: String): String;
+
+function ExtractFilePath(const AFileName: String): String;
+function ExtractFileName(const AFileName: String; ARemoveExt: Boolean = True): String;
+
 implementation
 
 function Lowercase(const AString: String): String;
@@ -239,5 +244,52 @@ begin
     Exit(True);
   end;
 end;
+
+function Sanitise(const AString: String): String;
+const
+  ValidChars = '_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+begin
+  Result := '';
+
+  for var c in AString do
+    if Pos(c, ValidChars) > 0 then
+      Result := Result + c;
+end;
+
+function ExtractFilePath(const AFileName: String): String;
+begin
+  Result := '';
+
+  for var i := Length(AFileName) downto 1 do
+    if (AFileName[i] = '\') or (AFileName[i] = '/') then
+    begin
+      Result := Copy(AFileName, 1, i);
+      Break;
+    end;
+
+  if Length(Result) = 0 then
+    Result := '.\';
+end;
+
+function ExtractFileName(const AFileName: String; ARemoveExt: Boolean = True): String;
+begin
+  Result := AFileName;
+
+  for var i := Length(Result) downto 1 do
+    if (Result[i] = '\') or (Result[i] = '/') then
+    begin
+      Result := Copy(Result, i + 1, Length(Result));
+      Break;
+    end;
+
+  if ARemoveExt then
+    for var i := Length(Result) downto 1 do
+      if Result[i] = '.' then
+      begin
+        Result := Copy(Result, 1, i - 1);
+        Break;
+      end;
+end;
+
 
 end.

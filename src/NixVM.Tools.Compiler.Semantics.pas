@@ -2716,29 +2716,15 @@ begin
         SelfSym.Storage    := TSymbol.TStorage.Parameter;
         SelfSym.ParamIndex := 0;
         SelfSym.IsVarParam := True;
+
         Inc(FCurrentScope.FLocalSize, 4);
+
         SelfSym.StackOffset := -Integer(FCurrentScope.FLocalSize);
 
         FCurrentScope.Define(SelfSym);
+
         RegParamCount := 1;
       end;
-    end;
-
-    if ARoutine.IsFunction then
-    begin
-      var ResultSym := TSymbol.Create('result', TSymbol.TKind.Variable, ResolveType(ARoutine.ReturnType));
-      ResultSym.Storage := TSymbol.TStorage.Local;
-
-      Inc(FCurrentScope.FLocalSize, 4);
-      ResultSym.StackOffset := -Integer(FCurrentScope.FLocalSize);
-      FCurrentScope.Define(ResultSym);
-
-      var FuncNameSym := TSymbol.Create(ARoutine.Name, TSymbol.TKind.Variable, ResolveType(ARoutine.ReturnType));
-
-      FuncNameSym.Storage     := TSymbol.TStorage.Local;
-      FuncNameSym.StackOffset := ResultSym.StackOffset;
-
-      FCurrentScope.Define(FuncNameSym);
     end;
 
     var StackParamOffset: Integer := 8;
@@ -2768,12 +2754,28 @@ begin
         Error(Format('Duplicate parameter "%s"', [PDecl.Name]), PDecl);
     end;
 
+    if ARoutine.IsFunction then
+    begin
+      var ResultSym := TSymbol.Create('result', TSymbol.TKind.Variable, ResolveType(ARoutine.ReturnType));
+
+      ResultSym.Storage := TSymbol.TStorage.Local;
+      Inc(FCurrentScope.FLocalSize, 4);
+      ResultSym.StackOffset := -Integer(FCurrentScope.FLocalSize);
+      FCurrentScope.Define(ResultSym);
+
+      var FuncNameSym := TSymbol.Create(ARoutine.Name, TSymbol.TKind.Variable, ResolveType(ARoutine.ReturnType));
+
+      FuncNameSym.Storage     := TSymbol.TStorage.Local;
+      FuncNameSym.StackOffset := ResultSym.StackOffset;
+
+      FCurrentScope.Define(FuncNameSym);
+    end;
+
     for var Decl in ARoutine.Declarations do
       AnalyzeDeclaration(Decl);
 
     if Assigned(ARoutine.Body) then
       AnalyzeBlock(ARoutine.Body);
-
   finally
     FCurrentScope := FCurrentScope.Parent;
   end;

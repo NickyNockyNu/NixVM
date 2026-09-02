@@ -24,14 +24,9 @@ program nvm;
 {
   TODO:
 
-  Pascal language features:
-
-    Dynamic (heap managed) arrays (1D only?) with support for `SetLength`, `Length`, `High`, `Low`, `Copy`
-
   Core features:
 
     Do we add simple file IO in the core syscalls?
-    SystemMemory area for ROM/Harness information
 
   Harnesses:
 
@@ -1016,11 +1011,11 @@ begin
 
     if HasTarget then
     begin
+      Writeln;
       Writeln('Target Harness Information:');
       Writeln('    User Address: 0x', IntToHex(TargetInfo.UserAddress, 8));
       Writeln('  Target Version: v', TargetInfo.HarnessMajor, '.', TargetInfo.HarnessMinor);
       Writeln('        OEM Size: ', TargetInfo.OEMSize, ' bytes');
-      Writeln;
     end;
 
     if TBuildPE.ExtractROM(InputFile, ROMBytes) and (Length(ROMBytes) >= SizeOf(TROMHeader)) then
@@ -1029,6 +1024,7 @@ begin
 
       if Header.IsValid then
       begin
+        Writeln;
         Writeln('Embedded Cartridge ROM:');
         Writeln(Header.ToString);
 
@@ -1046,6 +1042,7 @@ begin
     try
       if (FS.Size >= SizeOf(TROMHeader)) and Header.Load(InputFile) then
       begin
+        Writeln;
         Writeln('Cartridge ROM Information:');
         Writeln(Header.ToString);
       end

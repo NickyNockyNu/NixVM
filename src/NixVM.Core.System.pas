@@ -26,7 +26,8 @@ unit NixVM.Core.System;
 interface
 
 uses
-  NixVM.Core.Registers;
+  NixVM.Core.Registers,
+  NixVM.Core.ROM;
 
 type
   {$REGION 'Interrupts'}
@@ -85,6 +86,8 @@ type
       HeapFree      = Heap + 2;
       HeapSize      = Heap + 3;
       HeapAvailable = Heap + 4;
+      HeapLoad      = Heap + 5;
+      HeapSave      = Heap + 6;
 
       &String = $30;
       StringNew       = &String + 0;
@@ -168,6 +171,15 @@ type
   end;
   {$ENDREGION}
 
+  {$REGION 'Environment'}
+  TEnvironment = packed record
+    ROM:     TROMHeader.TVersion;
+    Harness: TROMHeader.TVersion;
+
+    procedure Reset;
+  end;
+  {$ENDREGION}
+
   {$REGION 'Timers'}
   TTimers = packed record
   type
@@ -228,7 +240,8 @@ type
     SysCallsAddress     = InterruptsAddress  + SizeOf(TInterrupts);
     SystemStateAddress  = SysCallsAddress    + SizeOf(TSysCalls);
     MemoryMapAddress    = SystemStateAddress + SizeOf(TSystemState);
-    TimersAddress       = MemoryMapAddress   + SizeOf(TMemoryMap);
+    EnvironmentAddress  = MemoryMapAddress   + SizeOf(TMemoryMap);
+    TimersAddress       = EnvironmentAddress + SizeOf(TEnvironment);
     RegistersAddress    = TimersAddress      + SizeOf(TTimers);
 
     UserCodeAddress = SystemStateAddress + SizeOf(TRegisters) + SizeOf(TSystemState.TPanicCode);
@@ -237,6 +250,7 @@ type
     SysCalls:    TSysCalls;
     SystemState: TSystemState;
     MemoryMap:   TMemoryMap;
+    Environment: TEnvironment;
     Timers:      TTimers;
     Registers:   TSystemRegisters;
 
@@ -286,6 +300,8 @@ begin
     HeapFree:      Result := Prefix + 'HeapFree';
     HeapSize:      Result := Prefix + 'HeapSize';
     HeapAvailable: Result := Prefix + 'HeapAvailable';
+    HeapLoad:      Result := Prefix + 'HeapLoad';
+    HeapSave:      Result := Prefix + 'HeapSave';
 
     StringNew:       Result := Prefix + 'StringNew';
     StringInit:      Result := Prefix + 'StringInit';
@@ -352,6 +368,13 @@ begin
 
   StackAddress := HeapAddress + HeapSize;
   StackSize    := 0;
+end;
+{$ENDREGION}
+
+{$REGION 'Environment'}
+procedure TEnvironment.Reset;
+begin
+  {}
 end;
 {$ENDREGION}
 
@@ -436,6 +459,7 @@ begin
   SysCalls.Reset;
   SystemState.Reset;
   MemoryMap.Reset;
+  Environment.Reset;
   Timers.Reset;
   Registers.Reset;
 end;

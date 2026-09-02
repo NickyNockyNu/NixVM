@@ -158,6 +158,8 @@ type
 
     FAddress: Cardinal;
     FSize:    Cardinal;
+
+    FLocalPath: String;
   protected
     procedure Initialize(AAddress, ASize: Cardinal);
   public
@@ -171,6 +173,8 @@ type
     procedure Dealloc(AAddress: Cardinal);
     function  GetSize(AAddress: Cardinal): Cardinal;
     function  GetAvailable: Cardinal;
+    function  Load(AName: TString): Cardinal;
+    function  Save(AName: TString; AAddress: Cardinal): Cardinal;
 
     property Memory:  TCustomMemory  read FMemory;
     property Strings: TStringManager read FStrings;
@@ -178,6 +182,8 @@ type
 
     property Address: Cardinal read FAddress;
     property Size:    Cardinal read FSize;
+
+    property LocalPath: String read FLocalPath write FLocalPath;
   end;
   {$ENDREGION}
 
@@ -232,6 +238,8 @@ type
     procedure HeapFree(AAddress: Cardinal); inline;
     function  HeapSize(AAddress: Cardinal): Cardinal; inline;
     function  HeapAvailable: Cardinal; inline;
+    function  HeapLoad(AName: TString): Cardinal; inline;
+    function  HeapSave(AName: TString; AAddress: Cardinal): Cardinal; inline;
 
     function  StringNew(ALength: Cardinal): TString; overload; inline;
     function  StringNew(const AString: AnsiString): TString; overload; inline;
@@ -1181,6 +1189,92 @@ begin
     if FBlocks[i].IsFree then
       Inc(Result, FBlocks[i].AlignedSize);
 end;
+
+function THeap.Load(AName: TString): Cardinal;
+var
+  F:         file;
+  FSize:     Cardinal;
+  FRead:     Integer;
+  LocalName: String;
+begin
+  Result := 0;
+
+  if Length(FLocalPath) = 0 then
+    Exit;
+
+  LocalName := Sanitise(String(FMemory.ReadString(AName)));
+
+  if Length(LocalName) = 0 then
+    Exit;
+
+  LocalName := FLocalPath + LocalName + '.dat';
+
+  AssignFile(F, LocalName);
+
+  {$I-}System.Reset(F, 1);{$I+}
+
+  if IOResult <> 0 then
+    Exit;
+
+  try
+    FSize := FileSize(F);
+
+    if (FSize = 0) or (FSize > GetAvailable) then
+      Exit;
+
+    Result := Alloc(FSize);
+
+    if Result = 0 then
+      Exit;
+
+    BlockRead(F, FMemory[Result]^, FSize, FRead);
+  finally
+    CloseFile(F);
+  end;
+end;
+
+function THeap.Save(AName: TString; AAddress: Cardinal): Cardinal;
+var
+  F:         file;
+  FSize:     Integer;
+  FWrite:    Integer;
+  LocalName: String;
+begin
+  Result := 0;
+
+  if Length(FLocalPath) = 0 then
+    Exit;
+
+  if AAddress = 0 then
+    Exit;
+
+  FSize := GetSize(AAddress);
+
+  if FSize = 0 then
+    Exit;
+
+  LocalName := Sanitise(String(FMemory.ReadString(AName)));
+
+
+  if Length(LocalName) = 0 then
+    Exit;
+
+  LocalName := FLocalPath + LocalName + '.dat';
+
+  AssignFile(F, LocalName);
+
+  {$I-}System.Rewrite(F, 1);{$I+}
+
+  if IOResult <> 0 then
+    Exit;
+
+  try
+    BlockWrite(F, FMemory[AAddress]^, FSize, FWrite);
+    Result := FWrite;
+  finally
+    CloseFile(F);
+  end;
+end;
 {$ENDREGION}
 
 {$REGION 'Stack'}
@@ -1323,6 +1417,16 @@ end;
 function TMemory.HeapAvailable: Cardinal;
 begin
   Result := FHeap.GetAvailable;
+end;
+
+function TMemory.HeapLoad(AName: TString): Cardinal;
+begin
+  Result := FHeap.Load(AName);
+end;
+
+function TMemory.HeapSave(AName: TString; AAddress: Cardinal): Cardinal;
+begin
+  Result := FHeap.Save(AName, AAddress);
 end;
 
 function TMemory.StringNew(ALength: Cardinal): TString;

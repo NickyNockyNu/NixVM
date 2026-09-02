@@ -579,7 +579,17 @@ begin
         FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ineg, TRegisters.ID.R0, TRegisters.ID.R0);
 
     TASTUnary.TOp.Not:
-      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.&not, TRegisters.ID.R0, TRegisters.ID.R0);
+    begin
+      var IsBool := (AUnary.Operand.ResolvedType <> nil) and AUnary.Operand.ResolvedType.IsBoolean;
+
+      if IsBool then
+      begin
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.cmp, TRegisters.ID.R0, 0);
+        FIR.AddInstrR1(TCPUInstruction.TOpCode.sete, TRegisters.ID.R0);
+      end
+      else
+        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.&not, TRegisters.ID.R0, TRegisters.ID.R0);
+    end;
 
     TASTUnary.TOp.Dereference:
       FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ld, TRegisters.ID.R0, TRegisters.ID.R0);

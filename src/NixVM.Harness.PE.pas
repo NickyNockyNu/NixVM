@@ -138,9 +138,6 @@ begin
   if Header^.UserSize = 0 then
     Header^.UserSize := ASize - SizeOf(TROMHeader);
 
-  //if Header^.HeapSize  = 0 then Header^.HeapSize  := 64 * 1024;
-  //if Header^.StackSize = 0 then Header^.StackSize := 16 * 1024;
-
   Memory.Resize(Header^.UserSize, Header^.HeapSize, Header^.StackSize);
   Memory.Reset;
 
@@ -149,6 +146,13 @@ begin
 
   if DataSize > 0 then
     Memory.WriteData(Memory.UserAddress, DataPtr^, DataSize);
+
+  InitEnvironment(Header);
+
+  if Length(Header^.ROM.Name) = 0 then
+    Memory.Heap.LocalPath := ExtractFilePath(ParamStr(0)) + ExtractFileName(ParamStr(0), True) + '.'
+  else
+    Memory.Heap.LocalPath := ExtractFilePath(ParamStr(0)) + Header.ROM.Name + '.';
 
   CPU.Reset;
 

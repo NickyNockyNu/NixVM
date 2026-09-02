@@ -4,6 +4,7 @@ program harness.console;
 {.$R *.res}
 
 uses
+  NixVM.Core.Strings,
   NixVM.Harness,
   NixVM.Harness.PE,
   NixVM.Harness.Timing;
