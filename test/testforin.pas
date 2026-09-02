@@ -1,8 +1,7 @@
-program TestForIn targets Test;
+program TestForIn targets console;
 
 {$HEAP 1k}
 {$STACK 128}
-{$BASE $4E0}
 
 type
   TDays = (Mon, Tue, Wed, Thu, Fri, Sat, Sun);
@@ -30,11 +29,11 @@ begin
   end;
 
   for pt in points do
-    Writeln('Point: %d, %d', pt.x, pt.y);
+    Println('Point: %d, %d', pt.x, pt.y);
 
   for day in Weekend do
-    Writeln('Weekend Day Index: %d', Ord(day));
+    Println('Weekend Day Index: %d', Ord(day));
 
   for ch in 'NixVM' do
-    Writeln('Char: %c (Ord=%d)', ch, Ord(ch));
+    Println('Char: %c (Ord=%d)', ch, Ord(ch));
 end.

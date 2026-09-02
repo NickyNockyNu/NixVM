@@ -1,12 +1,11 @@
-program TestArgs;
+program TestArgs targets console;
 
 {$HEAP 0}
 {$STACK 1k}
-{$BASE $4E0}
 
 procedure Test(a, b, c, d, e, f, g: Integer);
 begin
-  Writeln('%d %d %d %d %d %d %d', a, b, c, d, e, f, g);
+  Println('%d %d %d %d %d %d %d', a, b, c, d, e, f, g);
 end;
 
 begin

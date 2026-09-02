@@ -1,14 +1,13 @@
-program testrap targets Test;
+program testrap targets console;
 
 {$HEAP 0}
 {$STACK 256}
-{$BASE $4E0}
 
 type
+  PPoint = ^TPoint;
   TPoint = record
     x, y: Integer;
   end;
-  PPoint = ^TPoint;
 
   TEntity = record
     id: Integer;
@@ -40,13 +39,13 @@ begin
   end;
 
   ScalePoint(points[1], 2); 
-  Writeln('ScalePoint var test: %d, %d', points[1].x, points[1].y);
+  Println('ScalePoint var test: %d, %d', points[1].x, points[1].y);
 
   ptPtr := @points[0];
-  Writeln('Ptr[0]: %d, %d', ptPtr^.x, ptPtr^.y);
+  Println('Ptr[0]: %d, %d', ptPtr^.x, ptPtr^.y);
   
   Inc(ptPtr); 
-  Writeln('Ptr[1] after Inc: %d, %d', ptPtr^.x, ptPtr^.y);
+  Println('Ptr[1] after Inc: %d, %d', ptPtr^.x, ptPtr^.y);
 
   with hero do
   begin
@@ -58,13 +57,13 @@ begin
     stats[2] := 10;
   end;
 
-  Writeln('Hero ID=%d, Pos=(%d, %d), HP=%d, ATK=%d', 
+  Println('Hero ID=%d, Pos=(%d, %d), HP=%d, ATK=%d', 
           hero.id, hero.pos.x, hero.pos.y, hero.stats[0], hero.stats[2]);
 
   for i := 0 to 2 do
     for j := 0 to 2 do
       grid[i, j] := (i * 10) + j;
 
-  Writeln('Grid[1, 2] = %d', grid[1, 2]);
-  Writeln('Grid[2, 0] = %d', grid[2, 0]);
+  Println('Grid[1, 2] = %d', grid[1, 2]);
+  Println('Grid[2, 0] = %d', grid[2, 0]);
 end.

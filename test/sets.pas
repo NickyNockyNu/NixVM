@@ -2,7 +2,6 @@ program sets targets console;
 
 {$HEAP 0}
 {$STACK 128}
-{$BASE $4E0}
 
 type
   TDays = (Mon, Tue, Wed, Thu, Fri, Sat, Sun);
@@ -19,25 +18,25 @@ begin
   Day := TDays.Mon;
   
   if Day in Weekend then
-    Writeln('Weekend!');
+    Println('Weekend!');
     
   Work := [TDays.Tue..TDays.Wed, TDays.Fri, TDays.Sun];
   Work := Work - [TDays.Sun];
   
   if not (TDays.Sun in Work) then
-    Writeln('we dont work sundays!');
+    Println('we dont work sundays!');
         
   case Day of
     TDays.Mon: 
-      Writeln('YAWN! Monday');
+      Println('YAWN! Monday');
     
     TDays.Tue..TDays.Fri: 
-      Writeln('Week day');
+      Println('Week day');
       
      TDays.Sat, TDays.Sun:
-       Writeln('Weekend');
+       Println('Weekend');
   else
-    Writeln('Time and space is broken');
+    Println('Time and space is broken');
   end;
 end;
 

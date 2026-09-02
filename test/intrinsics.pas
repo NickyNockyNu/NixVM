@@ -2,7 +2,6 @@ program intrinsics targets console;
 
 {$HEAP 0}
 {$STACK 128}
-{$BASE $4E0}
 
 type
   TState = (Idle, Running, Paused, Dead);

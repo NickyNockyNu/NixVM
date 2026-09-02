@@ -1,8 +1,7 @@
-program records targets Test;
+program records targets console;
 
 {$HEAP 0}
 {$STACK 128}
-{$BASE $4E0}
 
 type
   TUnused = record
@@ -57,24 +56,24 @@ begin
     begin
       Init(10 + i, 20 + i);
     
-      Writeln('%d: %d, %d', i, x, y);
+      Println('%d: %d, %d', i, x, y);
     
       with u do
         a := i;
         
       y := x + y;
     
-      Writeln('  %d', y);
+      Println('  %d', y);
     end;
    end;
 
   for i := 0 to 2 do
     with p[i] do
-      Writeln('%d: %d, %d, %d', i, fx, fy, u.a);
+      Println('%d: %d, %d, %d', i, fx, fy, u.a);
       
   c := p[1];
   
   cp := @p[1]; 
   
-  Writeln('%d, %d', c.x, cp^.y);
+  Println('%d, %d', c.x, cp^.y);
 end.

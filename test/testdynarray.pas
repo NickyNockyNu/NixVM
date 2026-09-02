@@ -26,7 +26,6 @@ begin
 
   Println('Length: %d, High: %d, Low: %d', Length(numbers), High(numbers), Low(numbers));
 
-  // Expanding array to 8 elements (preserves existing 5, zeroes new 3!)
   SetLength(numbers, 8);
   numbers[5] := 600;
   numbers[6] := 700;
@@ -36,7 +35,6 @@ begin
   for var i := 0 to High(numbers) do
     Println('numbers[%d] = %d', i, numbers[i]);
 
-  // Array of Records
   SetLength(pts, 2);
   pts[0].x := 11; pts[0].y := 22;
   pts[1].x := 33; pts[1].y := 44;

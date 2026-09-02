@@ -9,14 +9,13 @@ procedure TestStrSetLength;
 var
   s: String;
 begin
-  // 1. Allocate string buffer of 10 chars
   SetLength(s, 10);
+
   for var i := 1 to 10 do
     s[i] := Chr(64 + i); // 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'
 
   Println('Buffer: "%s" (Length=%d)', s, Length(s));
 
-  // 2. Shrink string buffer to 5 chars
   SetLength(s, 5);
   Println('Shrunk: "%s" (Length=%d)', s, Length(s));
 end;
