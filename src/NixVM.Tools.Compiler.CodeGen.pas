@@ -98,6 +98,7 @@ type
     procedure GenContinue;
 
     procedure GenExpression  (AExpr:     TASTExpression);
+    procedure GenIfExpression(AIfExpr:   TASTIfExpression);
     procedure GenBinary      (ABinary:   TASTBinary);
     procedure GenUnary       (AUnary:    TASTUnary);
     procedure GenLiteral     (ALiteral:  TASTLiteral);
@@ -1039,6 +1040,7 @@ begin
 
     Exit;
   end;
+
   if (CalleeLower = 'round') or (CalleeLower = 'trunc') then
   begin
 
@@ -1117,12 +1119,146 @@ begin
     Exit;
   end;
 
+   if CalleeLower = 'setlength' then
+  begin
+    if ACall.Arguments.Count = 2 then
+    begin
+      var TargetExpr := ACall.Arguments[0];
+
+      if (TargetExpr.ResolvedType <> nil) and TargetExpr.ResolvedType.IsString then
+      begin
+        GenExpression(TargetExpr);
+        FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
+
+        GenExpression(ACall.Arguments[1]);
+        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TRegisters.ID.R0);
+        FIR.AddInstrR1(TCPUInstruction.TOpCode.pop, TRegisters.ID.R0);
+
+        FIR.AddSysCall(TSysCalls.ID.StringSetLength);
+        GenStoreToTarget(TargetExpr);
+
+        Exit;
+      end;
+
+      var ElemSize: Cardinal := 4;
+
+      if TargetExpr is TASTIdentifier then
+      begin
+        var Sym := FCurrentScope.Resolve(TASTIdentifier(TargetExpr).Name);
+
+        if (Sym <> nil) and (Sym.SymbolType <> nil) and (Sym.SymbolType.ElementType <> nil) then
+          ElemSize := Sym.SymbolType.ElementType.Size;
+      end
+
+      else if (TargetExpr.ResolvedType <> nil) and (TargetExpr.ResolvedType.ElementType <> nil) then
+      begin
+        var ElemTypeName := TargetExpr.ResolvedType.ElementType.TypeName;
+
+        if ElemTypeName <> '' then
+        begin
+          var Sym := FAnalyzer.GlobalScope.Resolve(ElemTypeName);
+
+          if (Sym <> nil) and (Sym.SymbolType <> nil) then
+            ElemSize := Sym.SymbolType.Size
+          else
+            ElemSize := TargetExpr.ResolvedType.ElementType.Size;
+        end
+
+        else
+          ElemSize := TargetExpr.ResolvedType.ElementType.Size;
+      end;
+
+      if ElemSize = 0 then
+        ElemSize := 4;
+
+      GenExpression(TargetExpr);
+      FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
+
+      GenExpression(ACall.Arguments[1]);
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TRegisters.ID.R0);
+      FIR.AddInstrR1(TCPUInstruction.TOpCode.pop, TRegisters.ID.R0);
+
+      FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R2, ElemSize);
+      FIR.AddSysCall(TSysCalls.ID.ArraySetLength);
+
+      GenStoreToTarget(TargetExpr);
+    end;
+
+    Exit;
+  end;
+
+  if (CalleeLower = 'high') or (CalleeLower = 'low') then
+  begin
+    if ACall.Arguments.Count = 1 then
+    begin
+      var Arg := ACall.Arguments[0];
+
+      if (Arg.ResolvedType <> nil) and (Arg.ResolvedType.Kind = TASTType.TKind.DynamicArray) then
+      begin
+        if CalleeLower = 'low' then
+          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, 0)
+        else
+        begin
+          GenExpression(Arg);
+
+          var NotNullLbl := GenUniqueLabel('@da_high');
+          var EndLbl     := GenUniqueLabel('@dn_high_end');
+
+          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.cmp, TRegisters.ID.R0, 0);
+          FIR.AddInstrImm(TCPUInstruction.TOpCode.jnz, TLabelString(NotNullLbl));
+
+          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, Cardinal(-1));
+          FIR.AddInstrRImm(TCPUInstruction.TOpCode.jmp, TLabelString(EndLbl));
+
+          FIR.AddLabel(TLabelString(NotNullLbl));
+          FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.R0, Cardinal(-4));
+          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.sub, TRegisters.ID.R0, 1);
+          FIR.AddLabel(TLabelString(EndLbl));
+        end;
+
+        Exit;
+      end
+
+      else if (Arg.ResolvedType <> nil) and Arg.ResolvedType.IsString then
+      begin
+        if CalleeLower = 'low' then
+          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, 1)
+        else
+        begin
+          GenExpression(Arg);
+          FIR.AddSysCall(TSysCalls.ID.StringLength);
+        end;
+
+        Exit;
+      end;
+    end;
+  end;
+
   if CalleeLower = 'length' then
   begin
-    if ACall.Arguments.Count > 0 then
+    if ACall.Arguments.Count = 1 then
     begin
-      GenExpression(ACall.Arguments[0]);
-      FIR.AddSysCall(TSysCalls.ID.StringLength);
+      var Arg := ACall.Arguments[0];
+
+      GenExpression(Arg);
+
+      if (Arg.ResolvedType <> nil) and (Arg.ResolvedType.Kind = TASTType.TKind.DynamicArray) then
+      begin
+        var NotNullLbl := GenUniqueLabel('@da_len');
+        var EndLbl     := GenUniqueLabel('@da_len_end');
+
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.cmp, TRegisters.ID.R0, 0);
+        FIR.AddInstrImm(TCPUInstruction.TOpCode.jnz, TLabelString(NotNullLbl));
+
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, 0);
+        FIR.AddInstrRImm(TCPUInstruction.TOpCode.jmp, TLabelString(EndLbl));
+
+        FIR.AddLabel(TLabelString(NotNullLbl));
+        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.R0, Cardinal(-4));
+        FIR.AddLabel(TLabelString(EndLbl));
+      end
+      else
+        FIR.AddSysCall(TSysCalls.ID.StringLength);
     end;
 
     Exit;
@@ -1132,6 +1268,8 @@ begin
   begin
     if ACall.Arguments.Count = 3 then
     begin
+      var Arg0 := ACall.Arguments[0];
+
       GenExpression(ACall.Arguments[2]);
       FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
 
@@ -1143,10 +1281,13 @@ begin
 
       FIR.AddInstrRn(TCPUInstruction.TOpCode.popr, 3);
 
-      FIR.AddSysCall(TSysCalls.ID.StringCopy);
-    end;
+      if (Arg0.ResolvedType <> nil) and (Arg0.ResolvedType.Kind = TASTType.TKind.DynamicArray) then
+        FIR.AddSysCall(TSysCalls.ID.ArrayCopy)
+      else
+        FIR.AddSysCall(TSysCalls.ID.StringCopy);
 
-    Exit;
+      Exit;
+    end;
   end;
 
   if (CalleeLower = 'inc') or (CalleeLower = 'dec') then
@@ -1317,6 +1458,7 @@ begin
   else if AExpr is TASTMemberAccess   then GenMemberAccess(TASTMemberAccess(AExpr))
   else if AExpr is TASTArrayAccess    then GenArrayAccess (TASTArrayAccess (AExpr))
   else if AExpr is TASTCallExpr       then GenCallExpr    (TASTCallExpr    (AExpr))
+  else if AExpr is TASTIfExpression   then GenIfExpression(TASTIfExpression(AExpr))
 
   else if AExpr is TASTTypeCast then
   begin
@@ -1378,6 +1520,36 @@ begin
       end;
     end;
   end;
+end;
+
+procedure TCodeGenerator.GenIfExpression(AIfExpr: TASTIfExpression);
+var
+  ElseLabel, EndLabel: String;
+  TargetIsFloat: Boolean;
+begin
+  ElseLabel := GenUniqueLabel('@ifexp_else');
+  EndLabel  := GenUniqueLabel('@ifexp_end');
+
+  TargetIsFloat := (AIfExpr.ResolvedType <> nil) and AIfExpr.ResolvedType.IsFloat;
+
+  GenExpression(AIfExpr.Condition);
+  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.cmp, TRegisters.ID.R0, 0);
+  FIR.AddInstrImm(TCPUInstruction.TOpCode.je, TLabelString(ElseLabel));
+
+  GenExpression(AIfExpr.ThenExpr);
+
+  if TargetIsFloat and (AIfExpr.ThenExpr.ResolvedType <> nil) and AIfExpr.ThenExpr.ResolvedType.IsInteger then
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, TRegisters.ID.R0, TRegisters.ID.R0);
+
+  FIR.AddInstrRImm(TCPUInstruction.TOpCode.jmp, TLabelString(EndLabel));
+
+  FIR.AddLabel(TLabelString(ElseLabel));
+  GenExpression(AIfExpr.ElseExpr);
+
+  if TargetIsFloat and (AIfExpr.ElseExpr.ResolvedType <> nil) and AIfExpr.ElseExpr.ResolvedType.IsInteger then
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, TRegisters.ID.R0, TRegisters.ID.R0);
+
+  FIR.AddLabel(TLabelString(EndLabel));
 end;
 
 procedure TCodeGenerator.GenStoreToTarget(ATarget: TASTExpression);
@@ -2347,6 +2519,12 @@ var
       end;
     end
 
+    else if AType.Kind = TType.TKind.DynamicArray then
+    begin
+      FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(ABaseOffset));
+      FIR.AddSysCall(TSysCalls.ID.ArrayDispose);
+    end
+
     else if (AType.Kind = TType.TKind.Array) and (AType.ElementType <> nil) and (AType.ElementType.IsString or (AType.ElementType.Kind = TType.TKind.Record)) then
     begin
       var ElemCount := (AType.SubrangeHigh - AType.SubrangeLow) + 1;
@@ -2560,6 +2738,7 @@ begin
   if AExpr is TASTMemberAccess then
   begin
     var MemberAcc := TASTMemberAccess(AExpr);
+
     GenAddressOf(MemberAcc.Expression);
 
     if MemberAcc.FieldOffset > 0 then
@@ -2576,6 +2755,39 @@ begin
     if ArrayAcc.ArrayExpr is TASTIdentifier then
       Sym := FCurrentScope.Resolve(TASTIdentifier(ArrayAcc.ArrayExpr).Name);
 
+    var IsHeapRef := (ArrayAcc.ArrayExpr.ResolvedType <> nil) and (ArrayAcc.ArrayExpr.ResolvedType.IsString or (ArrayAcc.ArrayExpr.ResolvedType.Kind in [TASTType.TKind.Pointer, TASTType.TKind.DynamicArray]));
+
+    if (not IsHeapRef) and (Sym <> nil) and (Sym.SymbolType <> nil) and (Sym.SymbolType.IsString or (Sym.SymbolType.Kind in [TType.TKind.Pointer, TType.TKind.DynamicArray])) then
+      IsHeapRef := True;
+
+    if IsHeapRef then
+    begin
+      GenExpression(ArrayAcc.IndexExprs[0]);
+
+      if ArrayAcc.LowBound > 0 then
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.sub, TRegisters.ID.R0, Cardinal(ArrayAcc.LowBound));
+
+      case ArrayAcc.ElementSize of
+        1: ;
+        2:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 1);
+        4:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 2);
+        8:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 3);
+        12: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, TRegisters.ID.R0, 12);
+        16: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 4);
+      else
+        if ArrayAcc.ElementSize > 1 then
+          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, TRegisters.ID.R0, ArrayAcc.ElementSize);
+      end;
+
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, TRegisters.ID.R0);
+
+      GenExpression(ArrayAcc.ArrayExpr);
+
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.add, TRegisters.ID.R0, TRegisters.ID.R1);
+
+      Exit;
+    end;
+
     if ArrayAcc.IndexExprs.Count = 1 then
     begin
       var IdxExpr := ArrayAcc.IndexExprs[0];
@@ -2588,11 +2800,11 @@ begin
         if (Sym <> nil) and (Sym.Storage = TSymbol.TStorage.Local) then
         begin
           var TotalOfs := Sym.StackOffset + ByteOffset;
+
           FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(TotalOfs));
 
           Exit;
         end
-
         else if (Sym <> nil) and (Sym.Storage = TSymbol.TStorage.Global) then
         begin
           var Idx := FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(Sym.GlobalLabel));
@@ -2618,6 +2830,7 @@ begin
         2:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 1);
         4:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 2);
         8:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 3);
+        12: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, TRegisters.ID.R0, 12);
         16: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, TRegisters.ID.R0, 4);
       else
         if ArrayAcc.ElementSize > 1 then
@@ -2674,7 +2887,6 @@ begin
       if (CurType <> nil) and (CurType.Kind = TType.TKind.Array) then
       begin
         DimLow := CurType.SubrangeLow;
-
         if CurType.ElementType <> nil then
           DimStride := CurType.ElementType.Size
         else

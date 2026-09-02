@@ -56,7 +56,8 @@ type
       &Procedure,
       &Function,
       NilType,
-      VoidType
+      VoidType,
+      DynamicArray
     );
     {$ENDREGION}
 
@@ -107,13 +108,14 @@ type
 
     destructor  Destroy; override;
 
-    function IsNumeric: Boolean; inline;
-    function IsInteger: Boolean; inline;
-    function IsFloat:   Boolean; inline;
-    function IsBoolean: Boolean; inline;
-    function IsString:  Boolean; inline;
-    function IsSigned:  Boolean; inline;
-    function IsSet:     Boolean; inline;
+    function IsNumeric:      Boolean; inline;
+    function IsInteger:      Boolean; inline;
+    function IsFloat:        Boolean; inline;
+    function IsBoolean:      Boolean; inline;
+    function IsString:       Boolean; inline;
+    function IsSigned:       Boolean; inline;
+    function IsSet:          Boolean; inline;
+    function IsDynamicArray: Boolean; inline;
 
     function FindField   (const AFieldName: String; out AField: TRecordField): Boolean;
     function FindProperty(const APropName:  String; out AProp:  TProperty):    Boolean;
@@ -255,6 +257,7 @@ type
     procedure AnalyzeProcCall (ACall:   TASTProcCall);
 
     function AnalyzeExpression  (AExpr:     TASTExpression):   TType;
+    function AnalyzeIfExpression(AIfExpr:   TASTIfExpression): TType;
     function AnalyzeBinary      (ABinary:   TASTBinary):       TType;
     function AnalyzeUnary       (AUnary:    TASTUnary):        TType;
     function AnalyzeLiteral     (ALiteral:  TASTLiteral):      TType;
@@ -412,6 +415,11 @@ end;
 function TType.IsSet: Boolean;
 begin
   Result := FKind = TKind.Set;
+end;
+
+function TType.IsDynamicArray: Boolean;
+begin
+  Result := FKind = TKind.DynamicArray;
 end;
 
 function TType.FindField(const AFieldName: String; out AField: TRecordField): Boolean;
@@ -644,6 +652,16 @@ begin
     TASTType.TKind.ShortInt: Exit(FBuiltinTypes['shortint']);
     TASTType.TKind.SmallInt: Exit(FBuiltinTypes['smallint']);
 
+    TASTType.TKind.DynamicArray:
+    begin
+      var ElemType := ResolveType(AAstType.ElementType);
+
+      Result := TType.Create(TType.TKind.DynamicArray, 'array of ' + ElemType.Name, 4);
+      Result.ElementType := ElemType;
+
+      FBuiltinTypes.Add(Format('DynArr_%p', [Pointer(Result)]), Result);
+    end;
+
     TASTType.TKind.Pointer:
     begin
       var TargetElemType: TType := nil;
@@ -835,6 +853,22 @@ begin
     begin
       AValue := Sym.ConstVal;
       Exit(True);
+    end;
+
+    Exit(False);
+  end;
+
+  if AExpr is TASTIfExpression then
+  begin
+    var IfExp := TASTIfExpression(AExpr);
+    var CondVal: TConstValue;
+
+    if EvaluateConstValue(IfExp.Condition, CondVal) and (CondVal.Kind = TConstValue.TKind.Boolean) then
+    begin
+      if CondVal.ValueBool then
+        Exit(EvaluateConstValue(IfExp.ThenExpr, AValue))
+      else
+        Exit(EvaluateConstValue(IfExp.ElseExpr, AValue));
     end;
 
     Exit(False);
@@ -1219,6 +1253,18 @@ begin
     var Op := Un.Operand;
 
     if FoldExpression(Op) then Un.Operand := Op;
+  end
+  else if AExpr is TASTIfExpression then
+  begin
+    var IfExp := TASTIfExpression(AExpr);
+
+    var C := IfExp.Condition;
+    var T := IfExp.ThenExpr;
+    var E := IfExp.ElseExpr;
+
+    if FoldExpression(C) then IfExp.Condition := C;
+    if FoldExpression(T) then IfExp.ThenExpr  := T;
+    if FoldExpression(E) then IfExp.ElseExpr  := E;
   end;
 
   if EvaluateConstValue(AExpr, ConstVal) then
@@ -1302,6 +1348,12 @@ begin
     Exit(True);
 
   if (TargetType.Kind = TType.TKind.Byte) and (SourceType.Kind = TType.TKind.Char) then
+    Exit(True);
+
+  if TargetType.IsDynamicArray and SourceType.IsDynamicArray then
+    Exit(CheckTypeCompatibility(TargetType.ElementType, SourceType.ElementType));
+
+  if TargetType.IsDynamicArray and (SourceType.Kind = TType.TKind.NilType) then
     Exit(True);
 
   Result := False;
@@ -1510,6 +1562,18 @@ begin
       CurrentType := FBuiltinTypes['char'];
     end
 
+    else if CurrentType.IsDynamicArray then
+    begin
+      AArrayAcc.LowBound := 0;
+
+      if CurrentType.ElementType <> nil then
+        AArrayAcc.ElementSize := CurrentType.ElementType.Size
+      else
+        AArrayAcc.ElementSize := 4;
+
+      CurrentType := CurrentType.ElementType;
+    end
+
     else if CurrentType.Kind = TType.TKind.Pointer then
     begin
       if Assigned(CurrentType.ElementType) then
@@ -1647,16 +1711,35 @@ begin
   if CalleeLower = 'length' then
   begin
     if ACall.Arguments.Count <> 1 then
-      Error('Length expects exactly 1 string argument', ACall)
+      Error('Length expects exactly 1 argument', ACall)
     else
     begin
       var ArgType := AnalyzeExpression(ACall.Arguments[0]);
 
-      if not ArgType.IsString then
-        Error('Argument to Length must be a string', ACall.Arguments[0]);
+      if (not ArgType.IsString) and (not ArgType.IsDynamicArray) and (ArgType.Kind <> TType.TKind.Array) then
+        Error('Argument to Length must be an array or string', ACall.Arguments[0]);
     end;
 
     Exit(FBuiltinTypes['integer']);
+  end;
+
+  if CalleeLower = 'setlength' then
+  begin
+    if ACall.Arguments.Count <> 2 then
+      Error('SetLength expects exactly 2 arguments (Array, NewLength)', ACall)
+    else
+    begin
+      var TargetType := AnalyzeExpression(ACall.Arguments[0]);
+      var LenType    := AnalyzeExpression(ACall.Arguments[1]);
+
+      if (not TargetType.IsDynamicArray) and (not TargetType.IsString) then
+        Error('First argument to SetLength must be a dynamic array or string', ACall.Arguments[0]);
+
+      if not LenType.IsInteger then
+        Error('Second argument to SetLength must be an integer expression', ACall.Arguments[1]);
+    end;
+
+    Exit(FBuiltinTypes['void']);
   end;
 
   if CalleeLower = 'copy' then
@@ -1708,16 +1791,16 @@ begin
     Exit(FBuiltinTypes['void']);
   end;
 
-  if (CalleeLower = 'low') or (CalleeLower = 'high') then
+   if (CalleeLower = 'high') or (CalleeLower = 'low') then
   begin
     if ACall.Arguments.Count <> 1 then
-      Error(Format('Function "%s" expects exactly 1 argument', [ACall.CalleeName]), ACall)
+      Error(Format('%s expects exactly 1 argument', [ACall.CalleeName]), ACall)
     else
     begin
       var ArgType := AnalyzeExpression(ACall.Arguments[0]);
 
-      if (ArgType.Kind <> TType.TKind.Array) and (not ArgType.IsString) and (ArgType.Kind <> TType.TKind.Enum) then
-        Error(Format('Argument to "%s" must be an array, string, or enum', [ACall.CalleeName]), ACall.Arguments[0]);
+      if (ArgType.Kind <> TType.TKind.Array) and (not ArgType.IsDynamicArray) and (not ArgType.IsString) and (ArgType.Kind <> TType.TKind.Enum) then
+        Error(Format('Argument to %s must be an array, string, or enum', [ACall.CalleeName]), ACall.Arguments[0]);
     end;
 
     Exit(FBuiltinTypes['integer']);
@@ -1962,6 +2045,7 @@ begin
   else if AExpr is TASTMemberAccess then Result := AnalyzeMemberAccess(TASTMemberAccess(AExpr))
   else if AExpr is TASTArrayAccess  then Result := AnalyzeArrayAccess (TASTArrayAccess (AExpr))
   else if AExpr is TASTCallExpr     then Result := AnalyzeCallExpr    (TASTCallExpr    (AExpr))
+  else if AExpr is TASTIfExpression then Result := AnalyzeIfExpression(TASTIfExpression(AExpr))
 
   else if AExpr is TASTTypeCast then
   begin
@@ -2006,6 +2090,12 @@ begin
       TType.TKind.Enum:     AExpr.ResolvedType := TASTType.Create(TASTType.TKind.Enum);
       TType.TKind.Set:      AExpr.ResolvedType := TASTType.Create(TASTType.TKind.Set);
 
+      TType.TKind.DynamicArray:
+      begin
+        AExpr.ResolvedType := TASTType.Create(TASTType.TKind.DynamicArray);
+        AExpr.ResolvedType.TypeName := Result.Name;
+      end;
+
       TType.TKind.Pointer:
       begin
         AExpr.ResolvedType := TASTType.Create(TASTType.TKind.Pointer);
@@ -2029,6 +2119,40 @@ begin
       AExpr.ResolvedType := TASTType.Create(TASTType.TKind.Integer);
     end;
   end;
+end;
+
+function TSemanticAnalyzer.AnalyzeIfExpression(AIfExpr: TASTIfExpression): TType;
+begin
+  var Cond := AIfExpr.Condition;
+
+  FoldExpression(Cond);
+  AIfExpr.Condition := Cond;
+
+  var CondType := AnalyzeExpression(AIfExpr.Condition);
+
+  if not CondType.IsBoolean then
+    Error('If-expression condition must be a Boolean expression', AIfExpr.Condition);
+
+  var ThenExp := AIfExpr.ThenExpr;
+
+  FoldExpression(ThenExp);
+  AIfExpr.ThenExpr := ThenExp;
+
+  var ElseExp := AIfExpr.ElseExpr;
+
+  FoldExpression(ElseExp);
+  AIfExpr.ElseExpr := ElseExp;
+
+  var ThenType := AnalyzeExpression(AIfExpr.ThenExpr);
+  var ElseType := AnalyzeExpression(AIfExpr.ElseExpr);
+
+  if not CheckTypeCompatibility(ThenType, ElseType) and not CheckTypeCompatibility(ElseType, ThenType) then
+    Error(Format('Incompatible branch types in if-expression ("%s" and "%s")', [ThenType.Name, ElseType.Name]), AIfExpr);
+
+  if ThenType.IsFloat or ElseType.IsFloat then
+    Result := FBuiltinTypes['single']
+  else
+    Result := ThenType;
 end;
 
 procedure TSemanticAnalyzer.AnalyzeAssign(AAssign: TASTAssign);
@@ -2119,8 +2243,10 @@ var
 begin
   var StartExp := AFor.StartExpr;
   var StopExp  := AFor.StopExpr;
+
   FoldExpression(StartExp);
   FoldExpression(StopExp);
+
   AFor.StartExpr := StartExp;
   AFor.StopExpr  := StopExp;
 
@@ -2130,7 +2256,6 @@ begin
   if (not StartType.IsInteger) or (not StopType.IsInteger) then
     Error('For loop range expressions must evaluate to integers', AFor);
 
-  // 1. Handle Inline Variable Declaration (for var i := ...)
   if AFor.IsInlineVar then
   begin
     if AFor.ExplicitType <> nil then
@@ -2138,18 +2263,29 @@ begin
     else
       VarType := StartType;
 
-    // Allocate local stack slot inside enclosing routine/program frame
-    var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
-    FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+    LoopVarSym := FCurrentScope.ResolveLocal(AFor.LoopVar);
 
-    LoopVarSym := TSymbol.Create(AFor.LoopVar, TSymbol.TKind.Variable, VarType);
-    LoopVarSym.Storage     := TSymbol.TStorage.Local;
-    LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
+    if LoopVarSym = nil then
+    begin
+      var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
 
-    if not FCurrentScope.Define(LoopVarSym) then
-      Error(Format('Duplicate loop variable identifier "%s"', [AFor.LoopVar]), AFor);
+      FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+
+      LoopVarSym := TSymbol.Create(AFor.LoopVar, TSymbol.TKind.Variable, VarType);
+
+      LoopVarSym.Storage     := TSymbol.TStorage.Local;
+      LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
+
+      FCurrentScope.Define(LoopVarSym);
+    end
+    else
+    begin
+      if not CheckTypeCompatibility(LoopVarSym.SymbolType, VarType) then
+        Error(Format('Inline loop variable "%s" conflicts with previous declaration of type "%s"', [AFor.LoopVar, LoopVarSym.SymbolType.Name]), AFor);
+    end;
 
     AnalyzeStatement(AFor.Body);
+
     Exit;
   end;
 
@@ -2157,7 +2293,6 @@ begin
 
   if LoopVarSym = nil then
     Error(Format('Undeclared loop variable "%s"', [AFor.LoopVar]), AFor)
-
   else if not LoopVarSym.SymbolType.IsInteger then
     Error('Loop counter variable must be an integer', AFor);
 
@@ -2172,58 +2307,52 @@ var
 begin
   CollType := AnalyzeExpression(AForIn.Collection);
 
-  // 1. Handle Inline Variable Declaration (for var pt in points ...)
   if AForIn.IsInlineVar then
   begin
     if AForIn.ExplicitType <> nil then
       VarType := ResolveType(AForIn.ExplicitType)
     else
     begin
-      // Infer type from collection element
       if CollType.Kind = TType.TKind.Array then
-      begin
-        if CollType.ElementType <> nil then
-          VarType := CollType.ElementType
-        else
-          VarType := FBuiltinTypes['integer'];
-      end
+        VarType := CollType.ElementType
+      else if CollType.IsDynamicArray then
+        VarType := CollType.ElementType
       else if CollType.IsSet then
-      begin
-        if CollType.ElementType <> nil then
-          VarType := CollType.ElementType
-        else
-          VarType := FBuiltinTypes['integer'];
-      end
+        VarType := FBuiltinTypes['integer']
       else if CollType.IsString then
         VarType := FBuiltinTypes['char']
       else
         VarType := FBuiltinTypes['integer'];
     end;
 
-    // Allocate local stack slot inside enclosing routine/program frame
-    var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
-    FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+    LoopVarSym := FCurrentScope.ResolveLocal(AForIn.LoopVar);
 
-    LoopVarSym := TSymbol.Create(AForIn.LoopVar, TSymbol.TKind.Variable, VarType);
-    LoopVarSym.Storage     := TSymbol.TStorage.Local;
-    LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
-
-    if not FCurrentScope.Define(LoopVarSym) then
-      Error(Format('Duplicate loop variable identifier "%s"', [AForIn.LoopVar]), AForIn);
-
-    if (CollType.Kind = TType.TKind.Array) and (CollType.ElementType <> nil) then
+    if LoopVarSym = nil then
     begin
-      if not CheckTypeCompatibility(VarType, CollType.ElementType) then
-        Error(Format('Incompatible loop variable type (cannot assign "%s" to "%s")',
-                     [CollType.ElementType.Name, VarType.Name]), AForIn);
+      var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
+
+      FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+
+      LoopVarSym := TSymbol.Create(AForIn.LoopVar, TSymbol.TKind.Variable, VarType);
+
+      LoopVarSym.Storage     := TSymbol.TStorage.Local;
+      LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
+
+      FCurrentScope.Define(LoopVarSym);
+    end
+    else
+    begin
+      if not CheckTypeCompatibility(LoopVarSym.SymbolType, VarType) then
+        Error(Format('Inline loop variable "%s" conflicts with previous declaration of type "%s"', [AForIn.LoopVar, LoopVarSym.SymbolType.Name]), AForIn);
     end;
 
     AnalyzeStatement(AForIn.Body);
+
     Exit;
   end;
 
-  // 2. Existing Variable in Scope
   LoopVarSym := FCurrentScope.Resolve(AForIn.LoopVar);
+
   if LoopVarSym = nil then
   begin
     Error(Format('Undeclared loop variable "%s"', [AForIn.LoopVar]), AForIn);
@@ -2234,19 +2363,28 @@ begin
   begin
     if CollType.ElementType <> nil then
       if not CheckTypeCompatibility(LoopVarSym.SymbolType, CollType.ElementType) then
-        Error(Format('Incompatible loop variable type for array element (cannot assign "%s" to "%s")',
-                     [CollType.ElementType.Name, LoopVarSym.SymbolType.Name]), AForIn);
+        Error(Format('Incompatible loop variable type for array element (cannot assign "%s" to "%s")', [CollType.ElementType.Name, LoopVarSym.SymbolType.Name]), AForIn);
   end
+
+  else if CollType.IsDynamicArray then
+  begin
+    if CollType.ElementType <> nil then
+      if not CheckTypeCompatibility(LoopVarSym.SymbolType, CollType.ElementType) then
+        Error(Format('Incompatible loop variable type for dynamic array (cannot assign "%s" to "%s")', [CollType.ElementType.Name, LoopVarSym.SymbolType.Name]), AForIn);
+  end
+
   else if CollType.IsSet then
   begin
     if (not LoopVarSym.SymbolType.IsInteger) and (LoopVarSym.SymbolType.Kind <> TType.TKind.Enum) then
       Error('Loop variable for set iteration must be an integer, char, or enum', AForIn);
   end
+
   else if CollType.IsString then
   begin
     if (LoopVarSym.SymbolType.Kind <> TType.TKind.Char) and (LoopVarSym.SymbolType.Kind <> TType.TKind.Byte) then
       Error('Loop variable for string iteration must be of type Char or Byte', AForIn);
   end
+
   else
     Error('Expression in "for..in" must be an array, set, or string', AForIn.Collection);
 
@@ -2883,6 +3021,15 @@ begin
 
     if FRoutineMap.TryGetValue(LowerCase(IdentName), Routine) then
       MarkRoutine(Routine);
+  end
+
+  else if AExpr is TASTIfExpression then
+  begin
+    var IfExp := TASTIfExpression(AExpr);
+
+    MarkExpression(IfExp.Condition);
+    MarkExpression(IfExp.ThenExpr);
+    MarkExpression(IfExp.ElseExpr);
   end
 
   else if AExpr is TASTCallExpr then

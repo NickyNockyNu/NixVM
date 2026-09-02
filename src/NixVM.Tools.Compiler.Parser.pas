@@ -906,12 +906,23 @@ var
   HighExprs: TList<TASTExpression>;
 begin
   StartTok := FCurTok;
-
   Expect(TLexer.TToken.TKind.Array);
-  Expect(TLexer.TToken.TKind.LBracket, 'Expected "[" after array');
+
+  if Match(TLexer.TToken.TKind.Of) then
+  begin
+    var ElemType := ParseType;
+    var DynArrType := TASTType.Create(TASTType.TKind.DynamicArray, StartTok.Line, StartTok.Col);
+
+    DynArrType.ElementType := ElemType;
+
+    Exit(DynArrType);
+  end;
+
+  Expect(TLexer.TToken.TKind.LBracket, 'Expected "[" or "of" after array');
 
   LowExprs  := TList<TASTExpression>.Create;
   HighExprs := TList<TASTExpression>.Create;
+
   try
     repeat
       LowExprs.Add(ParseExpression);
@@ -923,6 +934,7 @@ begin
     Expect(TLexer.TToken.TKind.Of, 'Expected "of" after array dimensions');
 
     var FinalElemType := ParseType;
+
     Result := FinalElemType;
 
     for var i := LowExprs.Count - 1 downto 0 do
@@ -1142,6 +1154,21 @@ begin
     Expect(TLexer.TToken.TKind.RParen, 'Expected ")" after expression');
 
     Exit;
+  end;
+
+  if Match(TLexer.TToken.TKind.If) then
+  begin
+    var CondExpr := ParseExpression;
+
+    Expect(TLexer.TToken.TKind.Then, 'Expected "then" in if-expression');
+
+    var ThenExpr := ParseExpression;
+
+    Expect(TLexer.TToken.TKind.Else, 'Expected "else" in if-expression');
+
+    var ElseExpr := ParseExpression;
+
+    Exit(TASTIfExpression.Create(CondExpr, ThenExpr, ElseExpr, Tok.Line, Tok.Col));
   end;
 
   Error(Format('Unexpected token "%s" in expression', [Tok.ToString]), Tok);

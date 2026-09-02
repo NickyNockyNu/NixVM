@@ -87,14 +87,24 @@ type
       HeapAvailable = Heap + 4;
 
       &String = $30;
-      StringNew     = &String + 0;
-      StringInit    = &String + 1; // or StringNewFrom? (override that creates a string from a static string in memory)
-      StringDispose = &String + 2;
-      StringLength  = &String + 3;
-      StringConcat  = &String + 4;
-      StringCopy    = &String + 5;
-      StringCompare = &String + 6;
-      StringFormat  = &String + 7;
+      StringNew       = &String + 0;
+      StringInit      = &String + 1;
+      StringDispose   = &String + 2;
+      StringLength    = &String + 3;
+      StringSetLength = &String + 4;
+      StringConcat    = &String + 5;
+      StringCopy      = &String + 6;
+      StringCompare   = &String + 7;
+      StringFormat    = &String + 8;
+
+      &Array = $40;
+      ArrayNew       = &Array + 0;
+      ArrayDispose   = &Array + 1;
+      ArrayLength    = &Array + 2;
+      ArraySetLength = &Array + 3;
+      ArrayCopy      = &Array + 4;
+      ArrayConcat    = &Array + 5;
+      ArrayClear     = &Array + 6;
     public
       function ToString: String;
     end;
@@ -277,14 +287,23 @@ begin
     HeapSize:      Result := Prefix + 'HeapSize';
     HeapAvailable: Result := Prefix + 'HeapAvailable';
 
-    StringNew:     Result := Prefix + 'StringNew';
-    StringInit:    Result := Prefix + 'StringInit';
-    StringDispose: Result := Prefix + 'StringDispose';
-    StringLength:  Result := Prefix + 'StringLength';
-    StringConcat:  Result := Prefix + 'StringConcat';
-    StringCopy:    Result := Prefix + 'StringCopy';
-    StringCompare: Result := Prefix + 'StringCompare';
-    StringFormat:  Result := Prefix + 'StringFormat';
+    StringNew:       Result := Prefix + 'StringNew';
+    StringInit:      Result := Prefix + 'StringInit';
+    StringDispose:   Result := Prefix + 'StringDispose';
+    StringLength:    Result := Prefix + 'StringLength';
+    StringSetLength: Result := Prefix + 'StringSetLength';
+    StringConcat:    Result := Prefix + 'StringConcat';
+    StringCopy:      Result := Prefix + 'StringCopy';
+    StringCompare:   Result := Prefix + 'StringCompare';
+    StringFormat:    Result := Prefix + 'StringFormat';
+
+    ArrayNew:       Result := Prefix + 'ArrayNew';
+    ArrayDispose:   Result := Prefix + 'ArrayDispose';
+    ArrayLength:    Result := Prefix + 'ArrayLength';
+    ArraySetLength: Result := Prefix + 'ArraySetLength';
+    ArrayCopy:      Result := Prefix + 'ArrayCopy';
+    ArrayConcat:    Result := Prefix + 'ArrayConcat';
+    ArrayClear:     Result := Prefix + 'ArrayClear';
   else
     Result := '';//Prefix + IntToStr(Self);
   end;

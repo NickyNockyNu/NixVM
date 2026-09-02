@@ -30,7 +30,8 @@ uses
   NixVM.Core.System;
 
 type
-  TString = type Cardinal;
+  TString    = type Cardinal;
+  TDynArray  = type Cardinal;
 
   {$REGION 'CustomMemory'}
   TCustomMemory = class
@@ -119,6 +120,7 @@ type
       function  New(const AString: AnsiString): TString; overload;
       procedure Dispose(AString: TString);
       function  Length(AString: TString): Integer;
+      function  SetLength(AString: TString; ANewLength: Integer): TString;
       function  Concat(ALeft, ARight: TString): TString;
       function  Copy(AString: TString; AStart, ACount: Integer): TString;
       function  Compare(ALeft, ARight: TString): Integer;
@@ -127,10 +129,32 @@ type
       property Heap: THeap read FHeap;
     end;
     {$ENDREGION}
+
+    {$REGION 'ArrayManager'}
+    TArrayManager = class
+    private
+      FHeap: THeap;
+
+    public
+      constructor Create(AHeap: THeap);
+
+      function  New(ALength: Cardinal; AElemSize: Cardinal): TDynArray;
+      procedure Dispose(AArray: TDynArray);
+      function  Length(AArray: TDynArray): Cardinal;
+      function  ElementSize(AArray: TDynArray): Cardinal;
+      function  SetLength(AArray: TDynArray; ANewLength: Cardinal; AElemSize: Cardinal = 0): TDynArray;
+      function  Copy(AArray: TDynArray; AStart, ACount: Integer): TDynArray;
+      function  Concat(ALeft, ARight: TDynArray): TDynArray;
+      procedure Clear(AArray: TDynArray);
+
+      property Heap: THeap read FHeap;
+    end;
+    {$ENDREGION}
   private
     FMemory:  TCustomMemory;
     FBlocks:  TBlocks;
     FStrings: TStringManager;
+    FArrays:  TArrayManager;
 
     FAddress: Cardinal;
     FSize:    Cardinal;
@@ -150,6 +174,7 @@ type
 
     property Memory:  TCustomMemory  read FMemory;
     property Strings: TStringManager read FStrings;
+    property Arrays:  TArrayManager  read FArrays;
 
     property Address: Cardinal read FAddress;
     property Size:    Cardinal read FSize;
@@ -212,11 +237,20 @@ type
     function  StringNew(const AString: AnsiString): TString; overload; inline;
     procedure StringDispose(AString: TString); inline;
     function  StringLength(AString: TString): Integer; inline;
+    function  StringSetLength(AString: TString; ANewLength: Integer): TString; inline;
     function  StringConcat(ALeft, ARight: TString): TString; inline;
     function  StringCopy(AString: TString; AStart, ACount: Integer): TString; inline;
     function  StringCompare(ALeft, ARight: TString): Integer; inline;
     function  StringFormat(AString: TString; AArgs: THeap.TStringManager.TFormatArgs; AArgsStart: Integer = 0): TString; inline;
 
+    function  ArrayNew(ALength: Cardinal; AElemSize: Cardinal): TDynArray; inline;
+    procedure ArrayDispose(AArray: TDynArray); inline;
+    function  ArrayLength(AArray: TDynArray): Cardinal; inline;
+    function  ArrayElementSize(AArray: TDynArray): Cardinal; inline;
+    function  ArraySetLength(AArray: TDynArray; ANewLength: Cardinal; AElemSize: Cardinal = 0): TDynArray; inline;
+    function  ArrayCopy(AArray: TDynArray; AStart, ACount: Integer): TDynArray; inline;
+    function  ArrayConcat(ALeft, ARight: TDynArray): TDynArray; inline;
+    procedure ArrayClear(AArray: TDynArray); inline;
 
     property Heap:  THeap  read FHeap;
     property Stack: TStack read FStack;
@@ -717,6 +751,30 @@ begin
   Result := System.Length(FHeap.Memory.ReadString(AString));
 end;
 
+function THeap.TStringManager.SetLength(AString: TString; ANewLength: Integer): TString;
+var
+  AllocAddr: Cardinal;
+begin
+  if ANewLength <= 0 then
+  begin
+    Dispose(AString);
+    Exit(0);
+  end;
+
+  if AString = 0 then
+    Exit(New(ANewLength));
+
+  AllocAddr := FHeap.Realloc(AString - 4, ANewLength + 5);
+
+  if AllocAddr = 0 then
+    Exit(0);
+
+  FHeap.Memory.WriteDWord(AllocAddr, ANewLength);
+  FHeap.Memory.WriteByte(AllocAddr + 4 + Cardinal(ANewLength), 0);
+
+  Result := AllocAddr + 4;
+end;
+
 function THeap.TStringManager.Concat(ALeft, ARight: TString): TString;
 var
   S:   AnsiString;
@@ -766,6 +824,171 @@ begin
 end;
 {$ENDREGION}
 
+{$REGION 'ArrayManager'}
+constructor THeap.TArrayManager.Create(AHeap: THeap);
+begin
+  inherited Create;
+
+  FHeap := AHeap;
+end;
+
+function THeap.TArrayManager.New(ALength: Cardinal; AElemSize: Cardinal): TDynArray;
+var
+  TotalBytes: Cardinal;
+  AllocAddr:  Cardinal;
+begin
+  if AElemSize = 0 then
+    AElemSize := 4;
+
+  TotalBytes := (ALength * AElemSize) + 8;
+  AllocAddr  := FHeap.Alloc(TotalBytes);
+
+  if AllocAddr = 0 then
+    Exit(0);
+
+  FHeap.Memory.WriteDWord(AllocAddr,     AElemSize);
+  FHeap.Memory.WriteDWord(AllocAddr + 4, ALength);
+
+  if ALength > 0 then
+    FHeap.Memory.Fill(AllocAddr + 8, ALength * AElemSize, 0);
+
+  Result := AllocAddr + 8;
+end;
+
+procedure THeap.TArrayManager.Dispose(AArray: TDynArray);
+begin
+  if AArray >= 8 then
+    if (AArray >= FHeap.Address) and (AArray < (FHeap.Address + FHeap.Size)) then
+      FHeap.Dealloc(AArray - 8);
+end;
+
+function THeap.TArrayManager.Length(AArray: TDynArray): Cardinal;
+begin
+  if AArray = 0 then
+    Exit(0);
+
+  if (AArray >= FHeap.Address + 8) and (AArray < (FHeap.Address + FHeap.Size)) then
+    Exit(FHeap.Memory.ReadDWord(AArray - 4));
+
+  Result := 0;
+end;
+
+function THeap.TArrayManager.ElementSize(AArray: TDynArray): Cardinal;
+begin
+  if AArray = 0 then
+    Exit(0);
+
+  if (AArray >= FHeap.Address + 8) and (AArray < (FHeap.Address + FHeap.Size)) then
+    Exit(FHeap.Memory.ReadDWord(AArray - 8));
+
+  Result := 0;
+end;
+
+function THeap.TArrayManager.SetLength(AArray: TDynArray; ANewLength: Cardinal; AElemSize: Cardinal): TDynArray;
+var
+  OldLength:  Cardinal;
+  TotalBytes: Cardinal;
+  AllocAddr:  Cardinal;
+begin
+  if AArray = 0 then
+    Exit(New(ANewLength, AElemSize));
+
+  if ANewLength = 0 then
+  begin
+    Dispose(AArray);
+    Exit(0);
+  end;
+
+  AElemSize := ElementSize(AArray);
+
+  if AElemSize = 0 then
+    AElemSize := 4;
+
+  OldLength  := Length(AArray);
+  TotalBytes := (ANewLength * AElemSize) + 8;
+
+  AllocAddr  := FHeap.Realloc(AArray - 8, TotalBytes);
+
+  if AllocAddr = 0 then
+    Exit(0);
+
+  FHeap.Memory.WriteDWord(AllocAddr + 4, ANewLength);
+
+  if ANewLength > OldLength then
+    FHeap.Memory.Fill(AllocAddr + 8 + (OldLength * AElemSize), (ANewLength - OldLength) * AElemSize, 0);
+
+  Result := AllocAddr + 8;
+end;
+
+function THeap.TArrayManager.Copy(AArray: TDynArray; AStart, ACount: Integer): TDynArray;
+var
+  ArrLen:    Integer;
+  ElemSz:    Cardinal;
+  CopyBytes: Cardinal;
+  SrcOffset: Cardinal;
+begin
+  if (AArray = 0) or (ACount <= 0) then
+    Exit(0);
+
+  ArrLen := Integer(Length(AArray));
+  ElemSz := ElementSize(AArray);
+
+  if AStart < 0 then
+    AStart := 0;
+
+  if AStart >= ArrLen then
+    Exit(0);
+
+  if AStart + ACount > ArrLen then
+    ACount := ArrLen - AStart;
+
+  Result := New(Cardinal(ACount), ElemSz);
+
+  if Result = 0 then
+    Exit(0);
+
+  CopyBytes := Cardinal(ACount) * ElemSz;
+  SrcOffset := AArray + (Cardinal(AStart) * ElemSz);
+
+  FHeap.Memory.Copy(SrcOffset, Result, CopyBytes);
+end;
+
+function THeap.TArrayManager.Concat(ALeft, ARight: TDynArray): TDynArray;
+var
+  LeftLen:  Cardinal;
+  RightLen: Cardinal;
+  TotalLen: Cardinal;
+  ElemSz:   Cardinal;
+begin
+  if ALeft = 0 then
+    Exit(Copy(ARight, 0, Length(ARight)));
+
+  if ARight = 0 then
+    Exit(Copy(ALeft, 0, Length(ALeft)));
+
+  ElemSz   := ElementSize(ALeft);
+  LeftLen  := Length(ALeft);
+  RightLen := Length(ARight);
+  TotalLen := LeftLen + RightLen;
+
+  Result := New(TotalLen, ElemSz);
+
+  if Result = 0 then
+    Exit(0);
+
+  if LeftLen > 0 then
+    FHeap.Memory.Copy(ALeft, Result, LeftLen * ElemSz);
+
+  if RightLen > 0 then
+    FHeap.Memory.Copy(ARight, Result + (LeftLen * ElemSz), RightLen * ElemSz);
+end;
+
+procedure THeap.TArrayManager.Clear(AArray: TDynArray);
+begin
+  Dispose(AArray);
+end;
+{$ENDREGION}
+
 procedure THeap.Initialize(AAddress, ASize: Cardinal);
 begin
   FAddress := AAddress;
@@ -779,13 +1002,16 @@ begin
   inherited Create;
 
   FMemory  := AMemory;
+
   FStrings := TStringManager.Create(Self);
+  FArrays  := TArrayManager. Create(Self);
 
   Initialize(AAddress, ASize);
 end;
 
 destructor THeap.Destroy;
 begin
+  FArrays.Free;
   FStrings.Free;
 
   inherited;
@@ -1119,6 +1345,11 @@ begin
   Result := FHeap.Strings.Length(AString);
 end;
 
+function TMemory.StringSetLength(AString: TString; ANewLength: Integer): TString;
+begin
+  Result := FHeap.Strings.SetLength(AString, ANewLength);
+end;
+
 function TMemory.StringConcat(ALeft, ARight: TString): TString;
 begin
   Result := FHeap.Strings.Concat(ALeft, ARight);
@@ -1138,6 +1369,47 @@ function TMemory.StringFormat(AString: TString; AArgs: THeap.TStringManager.TFor
 begin
   Result := FHeap.Strings.Format(AString, AArgs, AArgsStart);
 end;
+
+function TMemory.ArrayNew(ALength: Cardinal; AElemSize: Cardinal): TDynArray;
+begin
+  Result := FHeap.Arrays.New(ALength, AElemSize);
+end;
+
+procedure TMemory.ArrayDispose(AArray: TDynArray);
+begin
+  FHeap.Arrays.Dispose(AArray);
+end;
+
+function TMemory.ArrayLength(AArray: TDynArray): Cardinal;
+begin
+  Result := FHeap.Arrays.Length(AArray);
+end;
+
+function TMemory.ArrayElementSize(AArray: TDynArray): Cardinal;
+begin
+  Result := FHeap.Arrays.ElementSize(AArray);
+end;
+
+function TMemory.ArraySetLength(AArray: TDynArray; ANewLength: Cardinal; AElemSize: Cardinal): TDynArray;
+begin
+  Result := FHeap.Arrays.SetLength(AArray, ANewLength, AElemSize);
+end;
+
+function TMemory.ArrayCopy(AArray: TDynArray; AStart, ACount: Integer): TDynArray;
+begin
+  Result := FHeap.Arrays.Copy(AArray, AStart, ACount);
+end;
+
+function TMemory.ArrayConcat(ALeft, ARight: TDynArray): TDynArray;
+begin
+  Result := FHeap.Arrays.Concat(ALeft, ARight);
+end;
+
+procedure TMemory.ArrayClear(AArray: TDynArray);
+begin
+  FHeap.Arrays.Clear(AArray);
+end;
+
 
 {$ENDREGION}
 

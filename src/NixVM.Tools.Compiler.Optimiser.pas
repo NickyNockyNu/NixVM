@@ -275,6 +275,7 @@ begin
         Replacement.OpCode := TCPUInstruction.TOpCode.mov;
         Replacement.RegA   := NextItem.RegA;
         Replacement.RegB   := Item.RegB;
+        Replacement.Imm    := Item.Imm;
 
         AIR.Delete(NextIdx);
         AIR[i] := Replacement;

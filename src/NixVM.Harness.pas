@@ -345,14 +345,23 @@ begin
       TSysCalls.ID.HeapSize:      R0 := FMemory.HeapSize(R0);
       TSysCalls.ID.HeapAvailable: R0 := FMemory.HeapAvailable;
 
-      TSysCalls.ID.StringNew:     R0 := FMemory.StringNew(R0);
-      TSysCalls.ID.StringInit:    R0 := FMemory.StringNew(FMemory.ReadString(R0));
-      TSysCalls.ID.StringDispose:       FMemory.StringDispose(R0);
-      TSysCalls.ID.StringLength:  R0 := FMemory.StringLength(R0);
-      TSysCalls.ID.StringConcat:  R0 := FMemory.StringConcat(R0, R1);
-      TSysCalls.ID.StringCopy:    R0 := FMemory.StringCopy(R0, R1, R2);
-      TSysCalls.ID.StringCompare: R0 := FMemory.StringCompare(R0, R1);
-      TSysCalls.ID.StringFormat:  R0 := FMemory.StringFormat(R0, THeap.TStringManager.TFormatArgs(R), 1);
+      TSysCalls.ID.StringNew:        R0 := FMemory.StringNew(R0);
+      TSysCalls.ID.StringInit:       R0 := FMemory.StringNew(FMemory.ReadString(R0));
+      TSysCalls.ID.StringDispose:          FMemory.StringDispose(R0);
+      TSysCalls.ID.StringLength:     R0 := FMemory.StringLength(R0);
+      TSysCalls.ID.StringSetLength:  R0 := FMemory.StringSetLength(R0, R1);
+      TSysCalls.ID.StringConcat:     R0 := FMemory.StringConcat(R0, R1);
+      TSysCalls.ID.StringCopy:       R0 := FMemory.StringCopy(R0, R1, R2);
+      TSysCalls.ID.StringCompare:    R0 := FMemory.StringCompare(R0, R1);
+      TSysCalls.ID.StringFormat:     R0 := FMemory.StringFormat(R0, THeap.TStringManager.TFormatArgs(R), 1);
+
+      TSysCalls.ID.ArrayNew:       R0 := FMemory.ArrayNew(R0, R1);
+      TSysCalls.ID.ArrayDispose:         FMemory.ArrayDispose(R0);
+      TSysCalls.ID.ArrayLength:    R0 := FMemory.ArrayLength(R0);
+      TSysCalls.ID.ArraySetLength: R0 := FMemory.ArraySetLength(R0, R1);
+      TSysCalls.ID.ArrayCopy:      R0 := FMemory.ArrayCopy(R0, R1, R2);
+      TSysCalls.ID.ArrayConcat:    R0 := FMemory.ArrayConcat(R0, R1);
+      TSysCalls.ID.ArrayClear:           FMemory.ArrayClear(R0);
     else
       Result := False;
     end;

@@ -36,7 +36,7 @@ uses
   NixVM.Core.Memory;
 
 type
-  TLabelString = String[31];
+  TLabelString = String[63];
 
   {$REGION 'IRItem'}
   PIRItem = ^TIRItem;

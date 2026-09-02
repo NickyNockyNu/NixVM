@@ -103,7 +103,8 @@ type
       &Set,
       Enum,
       Subrange,
-      NamedAlias
+      NamedAlias,
+      DynamicArray
     );
     {$ENDREGION}
 
@@ -370,6 +371,22 @@ type
     property BaseExpr:   TASTExpression              read FBaseExpr   write FBaseExpr;
     property CalleeName: String                      read FCalleeName write FCalleeName;
     property Arguments:  TObjectList<TASTExpression> read FArguments;
+  end;
+  {$ENDREGION}
+
+  {$REGION 'if expression'}
+  TASTIfExpression = class(TASTExpression)
+  private
+    FCondition: TASTExpression;
+    FThenExpr:  TASTExpression;
+    FElseExpr:  TASTExpression;
+  public
+    constructor Create(ACondition, AThenExpr, AElseExpr: TASTExpression; ALine: Integer = 0; ACol: Integer = 0);
+    destructor  Destroy; override;
+
+    property Condition: TASTExpression read FCondition write FCondition;
+    property ThenExpr:  TASTExpression read FThenExpr  write FThenExpr;
+    property ElseExpr:  TASTExpression read FElseExpr  write FElseExpr;
   end;
   {$ENDREGION}
 
@@ -940,7 +957,8 @@ begin
     TKind.Cardinal,
     TKind.String,
     TKind.Pointer,
-    TKind.Set:
+    TKind.Set,
+    TKind.DynamicArray:
       Result := 4;
 
     TKind.Array:
@@ -1266,6 +1284,31 @@ begin
     FBaseExpr.Free;
 
     FArguments.Free;
+
+  inherited;
+end;
+{$ENDREGION}
+
+{$REGION 'if expression'}
+constructor TASTIfExpression.Create(ACondition, AThenExpr, AElseExpr: TASTExpression; ALine, ACol: Integer);
+begin
+  inherited Create(ALine, ACol);
+
+  FCondition := ACondition;
+  FThenExpr  := AThenExpr;
+  FElseExpr  := AElseExpr;
+end;
+
+destructor TASTIfExpression.Destroy;
+begin
+  if Assigned(FCondition) then
+    FCondition.Free;
+
+  if Assigned(FThenExpr) then
+    FThenExpr.Free;
+
+  if Assigned(FElseExpr) then
+    FElseExpr.Free;
 
   inherited;
 end;
