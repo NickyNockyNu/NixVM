@@ -1059,77 +1059,73 @@ begin
 
   if (CalleeLower = 'println') or (CalleeLower = 'print') or (CalleeLower = 'format') then
   begin
-    if ACall.Arguments.Count > 0 then
+    if ACall.Arguments.Count = 0 then
     begin
-      ArgList := TList<TASTExpression>.Create;
-
-      try
-        if (ACall.Arguments.Count > 1) and (ACall.Arguments[1] is TASTArrayLiteral) then
-        begin
-          var ArrLit := TASTArrayLiteral(ACall.Arguments[1]);
-
-          for var i := 0 to ArrLit.Elements.Count - 1 do
-          begin
-            if i >= 12 then
-              Break;
-
-            ArgList.Add(ArrLit.Elements[i]);
-          end;
-        end
-
-        else if ACall.Arguments.Count > 1 then
-        begin
-          for var i := 1 to ACall.Arguments.Count - 1 do
-          begin
-            if i > 12 then
-              Break;
-
-            ArgList.Add(ACall.Arguments[i]);
-          end;
-        end;
-
-        for var i := ArgList.Count - 1 downto 0 do
-        begin
-          GenExpression(ArgList[i]);
-          FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
-        end;
-
-        if {((CalleeLower = 'println') or (CalleeLower = 'print')) and} (ACall.Arguments[0] is TASTLiteral) then
-        begin
-          var FmtStr := TASTLiteral(ACall.Arguments[0]).ValueStr;
-
-          if (CalleeLower = 'println') then
-            FmtStr := FmtStr + #13#10;
-
-          var StrLbl := GetStringLabel(FmtStr);
-
-          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(StrLbl));
-        end
-        else
-          GenExpression(ACall.Arguments[0]);
-
-        FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
-
-        var TotalRegs := ArgList.Count + 1;
-
-        if TotalRegs = 1 then
-          FIR.AddInstrR1(TCPUInstruction.TOpCode.pop, TRegisters.ID.R0)
-        else if TotalRegs > 1 then
-          FIR.AddInstrRn(TCPUInstruction.TOpCode.popr, TotalRegs);
-
-        if CalleeLower = 'format' then
-          FIR.AddSysCall(TSysCalls.ID.StringFormat)
-        else
-          FIR.AddSysCall(TSysCalls.ID.DebugPrint);
-      finally
-        ArgList.Free;
+      if CalleeLower = 'println' then
+      begin
+        var EmptyStrLbl := GetStringLabel('');
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(EmptyStrLbl));
+        FIR.AddSysCall(TSysCalls.ID.DebugPrintLn);
       end;
+
+      Exit;
+    end;
+
+    ArgList := TList<TASTExpression>.Create;
+
+    try
+      if (ACall.Arguments.Count > 1) and (ACall.Arguments[1] is TASTArrayLiteral) then
+      begin
+        var ArrLit := TASTArrayLiteral(ACall.Arguments[1]);
+
+        for var i := 0 to ArrLit.Elements.Count - 1 do
+        begin
+          if i >= 12 then Break;
+          ArgList.Add(ArrLit.Elements[i]);
+        end;
+      end
+
+      else if ACall.Arguments.Count > 1 then
+      begin
+        for var i := 1 to ACall.Arguments.Count - 1 do
+        begin
+          if i > 12 then Break;
+          ArgList.Add(ACall.Arguments[i]);
+        end;
+      end;
+
+      for var i := ArgList.Count - 1 downto 0 do
+      begin
+        GenExpression(ArgList[i]);
+        FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
+      end;
+
+      GenExpression(ACall.Arguments[0]);
+      FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R0);
+
+      var TotalRegs := ArgList.Count + 1;
+
+      if TotalRegs = 1 then
+        FIR.AddInstrR1(TCPUInstruction.TOpCode.pop, TRegisters.ID.R0)
+      else
+        FIR.AddInstrRn(TCPUInstruction.TOpCode.popr, TotalRegs);
+
+      if CalleeLower = 'format' then
+        FIR.AddSysCall(TSysCalls.ID.StringFormat)
+
+      else if CalleeLower = 'println' then
+        FIR.AddSysCall(TSysCalls.ID.DebugPrintLn)
+
+      else
+        FIR.AddSysCall(TSysCalls.ID.DebugPrint);
+    finally
+      ArgList.Free;
     end;
 
     Exit;
   end;
 
-   if CalleeLower = 'setlength' then
+  if CalleeLower = 'setlength' then
   begin
     if ACall.Arguments.Count = 2 then
     begin

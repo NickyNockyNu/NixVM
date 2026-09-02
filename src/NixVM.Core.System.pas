@@ -72,8 +72,9 @@ type
     IDHelper = record helper for ID
     const
       Debug = $00;
-      DebugBreak = Debug + 0;
-      DebugPrint = Debug + 1;
+      DebugBreak   = Debug + 0;
+      DebugPrint   = Debug + 1;
+      DebugPrintLn = Debug + 2;
 
       Memory = $10;
       MemoryFill    = Memory + 0;
@@ -288,8 +289,9 @@ end;
 function TSysCalls.IDHelper.ToString: String;
 begin
   case Self of
-    DebugBreak: Result := Prefix + 'DebugBreak';
-    DebugPrint: Result := Prefix + 'DebugPrint';
+    DebugBreak:   Result := Prefix + 'DebugBreak';
+    DebugPrint:   Result := Prefix + 'DebugPrint';
+    DebugPrintLn: Result := Prefix + 'DebugPrintLn';
 
     MemoryFill:    Result := Prefix + 'MemoryFill';
     MemoryCopy:    Result := Prefix + 'MemoryCopy';

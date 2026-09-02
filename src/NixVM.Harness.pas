@@ -351,8 +351,9 @@ begin
 
   with FCPU.Registers do
     case ASysCall of
-      TSysCalls.ID.DebugBreak: DebugBreak;
-      TSysCalls.ID.DebugPrint: DebugPrint(FMemory.Heap.Strings.Format(FMemory.ReadString(R0), THeap.TStringManager.TFormatArgs(R), 1));
+      TSysCalls.ID.DebugBreak:   DebugBreak;
+      TSysCalls.ID.DebugPrint:   DebugPrint(FMemory.Heap.Strings.Format(FMemory.ReadString(R0), THeap.TStringManager.TFormatArgs(R), 1));
+      TSysCalls.ID.DebugPrintLn: DebugPrint(FMemory.Heap.Strings.Format(FMemory.ReadString(R0), THeap.TStringManager.TFormatArgs(R), 1) + #13#10);
 
       TSysCalls.ID.MemoryFill:          FMemory.Fill(R0, R1, R2);
       TSysCalls.ID.MemoryCopy:          FMemory.Copy(R0, R1, R2);

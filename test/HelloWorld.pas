@@ -1,14 +1,22 @@
 program HelloWorld targets console;
 
-{$HEAP 0}
-{$STACK 128}
+{$HEAP 2k}
+{$STACK 2k}
 
 uses
   System;
+  
+const
+  Hello = 'Hello';
+  World = 'World';
 
 procedure Main;
+var
+  Msg: String;
 begin
-  Println('Hello, World!');
+  Msg := Format('%s, %s!', Hello, World);
+  Println(Msg);
+  Println(Msg);
   Halt(123);
 end;
 
