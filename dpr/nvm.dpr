@@ -24,6 +24,10 @@ program nvm;
 {
   TODO:
 
+  Language features:
+
+    Exit(ReturnValue);
+
   Core features:
 
     Do we add simple file IO in the core syscalls?
@@ -62,6 +66,8 @@ uses
   NixVM.Core.System,
   NixVM.Core.ROM,
 
+  NixVM.Harness,
+
   NixVM.Tools.Params,
   NixVM.Tools.IR,
   NixVM.Tools.Assembler,
@@ -73,6 +79,23 @@ uses
   NixVM.Tools.Compiler.Parser,
   NixVM.Tools.Compiler.Semantics,
   NixVM.Tools.Compiler.CodeGen;
+
+type
+  TConsoleMemory = record
+
+  end;
+
+  TConsole = class(TCustomHarness<TConsoleMemory>)
+  protected
+    procedure Initialize; override;
+  end;
+
+procedure TConsole.Initialize;
+begin
+  StopOnHalt := True;
+
+  inherited;
+end;
 
 var
   Verbose:    Boolean;
@@ -127,13 +150,13 @@ end;
 
 procedure PrintUsage;
 begin
-  Writeln('Usage: nvm <compile|assemble|disassemble|link|stamp|info> <file> [options]');
+  Writeln('Usage: nvm <compile|assemble|disassemble|link|stamp|info|run> <file> [options]');
   Writeln;
   Writeln('General options:');
   PrintDefaultOptions(False);
   Writeln;
   Writeln('For tool specific options use:');
-  Writeln('  nvm --help <compile|assemble|disassemble|link|stamp|info>');
+  Writeln('  nvm --help <compile|assemble|disassemble|link|stamp|info|run>');
   Writeln;
 end;
 
@@ -1054,6 +1077,19 @@ begin
   end;
 end;
 
+procedure DoRun;
+begin
+  if TParams.GetOpt('-h', False) or (TParams.ParamCount < 2) then
+  begin
+    Writeln('Usage: nvm run <file.nvm>');
+    Writeln;
+    Writeln('Runs an .nvm file using a built-in "console" target');
+    Halt(0);
+  end;
+
+  TConsole.Run(TParams.Params[1]);
+end;
+
 begin
   try
     TParams.AddOpt(TParams.TOption.TKind.Bool, 'h', 'help');
@@ -1083,7 +1119,7 @@ begin
     else if tool = 'link'        then DoLink
     else if tool = 'stamp'       then DoStamp
     else if tool = 'info'        then DoInfo
-
+    else if tool = 'run'         then DoRun
     else
     begin
       Writeln('Unknown tool "', tool, '"');
