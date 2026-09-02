@@ -719,6 +719,9 @@ type
   private
     FName:         String;
     FHeader:       TROMHeader;
+    FIconFile:     String;
+    FDescription:  String;
+    FCopyright:    String;
     FUsesUnits:    TList<String>;
     FDeclarations: TObjectList<TASTDeclaration>;
     FSource:       String;
@@ -727,12 +730,15 @@ type
     constructor Create(const AName: String = '');
     destructor  Destroy; override;
 
-    property Name:         String                       read FName   write FName;
-    property Header:       TROMHeader                   read FHeader write FHeader;
+    property Name:         String                       read FName        write FName;
+    property Header:       TROMHeader                   read FHeader      write FHeader;
+    property IconFIle:     String                       read FIconFile    write FIconFile;
+    property Description:  String                       read FDescription write FDescription;
+    property Copyright:    String                       read FCopyright   write FCopyright;
     property UsesUnits:    TList<String>                read FUsesUnits;
     property Declarations: TObjectList<TASTDeclaration> read FDeclarations;
-    property Source:       String                       read FSource   write FSource;
-    property FileName:     String                       read FFileName write FFileName;
+    property Source:       String                       read FSource      write FSource;
+    property FileName:     String                       read FFileName    write FFileName;
   end;
   {$ENDREGION}
 
@@ -741,7 +747,7 @@ type
   private
     FBody: TASTBlock;
   public
-    Header: TROMHeader;
+    Header:  TROMHeader;
 
     constructor Create(const AName: String = '');
     destructor  Destroy; override;

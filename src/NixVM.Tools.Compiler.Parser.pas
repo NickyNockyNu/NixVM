@@ -48,6 +48,9 @@ type
     FOwnsLexer:   Boolean;
     FConstants:   TDictionary<String, TConstValue>;
     FHeader:      TROMHeader;
+    FIconFile:    String;
+    FDescription: String;
+    FCopyright:   String;
 
     procedure NextToken;
     function  PeekToken: TLexer.TToken;
@@ -133,6 +136,10 @@ begin
 
   FHeader.Reset;
 
+  FIconFile    := '';
+  FDescription := '';
+  FCopyright   := '';
+
   if FOwnsErrors then
     FErrors := TStringList.Create
   else
@@ -150,6 +157,10 @@ begin
   FOwnsErrors := (AErrors = nil);
 
   FHeader.Reset;
+
+  FIconFile    := '';
+  FDescription := '';
+  FCopyright   := '';
 
   if FOwnsErrors then
     FErrors := TStringList.Create
@@ -446,6 +457,42 @@ begin
       Error(Format('Invalid base address "%s" in {$BASE} directive', [DirParam]), ATok);
   end
 
+  else if (DirName = 'REGION') or (DirName = 'ENDREGION') then
+  begin
+
+  end
+
+  else if (DirName = 'ICON') then
+  begin
+    FIconFile := DirParam;
+
+//    if Length(FIconFile) = 0 then
+    if (Length(FIconFile) < 3) or (FIconFile[1] <> '''') or (FIconFile[Length(FIconFile)] <> '''') then
+      Error(Format('Invalid {$ICON} directive "%s"', [DirParam]), ATok);
+
+    FIconFile := Copy(FIconFile, 2, Length(FIconFile) - 2);
+  end
+
+  else if (DirName = 'DESC') or (DirName = 'DESCRIPTION') then
+  begin
+    FDescription := DirParam;
+
+    if (Length(FDescription) < 3) or (FDescription[1] <> '''') or (FDescription[Length(FDescription)] <> '''') then
+      Error(Format('Invalid {$DESC} directive "%s"', [DirParam]), ATok);
+
+    FDescription := Copy(FDescription, 2, Length(FDescription) - 2);
+  end
+
+  else if (DirName = 'CW') or (DirName = 'COPYRIGHT') then
+  begin
+    FCopyright := DirParam;
+
+    if (Length(FCopyright) < 3) or (FCopyright[1] <> '''') or (FCopyright[Length(FCopyright)] <> '''') then
+      Error(Format('Invalid {$CW} directive "%s"', [DirParam]), ATok);
+
+    FCopyright := Copy(FCopyright, 2, Length(FCopyright) - 2);
+  end
+
   else
     Error(Format('Unknown compiler directive "{$%s}"', [DirName]), ATok);
 end;
@@ -666,6 +713,10 @@ begin
   Result.Header.ROM.Name  := ProgName;
   Result.Header.ROM.Major := ProgMajor;
   Result.Header.ROM.Minor := ProgMinor;
+
+  Result.IconFile    := FIconFile;
+  Result.Description := FDescription;
+  Result.Copyright   := FCopyright;
 
   if Length(TargetName) > 0 then
   begin

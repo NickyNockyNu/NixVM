@@ -64,6 +64,10 @@ type
     FSizeBeforeOpt: Integer;
     FSizeAfterOpt:  Integer;
 
+    FIconFile:    String;
+    FDescription: String;
+    FCopyright:   String;
+
     function  LoadUnitRecursive(const AUnitName: String): TASTUnit;
     function  ResolveUnitSource(const AUnitName: String; out ASource, AFilePath: String): Boolean;
   public
@@ -94,6 +98,10 @@ type
 
     property SizeBeforeOpt: Integer read FSizeBeforeOpt;
     property SizeAfterOpt:  Integer read FSizeAfterOpt;
+
+    property IconFile:    String read FIconFile    write FIconFile;
+    property Description: String read FDescription write FDescription;
+    property Copyright:   String read FCopyright   write FCopyright;
   end;
   {$ENDREGION}
 
@@ -240,7 +248,10 @@ begin
     if FErrors.Count > 0 then
       Exit;
 
-    ROMHeader := ProgAST.Header;
+    ROMHeader    := ProgAST.Header;
+    FIconFile    := ProgAST.IconFIle;
+    FDescription := ProgAST.Description;
+    FCopyright   := ProgAST.Copyright;
 
     for var UnitName in ProgAST.UsesUnits do
       if LoadUnitRecursive(UnitName) = nil then
@@ -397,6 +408,17 @@ end;
 function TCompiler.ToAsmString: String;
 var
   SB: TStringBuilder;
+
+  function FixQuotes(const AStr: String): String;
+  begin
+    Result := '';
+
+    for var c in AStr do
+      if c = '"' then
+        Result := Result + '""'
+      else
+        Result := Result + c;
+  end;
 begin
   if not Assigned(FIR) then
     Exit('');
@@ -404,10 +426,19 @@ begin
   SB := TStringBuilder.Create;
   try
     if Length(ROMHeader.Harness.Name) > 0 then
-      SB.AppendLine(Format('.target "%s", %d, %d', [ROMHeader.Harness.Name, ROMHeader.Harness.Major, ROMHeader.Harness.Minor]));
+      SB.AppendLine(Format('.target "%s", %d, %d', [FixQuotes(ROMHeader.Harness.Name), ROMHeader.Harness.Major, ROMHeader.Harness.Minor]));
 
     if Length(ROMHeader.ROM.Name) > 0 then
-      SB.AppendLine(Format('.name   "%s"', [ROMHeader.ROM.Name]));
+      SB.AppendLine(Format('.name "%s"', [FixQuotes(ROMHeader.ROM.Name)]));
+
+    if Length(FIconFile) > 0 then
+      SB.AppendLine(Format('.icon "%s"', [FixQuotes(FIconFile)]));
+
+    if Length(FDescription) > 0 then
+      SB.AppendLine(Format('.description "%s"', [FixQuotes(FDescription)]));
+
+    if Length(FCopyright) > 0 then
+      SB.AppendLine(Format('.copyright "%s"', [FixQuotes(FCopyright)]));
 
     SB.AppendLine(Format('.version %d, %d', [ROMHeader.ROM.Major, ROMHeader.ROM.Minor]));
     SB.AppendLine(Format('.base   $%x', [ROMHeader.UserAddress]));

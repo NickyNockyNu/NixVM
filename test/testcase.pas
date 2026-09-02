@@ -3,6 +3,9 @@ program testcase targets console;
 {$HEAP 0}
 {$STACK 128}
 {$BASE $4E0}
+{$ICON 'GameIcon.ico'}
+{$DESCRIPTION 'Testing "case" syntax'}
+{$COPYRIGHT '(c) Nik'}
 
 procedure ClassifyInt(a: Integer);
 begin

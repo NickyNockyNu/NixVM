@@ -1,12 +1,12 @@
 program harness.console;
 
 {$APPTYPE CONSOLE}
+{$R *.res}
 
 uses
   NixVM.Harness,
   NixVM.Harness.PE,
-  NixVM.Harness.Timing,
-  NixVM.Tools.Params in '..\src\NixVM.Tools.Params.pas';
+  NixVM.Harness.Timing;
 
 type
   TConsoleSystemMemory = packed record

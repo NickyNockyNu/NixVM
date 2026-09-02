@@ -1,0 +1,48 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{A4ED7F98-F143-4841-A868-89CC58DD99E8}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="nvm.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="harness.console.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="nvm">
+        <MSBuild Projects="nvm.dproj"/>
+    </Target>
+    <Target Name="nvm:Clean">
+        <MSBuild Projects="nvm.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="nvm:Make">
+        <MSBuild Projects="nvm.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="harness_console">
+        <MSBuild Projects="harness.console.dproj"/>
+    </Target>
+    <Target Name="harness_console:Clean">
+        <MSBuild Projects="harness.console.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="harness_console:Make">
+        <MSBuild Projects="harness.console.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="nvm;harness_console"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="nvm:Clean;harness_console:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="nvm:Make;harness_console:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

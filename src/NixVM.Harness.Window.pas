@@ -34,11 +34,12 @@ uses
   Winapi.Messages,
 
   NixVM.Harness,
+  NixVM.Harness.PE,
   NixVM.Harness.Timing;
 
 type
   {$REGION 'CustomWindowHarness'}
-  TCustomWindowHarness<TSystemMemory: record> = class(TCustomHarness<TSystemMemory>)
+  TCustomWindowHarness<TSystemMemory: record> = class(TCustomPEHarness<TSystemMemory>)
   private
     FHandle: HWND;
 

@@ -76,6 +76,10 @@ type
 
     FSizeBeforeOpt: Integer;
     FSizeAfterOpt:  Integer;
+
+    FIconFile:    String;
+    FDescription: String;
+    FCopyright:   String;
   public
     ROMHeader: TROMHeader;
 
@@ -89,8 +93,8 @@ type
     function Link(AStream: TStream;        AWithHeader: Boolean = True): Boolean; overload;
     function Link(const AFileName: String; AWithHeader: Boolean = True): Boolean; overload;
 
-    class function Parse(const ASource: String; out AErrors: TStrings; const AFileName: String = ''; const ABasePath: String = ''; AIncludeStack: TStrings = nil; ASharedErrors: TStringList = nil; AROMHeader: PROMHeader = nil): TIRList;
-    class function ParseFile(const AFileName: String; out AErrors: TStrings; AROMHeader: PROMHeader = nil): TIRList; static;
+    class function Parse(const ASource: String; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; const AFileName: String = ''; const ABasePath: String = ''; AIncludeStack: TStrings = nil; ASharedErrors: TStringList = nil; AROMHeader: PROMHeader = nil): TIRList;
+    class function ParseFile(const AFileName: String; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; AROMHeader: PROMHeader = nil): TIRList; static;
 
     property IR:     TIRList  read FIR;
     property Errors: TStrings read FErrors;
@@ -101,6 +105,10 @@ type
 
     property SizeBeforeOpt: Integer read FSizeBeforeOpt;
     property SizeAfterOpt:  Integer read FSizeAfterOpt;
+
+    property IconFile:    String read FIconFile    write FIconFile;
+    property Description: String read FDescription write FDescription;
+    property Copyright:   String read FCopyright   write FCopyright;
   end;
   {$ENDREGION}
 
@@ -134,7 +142,7 @@ begin
   if Assigned(FIR) then
     FIR.Free;
 
-  FIR := Parse(ASource, FErrors, '', FBasePath, nil, nil, @ROMHeader);
+  FIR := Parse(ASource, FErrors, FIconFile, FDescription, FCopyright, '', FBasePath, nil, nil, @ROMHeader);
 
   FSizeBeforeOpt := FIR.Size;
 
@@ -241,7 +249,7 @@ begin
 end;
 
 {$REGION 'Parse'}
-class function TAssembler.Parse(const ASource: String; out AErrors: TStrings; const AFileName: String; const ABasePath: String; AIncludeStack: TStrings; ASharedErrors: TStringList; AROMHeader: PROMHeader): TIRList;
+class function TAssembler.Parse(const ASource: String; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; const AFileName: String; const ABasePath: String; AIncludeStack: TStrings; ASharedErrors: TStringList; AROMHeader: PROMHeader): TIRList;
 var
   IR:            TIRList;
   Constants:     TDictionary<String, Cardinal>;
@@ -344,7 +352,6 @@ var
     ATok.Col  := StartCol;
     C         := ASource[SrcPos];
 
-    // Single-character delimiters (only match '-' if NOT followed by a digit or hex prefix)
     case C of
       ',': begin ATok.Kind := TTokenKind.Comma; ATok.ValueStr := ','; Inc(SrcPos); Inc(CurCol); Exit(True); end;
       ':': begin ATok.Kind := TTokenKind.Colon; ATok.ValueStr := ':'; Inc(SrcPos); Inc(CurCol); Exit(True); end;
@@ -1268,6 +1275,48 @@ begin
         Continue;
       end;
 
+      if LowerIdent = '.icon' then
+      begin
+        if not NextToken(Tok) or (Tok.Kind <> TTokenKind.String) then
+        begin
+          Error('Expected quoted string for .icon directive', Tok);
+          Continue;
+        end;
+
+        AIconFile := Tok.ValueStr;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
+      if (LowerIdent = '.desc') or (LowerIdent = '.description') then
+      begin
+        if not NextToken(Tok) or (Tok.Kind <> TTokenKind.String) then
+        begin
+          Error('Expected quoted string for .desc directive', Tok);
+          Continue;
+        end;
+
+        ADescription := Tok.ValueStr;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
+      if (LowerIdent = '.cw') or (LowerIdent = '.copyright') then
+      begin
+        if not NextToken(Tok) or (Tok.Kind <> TTokenKind.String) then
+        begin
+          Error('Expected quoted string for .cw directive', Tok);
+          Continue;
+        end;
+
+        ACopyright := Tok.ValueStr;
+
+        LineHasItem := True;
+        Continue;
+      end;
+
       if (LowerIdent = '.embed') or (LowerIdent = '.includeb') then
       begin
         if not NextToken(Tok) then
@@ -1365,7 +1414,7 @@ begin
             var SubSource := TFile.ReadAllText(FullFilePath);
             var DummyErrors: TStrings := nil;
 
-            var SubIR := Parse(SubSource, DummyErrors, FullFilePath, ExtractFilePath(FullFilePath), IncStack, Errors, AROMHeader);
+            var SubIR := Parse(SubSource, DummyErrors, AIconFile, ADescription, ACopyright, FullFilePath, ExtractFilePath(FullFilePath), IncStack, Errors, AROMHeader);
             try
               for var j := 0 to SubIR.Count - 1 do
                 IR.Add(SubIR[j]);
@@ -1707,7 +1756,7 @@ begin
 end;
 {$ENDREGION}
 
-class function TAssembler.ParseFile(const AFileName: String; out AErrors: TStrings; AROMHeader: PROMHeader): TIRList;
+class function TAssembler.ParseFile(const AFileName: String; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; AROMHeader: PROMHeader): TIRList;
 var
   SourceText: String;
 begin
@@ -1720,7 +1769,7 @@ begin
   end;
 
   SourceText := TFile.ReadAllText(AFileName);
-  Result     := Parse(SourceText, AErrors, AFileName, ExtractFilePath(AFileName), nil, nil, AROMHeader);
+  Result     := Parse(SourceText, AErrors, AIconFile, ADescription, ACopyright, AFileName, ExtractFilePath(AFileName), nil, nil, AROMHeader);
 end;
 {$ENDREGION}
 

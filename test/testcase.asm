@@ -1,17 +1,20 @@
 .target "console", 1, 0
-.name   "testcase"
+.name "testcase"
+.icon "GameIcon.ico"
+.description "Testing ""case"" syntax"
+.copyright "(c) Nik"
 .version 1, 0
+.stack  128
 .base   $4E0
 .heap   0
-.stack  128
 
 	call	Main
 	halt
 
-classifyint:
+ClassifyInt:
 	enter	1, $4
 
-	; testcase.pas(9): Print('%d: ', a);
+	; testcase.pas(12): Print('%d: ', a);
 	ldo	r0, bp, -4
 	push	r0
 	mov	r0, _strconst_1
@@ -19,7 +22,7 @@ classifyint:
 	popr	2
 	syscall	$1	; _SysCall_DebugPrint
 
-	; testcase.pas(11): case a of
+	; testcase.pas(14): case a of
 	ldo	r0, bp, -4
 	push	r0
 	ldo	r0, sp, 0
@@ -34,7 +37,7 @@ classifyint:
 	jmp	@case_next_3
 @case_branch_2:
 
-	; testcase.pas(12): 3, 5, 7: Println('Small prime');
+	; testcase.pas(15): 3, 5, 7: PrintLn('Small prime');
 	mov	r0, _strconst_2
 	syscall	$1	; _SysCall_DebugPrint
 	jmp	@endcase_1
@@ -48,13 +51,13 @@ classifyint:
 	jmp	@case_next_5
 @case_branch_4:
 
-	; testcase.pas(13): 13..19:  Println('Teen');
+	; testcase.pas(16): 13..19:  PrintLn('Teen');
 	mov	r0, _strconst_3
 	syscall	$1	; _SysCall_DebugPrint
 	jmp	@endcase_1
 @case_next_5:
 
-	; testcase.pas(15): Println('Not classified');
+	; testcase.pas(18): PrintLn('Not classified');
 	mov	r0, _strconst_4
 	syscall	$1	; _SysCall_DebugPrint
 @endcase_1:
@@ -64,7 +67,7 @@ classifyint:
 
 Main:
 
-	; testcase.pas(22): for i := 0 to 20 do
+	; testcase.pas(25): for i := 0 to 20 do
 	mov	r0, 0
 	mov	r1, _var_i
 	st	r1, r0
@@ -73,9 +76,9 @@ Main:
 	cmp	r0, 20
 	jg	@endfor_9
 
-	; testcase.pas(23): classifyint(i);
+	; testcase.pas(26): ClassifyInt(i);
 	ld	r0, _var_i
-	call	classifyint
+	call	ClassifyInt
 	ld	r0, _var_i
 	add	r0, 1
 	mov	r1, _var_i
