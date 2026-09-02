@@ -81,3 +81,5 @@ modules/
 #ide
 ide/
 bin/nvmide.*
+test/*.exe
+test/*.nvm
