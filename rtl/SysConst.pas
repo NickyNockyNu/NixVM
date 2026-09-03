@@ -8,8 +8,8 @@ const
   _Addr_SysCalls         = $00000040;
   _Addr_SystemState      = $00000440;
   _Addr_MemoryMap        = $00000490;
-  _Addr_Timers           = $000004B0;
-  _Addr_SystemRegisters  = $000004D0;
+  _Addr_Timers           = $000004F8;
+  _Addr_SystemRegisters  = $00000518;
 
 const
   // Interrupt ID's
@@ -23,6 +23,7 @@ const
   // SysCall ID's
   _SysCall_DebugBreak       = $00;
   _SysCall_DebugPrint       = $01;
+  _SysCall_DebugPrintLn     = $02;
   _SysCall_MemoryFill       = $10;
   _SysCall_MemoryCopy       = $11;
   _SysCall_MemoryCompare    = $12;
@@ -31,14 +32,24 @@ const
   _SysCall_HeapFree         = $22;
   _SysCall_HeapSize         = $23;
   _SysCall_HeapAvailable    = $24;
+  _SysCall_HeapLoad         = $25;
+  _SysCall_HeapSave         = $26;
   _SysCall_StringNew        = $30;
   _SysCall_StringInit       = $31;
   _SysCall_StringDispose    = $32;
   _SysCall_StringLength     = $33;
-  _SysCall_StringConcat     = $34;
-  _SysCall_StringCopy       = $35;
-  _SysCall_StringCompare    = $36;
-  _SysCall_StringFormat     = $37;
+  _SysCall_StringSetLength  = $34;
+  _SysCall_StringConcat     = $35;
+  _SysCall_StringCopy       = $36;
+  _SysCall_StringCompare    = $37;
+  _SysCall_StringFormat     = $38;
+  _SysCall_ArrayNew         = $40;
+  _SysCall_ArrayDispose     = $41;
+  _SysCall_ArrayLength      = $42;
+  _SysCall_ArraySetLength   = $43;
+  _SysCall_ArrayCopy        = $44;
+  _SysCall_ArrayConcat      = $45;
+  _SysCall_ArrayClear       = $46;
 
 implementation
 

@@ -590,7 +590,30 @@ type
   end;
   {$ENDREGION}
 
-  TASTExit     = class(TASTStatement);
+  {$REGION 'raise'}
+  TASTRaise = class(TASTStatement)
+  private
+    FExpression: TASTExpression;
+  public
+    constructor Create(AExpression: TASTExpression = nil; ALine: Integer = 0; ACol: Integer = 0);
+    destructor  Destroy; override;
+
+    property Expression: TASTExpression read FExpression write FExpression;
+  end;
+  {$ENDREGION}
+
+  {$REGION 'exit'}
+  TASTExit = class(TASTStatement)
+  private
+    FExpression: TASTExpression;
+  public
+    constructor Create(AExpression: TASTExpression = nil; ALine: Integer = 0; ACol: Integer = 0);
+    destructor  Destroy; override;
+
+    property Expression: TASTExpression read FExpression write FExpression;
+  end;
+  {$ENDREGION}
+
   TASTBreak    = class(TASTStatement);
   TASTContinue = class(TASTStatement);
 
@@ -629,14 +652,20 @@ type
     FConstType: TASTType;
     FValue:     TASTExpression;
     FConstVal:  TConstValue;
+    FIsEmbed:    Boolean;
+    FEmbedFile:  String;
+    FEmbedBytes: TBytes;
   public
     constructor Create(const AName: String; AValue: TASTExpression; const AConstVal: TConstValue; AConstType: TASTType = nil; ALine: Integer = 0; ACol: Integer = 0);
     destructor  Destroy; override;
 
-    property Name:      String         read FName      write FName;
-    property ConstType: TASTType       read FConstType write FConstType;
-    property Value:     TASTExpression read FValue     write FValue;
-    property ConstVal:  TConstValue    read FConstVal  write FConstVal;
+    property Name:      String         read FName       write FName;
+    property ConstType: TASTType       read FConstType  write FConstType;
+    property Value:     TASTExpression read FValue      write FValue;
+    property ConstVal:  TConstValue    read FConstVal   write FConstVal;
+    property IsEmbed:    Boolean       read FIsEmbed    write FIsEmbed;
+    property EmbedFile:  String        read FEmbedFile  write FEmbedFile;
+    property EmbedBytes: TBytes        read FEmbedBytes write FEmbedBytes;
   end;
   {$ENDREGION}
 
@@ -1558,6 +1587,40 @@ begin
 end;
 {$ENDREGION}
 
+{$REGION 'raise'}
+constructor TASTRaise.Create(AExpression: TASTExpression = nil; ALine: Integer = 0; ACol: Integer = 0);
+begin
+  inherited Create(ALine, ACol);
+
+  FExpression := AExpression;
+end;
+
+destructor TASTRaise.Destroy;
+begin
+  if Assigned(FExpression) then
+    FExpression.Free;
+
+  inherited;
+end;
+{$ENDREGION}
+
+{$REGION 'exit'}
+constructor TASTExit.Create(AExpression: TASTExpression = nil; ALine: Integer = 0; ACol: Integer = 0);
+begin
+  inherited Create(ALine, ACol);
+
+  FExpression := AExpression;
+end;
+
+destructor TASTExit.Destroy;
+begin
+  if Assigned(FExpression) then
+    FExpression.Free;
+
+  inherited;
+end;
+{$ENDREGION}
+
 {$ENDREGION}
 
 {$REGION 'Declarations'}
@@ -1597,10 +1660,13 @@ constructor TASTConstDecl.Create(const AName: String; AValue: TASTExpression; co
 begin
   inherited Create(ALine, ACol);
 
-  FName      := AName;
-  FValue     := AValue;
-  FConstVal  := AConstVal;
-  FConstType := AConstType;
+  FName       := AName;
+  FValue      := AValue;
+  FConstVal   := AConstVal;
+  FConstType  := AConstType;
+  FIsEmbed    := False;
+  FEmbedFile  := '';
+  FEmbedBytes := nil;
 end;
 
 destructor TASTConstDecl.Destroy;

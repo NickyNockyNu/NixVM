@@ -45,8 +45,9 @@ type
     TOpCodeHelper = record helper for TOpCode
     const
       {$REGION 'OpCodes'}
-      halt  = $00;
-      yield = $01;
+      halt   = $00;
+      yield  = $01;
+      &raise = $02;
 
       mov   = $10;
       swap  = $11;
@@ -176,7 +177,7 @@ type
       {$REGION 'Definitions'}
       {00}(Mnemonic:'halt'),
       {01}(Mnemonic:'yield'),
-      {02}(),
+      {02}(Mnemonic:'raise'; Params:TParameters.RImm),
       {03}(),
       {04}(),
       {05}(),

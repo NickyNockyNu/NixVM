@@ -14,6 +14,9 @@ type
   TData = record
     a, b, c, d: Integer;
   end;
+  
+const
+  DataConst: PData in 'testheapfile_embed.dat';
  
 function MakeOrLoad(AFileName: String): PData;
 begin
@@ -62,4 +65,6 @@ begin
   
   if Assigned(Data) then
     Println('%d %d %d %d', Data^.a, Data^.b, Data^.c, Data^.d);
+
+   Println('%d %d %d %d', DataConst^.a, DataConst^.b, DataConst^.c, DataConst^.d);
 end.

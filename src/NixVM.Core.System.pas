@@ -141,6 +141,7 @@ type
       StackOverflow        = 5;
       StackUnderflow       = 6;
       DivideByZero         = 7;
+      Exception            = 8;
     public
       function ToString: String;
     end;

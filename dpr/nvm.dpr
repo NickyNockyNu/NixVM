@@ -26,7 +26,11 @@ program nvm;
 
   Language features:
 
-    Exit(ReturnValue);
+    labled for (for continue and break)
+
+  This tool:
+
+    Finish up the "gen" tool
 
   Core features:
 
@@ -68,6 +72,7 @@ uses
 
   NixVM.Harness,
 
+  NixVM.Tools.GenUnits,
   NixVM.Tools.Params,
   NixVM.Tools.IR,
   NixVM.Tools.Assembler,
@@ -1090,6 +1095,11 @@ begin
   TConsole.Run(TParams.Params[1]);
 end;
 
+procedure DoGenUnits;
+begin
+  Writeln(TGenUnits.GetSysConst);
+end;
+
 begin
   try
     TParams.AddOpt(TParams.TOption.TKind.Bool, 'h', 'help');
@@ -1119,6 +1129,7 @@ begin
     else if tool = 'link'        then DoLink
     else if tool = 'stamp'       then DoStamp
     else if tool = 'info'        then DoInfo
+    else if tool = 'gen'         then DoGenUnits
     else if tool = 'run'         then DoRun
     else
     begin

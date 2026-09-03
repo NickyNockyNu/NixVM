@@ -30,6 +30,7 @@ uses
   System.Classes,
   System.Generics.Collections,
   System.TypInfo,
+  System.IOUtils,
 
   NixVM.Core.ROM,
 
@@ -1648,6 +1649,16 @@ begin
   if Check(TLexer.TToken.TKind.Begin) then
     Exit(ParseBlock);
 
+  if Match(TLexer.TToken.TKind.Raise) then
+  begin
+    var Expr: TASTExpression := nil;
+
+    if not Check(TLexer.TToken.TKind.Semicolon) and not Check(TLexer.TToken.TKind.End) then
+      Expr := ParseExpression;
+
+    Exit(TASTRaise.Create(Expr, Tok.Line, Tok.Col));
+  end;
+
   if Check(TLexer.TToken.TKind.With) then
     Exit(ParseWith);
 
@@ -1667,7 +1678,17 @@ begin
     Exit(ParseCase);
 
   if Match(TLexer.TToken.TKind.Exit) then
-    Exit(TASTExit.Create(Tok.Line, Tok.Col));
+  begin
+    var RetExpr: TASTExpression := nil;
+
+    if Match(TLexer.TToken.TKind.LParen) then
+    begin
+      RetExpr := ParseExpression;
+      Expect(TLexer.TToken.TKind.RParen, 'Expected ")" after Exit return value');
+    end;
+
+    Exit(TASTExit.Create(RetExpr, Tok.Line, Tok.Col));
+  end;
 
   if Match(TLexer.TToken.TKind.Break) then
     Exit(TASTBreak.Create(Tok.Line, Tok.Col));
@@ -1691,21 +1712,69 @@ begin
   begin
     var StartTok := FCurTok;
     var ConstName := FCurTok.ValueStr;
+
     NextToken;
 
     var ConstType: TASTType := nil;
+
     if Match(TLexer.TToken.TKind.Colon) then
       ConstType := ParseType;
 
-    Expect(TLexer.TToken.TKind.Equal, 'Expected "=" in const declaration');
-    var ValueExpr := ParseExpression;
+    if Match(TLexer.TToken.TKind.In) then
+    begin
+      var FileTok := FCurTok;
+      if not Expect(TLexer.TToken.TKind.StringLiteral, 'Expected quoted filename after "in"') then
+        Continue;
 
+      var RelPath := FileTok.ValueStr;
+      var FullPath := RelPath;
+
+      if (FLexer.FileName <> '') and not TPath.IsPathRooted(RelPath) then
+        FullPath := TPath.Combine(ExtractFilePath(FLexer.FileName), RelPath);
+
+      if not FileExists(FullPath) then
+      begin
+        Error(Format('Embedded asset file not found: "%s"', [FullPath]), FileTok);
+        Match(TLexer.TToken.TKind.Semicolon);
+
+        Continue;
+      end;
+
+      var FileBytes: TBytes := nil;
+
+      try
+        FileBytes := TFile.ReadAllBytes(FullPath);
+      except
+        on E: Exception do
+        begin
+          Error(Format('Failed to read embedded file "%s": %s', [FullPath, E.Message]), FileTok);
+          Match(TLexer.TToken.TKind.Semicolon);
+
+          Continue;
+        end;
+      end;
+
+      Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after embedded asset declaration');
+
+      var ConstDecl := TASTConstDecl.Create(ConstName, nil, Default(TConstValue), ConstType, StartTok.Line, StartTok.Col);
+
+      ConstDecl.IsEmbed    := True;
+      ConstDecl.EmbedFile  := RelPath;
+      ConstDecl.EmbedBytes := FileBytes;
+
+      ADecls.Add(ConstDecl);
+
+      Continue;
+    end;
+
+    Expect(TLexer.TToken.TKind.Equal, 'Expected "=" or "in" in const declaration');
+
+    var ValueExpr := ParseExpression;
     Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after const declaration');
 
     ADecls.Add(TASTConstDecl.Create(ConstName, ValueExpr, Default(TConstValue), ConstType, StartTok.Line, StartTok.Col));
   end;
 end;
-
 procedure TParser.ParseTypeSection(ADecls: TObjectList<TASTDeclaration>);
 begin
   Expect(TLexer.TToken.TKind.Type);

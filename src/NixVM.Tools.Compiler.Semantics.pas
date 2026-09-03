@@ -175,6 +175,7 @@ type
     FConstVal:     TConstValue;
     FIsInterrupt:  Boolean;
     FIsVarArgs:    Boolean;
+    FIsEmbed:      Boolean;
   public
     constructor Create(const AName: String; AKind: TKind; ASymbolType: TType);
     destructor  Destroy; override;
@@ -195,6 +196,7 @@ type
     property ConstVal:     TConstValue     read FConstVal     write FConstVal;
     property IsInterrupt:  Boolean         read FIsInterrupt  write FIsInterrupt;
     property IsVarArgs:    Boolean         read FIsVarArgs    write FIsVarArgs;
+    property IsEmbed:      Boolean         read FIsEmbed      write FIsEmbed;
   end;
   {$ENDREGION}
 
@@ -296,6 +298,7 @@ type
     FRoutineMap:  TDictionary<String, TASTRoutineDecl>;
     FVarMap:      TDictionary<String, TASTVarDecl>;
     FPropertyMap: TDictionary<String, TPropSpec>;
+    FConstMap:    TDictionary<String, TASTConstDecl>;
     FWithStack:   TList<String>;
 
     procedure MarkExpression(AExpr:    TASTExpression);
@@ -2450,6 +2453,27 @@ begin
   else if AStmt is TASTFor      then AnalyzeFor     (TASTFor     (AStmt))
   else if AStmt is TASTForIn    then AnalyzeForIn   (TASTForIn   (AStmt))
   else if AStmt is TASTProcCall then AnalyzeProcCall(TASTProcCall(AStmt))
+  else if AStmt is TASTExit then
+  begin
+    var ExitStmt := TASTExit(AStmt);
+
+    if ExitStmt.Expression <> nil then
+    begin
+      var RetExpr := ExitStmt.Expression;
+
+      FoldExpression(RetExpr);
+      ExitStmt.Expression := RetExpr;
+
+      var RetType := AnalyzeExpression(ExitStmt.Expression);
+      var ResultSym := FCurrentScope.Resolve('result');
+
+      if ResultSym = nil then
+        Error('Exit with a return value is only allowed in functions', ExitStmt)
+
+      else if not CheckTypeCompatibility(ResultSym.SymbolType, RetType) then
+        Error(Format('Cannot assign type "%s" to function return type "%s"', [RetType.Name, ResultSym.SymbolType.Name]), ExitStmt);
+    end;
+  end
   else if AStmt is TASTCase then
   begin
     var CaseStmt := TASTCase(AStmt);
@@ -2463,6 +2487,11 @@ begin
 
     if Assigned(CaseStmt.ElseStmt) then
       AnalyzeStatement(CaseStmt.ElseStmt);
+  end
+  else if AStmt is TASTRaise then
+  begin
+    if Assigned(TASTRaise(AStmt).Expression) then
+      AnalyzeExpression(TASTRaise(AStmt).Expression);
   end;
 end;
 
@@ -2472,6 +2501,27 @@ begin
   begin
     var ConstDecl := TASTConstDecl(ADecl);
     var ValType: TType;
+
+    if ConstDecl.IsEmbed then
+    begin
+      var AssetType: TType := nil;
+
+      if ConstDecl.ConstType <> nil then
+        AssetType := ResolveType(ConstDecl.ConstType)
+      else
+        AssetType := FBuiltinTypes['pointer'];
+
+      var Sym := TSymbol.Create(ConstDecl.Name, TSymbol.TKind.Constant, AssetType);
+
+      Sym.Storage     := TSymbol.TStorage.Global;
+      Sym.GlobalLabel := '_embed_' + LowerCase(ConstDecl.Name);
+      Sym.IsEmbed     := True;
+
+      if not FCurrentScope.Define(Sym) then
+        Error(Format('Duplicate identifier "%s"', [ConstDecl.Name]), ConstDecl);
+
+      Exit;
+    end;
 
     var ValExpr := ConstDecl.Value;
     FoldExpression(ValExpr);
@@ -2897,7 +2947,7 @@ constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
       begin
         var R := TASTRoutineDecl(Decl);
 
-        if (R.Body <> nil) and (not R.IsForward) then
+        if ((R.Body <> nil) or R.IsSysCall) and (not R.IsForward) then
         begin
           var MangledName := R.Name;
 
@@ -2907,6 +2957,7 @@ constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
           FRoutineMap.AddOrSetValue(LowerCase(MangledName), R);
         end;
       end
+
       else if Decl is TASTTypeDecl then
       begin
         var TD := TASTTypeDecl(Decl);
@@ -2917,11 +2968,7 @@ constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
             var R := TASTRoutineDecl(MNode);
 
             if (R.Body <> nil) and (not R.IsForward) then
-            begin
-              var MangledName := TD.Name + '_' + R.Name;
-
-              FRoutineMap.AddOrSetValue(LowerCase(MangledName), R);
-            end;
+              FRoutineMap.AddOrSetValue(LowerCase(TD.Name + '_' + R.Name), R);
           end;
 
         for var PNode in TD.DeclType.RecordProperties do
@@ -2938,11 +2985,15 @@ constructor TTreeShaker.Create(AProgram: TASTProgram; AUnits: TList<TASTUnit>);
       end
 
       else if Decl is TASTVarDecl then
+      begin
         for var Name in TASTVarDecl(Decl).Names do
           FVarMap.AddOrSetValue(LowerCase(Name), TASTVarDecl(Decl));
+      end
+
+      else if (Decl is TASTConstDecl) and TASTConstDecl(Decl).IsEmbed then
+        FConstMap.AddOrSetValue(LowerCase(TASTConstDecl(Decl).Name), TASTConstDecl(Decl));
     end;
   end;
-
 begin
   inherited Create;
 
@@ -2951,6 +3002,7 @@ begin
   FRoutineMap  := TDictionary<String, TASTRoutineDecl>.Create;
   FVarMap      := TDictionary<String, TASTVarDecl>.Create;
   FPropertyMap := TDictionary<String, TPropSpec>.Create;
+  FConstMap    := TDictionary<String, TASTConstDecl>.Create;
   FWithStack   := TList<String>.Create;
 
   if FUnits <> nil then
@@ -2966,6 +3018,7 @@ end;
 destructor TTreeShaker.Destroy;
 begin
   FWithStack.Free;
+  FConstMap.Free;
   FPropertyMap.Free;
   FRoutineMap.Free;
   FVarMap.Free;
@@ -2992,6 +3045,11 @@ begin
   if AExpr is TASTIdentifier then
   begin
     var IdentName := TASTIdentifier(AExpr).Name;
+
+    var EmbedDecl: TASTConstDecl;
+
+    if FConstMap.TryGetValue(LowerCase(IdentName), EmbedDecl) then
+      EmbedDecl.IsUsed := True;
 
     for var i := FWithStack.Count - 1 downto 0 do
     begin
@@ -3252,6 +3310,18 @@ begin
       MarkStatement(S);
 
     MarkExpression(TASTRepeat(AStmt).Condition);
+  end
+
+  else if AStmt is TASTRaise then
+  begin
+    if TASTRaise(AStmt).Expression <> nil then
+      MarkExpression(TASTRaise(AStmt).Expression);
+  end
+
+  else if AStmt is TASTExit then
+  begin
+    if TASTExit(AStmt).Expression <> nil then
+      MarkExpression(TASTExit(AStmt).Expression);
   end
 
   else if AStmt is TASTFor then

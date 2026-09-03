@@ -34,7 +34,7 @@ uses
   NixVM.Core.Instructions,
 
   NixVM.Tools.IR,
-  
+
   NixVM.Tools.Compiler.AST,
   NixVM.Tools.Compiler.Semantics;
 
@@ -57,20 +57,21 @@ type
     end;
     {$ENDREGION}
   private
-    FProgram:         TASTProgram;
-    FAnalyzer:        TSemanticAnalyzer;
-    FIR:              TIRList;
-    FLabelCounter:    Integer;
-    FStringTable:     TDictionary<String, String>;
-    FStringCounter:   Integer;
-    FCurrentScope:    TScope;
-    FLoopStack:       TStack<TLoopContext>;
-    FWithStack:       TList<TWithContext>;
-    FCurrentRoutine:  TASTRoutineDecl;
-    FUnits:           TList<TASTUnit>;
-    FSourceLines:     TStrings;
-    FFileName:        String;
-    FLastLine:        Integer;
+    FProgram:          TASTProgram;
+    FAnalyzer:         TSemanticAnalyzer;
+    FIR:               TIRList;
+    FLabelCounter:     Integer;
+    FStringTable:      TDictionary<String, String>;
+    FStringCounter:    Integer;
+    FCurrentScope:     TScope;
+    FLoopStack:        TStack<TLoopContext>;
+    FWithStack:        TList<TWithContext>;
+    FCurrentRoutine:   TASTRoutineDecl;
+    FUnits:            TList<TASTUnit>;
+    FSourceLines:      TStrings;
+    FFileName:         String;
+    FLastLine:         Integer;
+    FCurrentExitLabel: String;
 
     procedure EmitSourceComment(ANode: TASTNode; ARoot: Boolean = False);
 
@@ -93,6 +94,7 @@ type
     procedure GenForIn    (AForIn:  TASTForIn);
     procedure GenCase     (ACase:   TASTCase);
     procedure GenProcCall (ACall:   TASTProcCall);
+    procedure GenRaise    (ARaise:  TASTRaise);
 
     procedure GenBreak;
     procedure GenContinue;
@@ -348,6 +350,12 @@ begin
 
   if Sym.Kind = TSymbol.TKind.Constant then
   begin
+    if Sym.IsEmbed then
+    begin
+      FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(Sym.GlobalLabel));
+      Exit;
+    end;
+
     if Sym.ConstVal.Kind = TConstValue.TKind.Single then
       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, PCardinal(@Sym.ConstVal.ValueFloat)^)
 
@@ -1390,6 +1398,28 @@ begin
 
   RoutineSym := FAnalyzer.GlobalScope.Resolve(ACall.CalleeName);
 
+  if (RoutineSym <> nil) and (RoutineSym.Kind = TSymbol.TKind.Type) then
+  begin
+    if ACall.Arguments.Count = 1 then
+    begin
+      var CastArg := ACall.Arguments[0];
+      GenExpression(CastArg);
+
+      var TargetIsFloat := (RoutineSym.SymbolType <> nil) and RoutineSym.SymbolType.IsFloat;
+      var SrcIsInt      := (CastArg.ResolvedType  <> nil) and CastArg.ResolvedType.IsInteger;
+      var TargetIsInt   := (RoutineSym.SymbolType <> nil) and RoutineSym.SymbolType.IsInteger;
+      var SrcIsFloat    := (CastArg.ResolvedType  <> nil) and CastArg.ResolvedType.IsFloat;
+
+      if TargetIsFloat and SrcIsInt then
+        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, TRegisters.ID.R0, TRegisters.ID.R0)
+      else if TargetIsInt and SrcIsFloat then
+        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ftoi, TRegisters.ID.R0, TRegisters.ID.R0);
+
+      Exit;
+    end;
+  end;
+
+
   MaxRegs := 4;
 
   if (RoutineSym <> nil) and RoutineSym.IsSysCall then
@@ -2390,6 +2420,31 @@ begin
   GenCallExpr(ACall.CallExpr);
 end;
 
+procedure TCodeGenerator.GenRaise(ARaise: TASTRaise);
+begin
+  if ARaise.Expression = nil then
+  begin
+    FIR.AddInstrRImm(TCPUInstruction.TOpCode.raise, 0);
+    Exit;
+  end;
+
+  if (ARaise.Expression is TASTLiteral) and (TASTLiteral(ARaise.Expression).Kind in [TASTLiteral.TKind.Integer, TASTLiteral.TKind.Set]) then
+  begin
+    FIR.AddInstrRImm(TCPUInstruction.TOpCode.raise, TASTLiteral(ARaise.Expression).ValueInt);
+    Exit;
+  end;
+
+  if (ARaise.Expression.ResolvedType <> nil) and (ARaise.Expression.ResolvedType.Kind = TASTType.TKind.Record) then
+  begin
+    GenAddressOf(ARaise.Expression);
+    FIR.AddInstrRImm(TCPUInstruction.TOpCode.raise, TRegisters.ID.R0);
+    Exit;
+  end;
+
+  GenExpression(ARaise.Expression);
+  FIR.AddInstrRImm(TCPUInstruction.TOpCode.raise, TRegisters.ID.R0);
+end;
+
 procedure TCodeGenerator.GenBreak;
 begin
   if FLoopStack.Count > 0 then
@@ -2467,15 +2522,25 @@ begin
   else if AStmt is TASTForIn    then GenForIn   (TASTForIn   (AStmt))
   else if AStmt is TASTCase     then GenCase    (TASTCase    (AStmt))
   else if AStmt is TASTProcCall then GenProcCall(TASTProcCall(AStmt))
+  else if AStmt is TASTRaise    then GenRaise   (TASTRaise   (AStmt))
   else if AStmt is TASTBreak    then GenBreak
   else if AStmt is TASTContinue then GenContinue
-  else if AStmt is TASTExit     then
+  else if AStmt is TASTExit then
   begin
-    if (FCurrentScope <> nil) and (FCurrentScope.LocalSize > 0) then
-      FIR.AddInstr(TCPUInstruction.TOpCode.leave);
+    var ExitStmt := TASTExit(AStmt);
 
-    if (FCurrentRoutine <> nil) and FCurrentRoutine.IsInterrupt then
-      FIR.AddInstr(TCPUInstruction.TOpCode.iret)
+    if ExitStmt.Expression <> nil then
+    begin
+      GenExpression(ExitStmt.Expression);
+
+      var ResultSym := FCurrentScope.Resolve('result');
+
+      if ResultSym <> nil then
+        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto, TRegisters.ID.BP, TRegisters.ID.R0, Cardinal(ResultSym.StackOffset));
+    end;
+
+    if FCurrentExitLabel <> '' then
+      FIR.AddInstrRImm(TCPUInstruction.TOpCode.jmp, TLabelString(FCurrentExitLabel))
     else
       FIR.AddInstr(TCPUInstruction.TOpCode.ret);
   end;
@@ -2483,10 +2548,11 @@ end;
 
 procedure TCodeGenerator.GenRoutine(ARoutine: TASTRoutineDecl);
 var
-  RoutineSym:   TSymbol;
-  SavedScope:   TScope;
-  SavedRoutine: TASTRoutineDecl;
-  FrameSize:    Cardinal;
+  RoutineSym:     TSymbol;
+  SavedScope:     TScope;
+  SavedRoutine:   TASTRoutineDecl;
+  SavedExitLabel: String;
+  FrameSize:      Cardinal;
 
   function RoutineNeedsZeroInit: Boolean;
   begin
@@ -2582,7 +2648,10 @@ begin
   RoutineSym      := FAnalyzer.GlobalScope.Resolve(MangledName);
   SavedScope      := FCurrentScope;
   SavedRoutine    := FCurrentRoutine;
-  FCurrentRoutine := ARoutine;
+  SavedExitLabel  := FCurrentExitLabel;
+
+  FCurrentRoutine   := ARoutine;
+  FCurrentExitLabel := GenUniqueLabel('@exit_' + MangledName);
 
   if (RoutineSym <> nil) and (RoutineSym.LocalScope <> nil) then
   begin
@@ -2595,6 +2664,8 @@ begin
 
     try
       GenBlock(ARoutine.Body);
+
+      FIR.AddLabel(TLabelString(FCurrentExitLabel));
 
       var ReturnsString := ARoutine.IsFunction and (ARoutine.ReturnType <> nil) and ARoutine.ReturnType.IsString;
 
@@ -2669,8 +2740,9 @@ begin
   else
     FIR.AddInstr(TCPUInstruction.TOpCode.ret);
 
-  FCurrentScope   := SavedScope;
-  FCurrentRoutine := SavedRoutine;
+  FCurrentExitLabel := SavedExitLabel;
+  FCurrentScope     := SavedScope;
+  FCurrentRoutine   := SavedRoutine;
 end;
 
 procedure TCodeGenerator.GenAddressOf(AExpr: TASTExpression);
@@ -2723,6 +2795,13 @@ begin
 
     if Sym <> nil then
     begin
+      if (Sym.Kind = TSymbol.TKind.Constant) and Sym.IsEmbed then
+      begin
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(Sym.GlobalLabel));
+
+        Exit;
+      end;
+
       case Sym.Storage of
         TSymbol.TStorage.Global:
           FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R0, TLabelString(Sym.GlobalLabel));
@@ -2938,6 +3017,18 @@ procedure TCodeGenerator.GenDataSections;
     end;
   end;
 
+  procedure EmitEmbedDecl(ADecl: TASTDeclaration);
+  begin
+    if (ADecl is TASTConstDecl) and TASTConstDecl(ADecl).IsEmbed and ADecl.IsUsed then
+    begin
+      var ConstDecl := TASTConstDecl(ADecl);
+
+      FIR.AddBlankLine;
+      FIR.AddLabel(TLabelString('_embed_' + LowerCase(ConstDecl.Name)));
+      FIR.AddEmbed(ConstDecl.EmbedFile, ConstDecl.EmbedBytes);
+    end;
+  end;
+
 begin
   FIR.AddBlankLine;
 
@@ -2946,15 +3037,24 @@ begin
     for var U in FUnits do
     begin
       for var Decl in U.InterfaceDecls do
+      begin
         EmitVarDecl(Decl);
+        EmitEmbedDecl(Decl);
+      end;
 
       for var Decl in U.ImplementationDecls do
+      begin
         EmitVarDecl(Decl);
+        EmitEmbedDecl(Decl);
+      end;
     end;
   end;
 
   for var Decl in FProgram.Declarations do
+  begin
     EmitVarDecl(Decl);
+    EmitEmbedDecl(Decl);
+  end;
 
   for var Pair in FStringTable do
   begin

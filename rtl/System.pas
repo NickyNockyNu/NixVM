@@ -30,6 +30,8 @@ type
 
   PSystemState = ^TSystemState;
   TSystemState = record
+    PC:        Cardinal;
+    Flags:     Byte;
     Registers: TRegisters;
     PanicCode: Cardinal;
     UserCode:  Cardinal;

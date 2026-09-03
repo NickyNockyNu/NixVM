@@ -111,6 +111,7 @@ type
         &Break,
         &Continue,
         &Exit,
+        &Raise,
 
         // Types & structures
         &Record,
@@ -303,6 +304,7 @@ begin
   FKeywords.Add('break',          TToken.TKind.Break);
   FKeywords.Add('continue',       TToken.TKind.Continue);
   FKeywords.Add('exit',           TToken.TKind.Exit);
+  FKeywords.Add('raise',          TToken.TKind.Raise);
 
   FKeywords.Add('record',         TToken.TKind.Record);
   FKeywords.Add('array',          TToken.TKind.Array);

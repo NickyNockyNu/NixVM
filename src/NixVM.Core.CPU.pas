@@ -100,6 +100,7 @@ type
     {$REGION 'Instructions'}
     procedure DoHALT;  inline;
     procedure DoYIELD; inline;
+    procedure DoRAISE; inline;
 
     procedure DoMOV;   inline;
     procedure DoSWAP;  inline;
@@ -316,8 +317,9 @@ begin
 
   case FCurrentCPUInstruction.OpCode of
     {$REGION 'Instruction dispatch'}
-    TCPUInstruction.TOpCode.HALT:  DoHALT;
-    TCPUInstruction.TOpCode.YIELD: DoYIELD;
+    TCPUInstruction.TOpCode.HALT:   DoHALT;
+    TCPUInstruction.TOpCode.YIELD:  DoYIELD;
+    TCPUInstruction.TOpCode.&RAISE: DoRAISE;
 
     TCPUInstruction.TOpCode.MOV:   DoMOV;
     TCPUInstruction.TOpCode.SWAP:  DoSWAP;
@@ -592,6 +594,11 @@ end;
 procedure TCPU.DoYIELD;
 begin
   FYield := True;
+end;
+
+procedure TCPU.DoRAISE;
+begin
+  Panic(TSystemState.TPanicCode.Exception, Registers.r[FCurrentCPUInstruction.RegB]);
 end;
 
 procedure TCPU.DoMOV;
