@@ -73,6 +73,7 @@ begin
   AddAddrDef('MemoryMap',       TCoreSystemMemory.MemoryMapAddress);
   AddAddrDef('Timers',          TCoreSystemMemory.TimersAddress);
   AddAddrDef('SystemRegisters', TCoreSystemMemory.RegistersAddress);
+  AddAddrDef('OEM',             SizeOf(TCoreSystemMemory));
 
   AddLn;
   AddLn('const');

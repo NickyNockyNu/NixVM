@@ -41,6 +41,7 @@ type
     class function InstructionReadsReg(const AItem: TIRItem; AReg: TRegisters.ID): Boolean; static;
     class function InstructionOverwritesReg(const AItem: TIRItem; AReg: TRegisters.ID): Boolean; static;
     class function IsRegLiveDownstream(AIR: TIRList; AStartIndex: Integer; AReg: TRegisters.ID): Boolean; static;
+    class function ModifiesStackOrControlFlow(const AItem: TIRItem): Boolean; static;
 
     class function OptimisePass                (AIR: TIRList): Boolean; static;
     class function EliminateUnreachableCode    (AIR: TIRList): Boolean; static;
@@ -203,6 +204,27 @@ begin
   end;
 end;
 
+class function TPeepholeOptimiser.ModifiesStackOrControlFlow(const AItem: TIRItem): Boolean;
+begin
+  if AItem.Kind <> TIRItem.TKind.Instruction then
+    Exit(False);
+
+  Result := AItem.OpCode in [TCPUInstruction.TOpCode.push,  TCPUInstruction.TOpCode.pop,
+                             TCPUInstruction.TOpCode.pushf, TCPUInstruction.TOpCode.popf,
+                             TCPUInstruction.TOpCode.pushr, TCPUInstruction.TOpCode.popr,
+                             TCPUInstruction.TOpCode.enter, TCPUInstruction.TOpCode.leave,
+                             TCPUInstruction.TOpCode.zenter,
+                             TCPUInstruction.TOpCode.call,  TCPUInstruction.TOpCode.syscall,
+                             TCPUInstruction.TOpCode.int,   TCPUInstruction.TOpCode.ret,
+                             TCPUInstruction.TOpCode.iret,  TCPUInstruction.TOpCode.jmp,
+                             TCPUInstruction.TOpCode.je,    TCPUInstruction.TOpCode.jnz,
+                             TCPUInstruction.TOpCode.jl,    TCPUInstruction.TOpCode.jle,
+                             TCPUInstruction.TOpCode.jg,    TCPUInstruction.TOpCode.jge,
+                             TCPUInstruction.TOpCode.jb,    TCPUInstruction.TOpCode.jae,
+                             TCPUInstruction.TOpCode.loop,  TCPUInstruction.TOpCode.halt,
+                             TCPUInstruction.TOpCode.yield, TCPUInstruction.TOpCode.&raise];
+end;
+
 class function TPeepholeOptimiser.OptimisePass(AIR: TIRList): Boolean;
 var
   i: Integer;
@@ -256,6 +278,22 @@ begin
     begin
       var NextItem := AIR[NextIdx];
 
+      // <S> Fold MOV RegA, X + MOV RegB, RegA ==> MOV RegB, X (when RegA is dead downstream)
+      if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (NextItem.OpCode = TCPUInstruction.TOpCode.mov) and (NextItem.RegB = Item.RegA) and (NextItem.RegA <> Item.RegA) then
+      begin
+        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) then
+        begin
+          var Replacement := Item;
+          Replacement.RegA := NextItem.RegA;
+
+          AIR.Delete(NextIdx);
+          AIR[i] := Replacement;
+
+          Result := True;
+          Continue;
+        end;
+      end;
+
       // PUSH Rx + POP Rx ==> ELIMINATE
       if (Item.OpCode = TCPUInstruction.TOpCode.push) and (NextItem.OpCode = TCPUInstruction.TOpCode.pop) and (Item.RegB = NextItem.RegA) then
       begin
@@ -264,6 +302,51 @@ begin
 
         Result := True;
         Continue;
+      end;
+
+      // PUSH Rx ... POP Rx where Rx, stack, and control flow are untouched ==> ELIMINATE
+      if (Item.OpCode = TCPUInstruction.TOpCode.push) and (Item.RegB <> TRegisters.ID.Imm) then
+      begin
+        var SavedReg := Item.RegB;
+        var ScanIdx  := i + 1;
+        var Safe     := True;
+        var PopIdx   := -1;
+
+        while (ScanIdx < AIR.Count) and Safe do
+        begin
+          var ScanItem := AIR[ScanIdx];
+
+          if ScanItem.Kind = TIRItem.TKind.&Label then
+            Break;
+
+          if ScanItem.Kind = TIRItem.TKind.Instruction then
+          begin
+            if (ScanItem.OpCode = TCPUInstruction.TOpCode.pop) and (ScanItem.RegA = SavedReg) then
+            begin
+              PopIdx := ScanIdx;
+              Break;
+            end;
+
+            if ModifiesStackOrControlFlow(ScanItem) or
+               InstructionReadsReg(ScanItem, SavedReg) or
+               InstructionOverwritesReg(ScanItem, SavedReg) then
+            begin
+              Safe := False;
+              Break;
+            end;
+          end;
+
+          Inc(ScanIdx);
+        end;
+
+        if Safe and (PopIdx >= 0) then
+        begin
+          AIR.Delete(PopIdx);
+          AIR.Delete(i);
+
+          Result := True;
+          Continue;
+        end;
       end;
 
       // PUSH Rx + POP Ry ==> MOV Ry, Rx

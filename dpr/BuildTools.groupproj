@@ -6,6 +6,9 @@
         <Projects Include="nvm.dproj">
             <Dependencies/>
         </Projects>
+        <Projects Include="harness.passe.dproj">
+            <Dependencies/>
+        </Projects>
         <Projects Include="harness.console.dproj">
             <Dependencies/>
         </Projects>
@@ -26,6 +29,15 @@
     <Target Name="nvm:Make">
         <MSBuild Projects="nvm.dproj" Targets="Make"/>
     </Target>
+    <Target Name="harness_passe">
+        <MSBuild Projects="harness.passe.dproj"/>
+    </Target>
+    <Target Name="harness_passe:Clean">
+        <MSBuild Projects="harness.passe.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="harness_passe:Make">
+        <MSBuild Projects="harness.passe.dproj" Targets="Make"/>
+    </Target>
     <Target Name="harness_console">
         <MSBuild Projects="harness.console.dproj"/>
     </Target>
@@ -36,13 +48,13 @@
         <MSBuild Projects="harness.console.dproj" Targets="Make"/>
     </Target>
     <Target Name="Build">
-        <CallTarget Targets="nvm;harness_console"/>
+        <CallTarget Targets="nvm;harness_passe;harness_console"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="nvm:Clean;harness_console:Clean"/>
+        <CallTarget Targets="nvm:Clean;harness_passe:Clean;harness_console:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="nvm:Make;harness_console:Make"/>
+        <CallTarget Targets="nvm:Make;harness_passe:Make;harness_console:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

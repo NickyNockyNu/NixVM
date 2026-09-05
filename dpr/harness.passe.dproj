@@ -1,15 +1,15 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
-        <ProjectGuid>{E452DB6B-C961-4566-89FD-B9CC9623E85A}</ProjectGuid>
+        <ProjectGuid>{1151DD07-4812-41C1-8449-B5E42607AE56}</ProjectGuid>
         <ProjectVersion>20.3</ProjectVersion>
         <FrameworkType>None</FrameworkType>
         <Base>True</Base>
         <Config Condition="'$(Config)'==''">Base</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
-        <ProjectName Condition="'$(ProjectName)'==''">harness.console</ProjectName>
+        <ProjectName Condition="'$(ProjectName)'==''">harness.passe</ProjectName>
         <TargetedPlatforms>3</TargetedPlatforms>
         <AppType>Console</AppType>
-        <MainSource>harness.console.dpr</MainSource>
+        <MainSource>harness.passe.dpr</MainSource>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
         <Base>true</Base>
@@ -33,7 +33,7 @@
         <DCC_F>false</DCC_F>
         <DCC_K>false</DCC_K>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
-        <SanitizedProjectName>harness_console</SanitizedProjectName>
+        <SanitizedProjectName>harness_passe</SanitizedProjectName>
         <DCC_UnitSearchPath>..\src\;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_AssertionsAtRuntime>false</DCC_AssertionsAtRuntime>
         <DCC_DebugInformation>0</DCC_DebugInformation>
@@ -63,13 +63,18 @@
         <Manifest_File>D:\Passe2\dpr\(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
         <Icon_MainIcon>harness.console_Icon.ico</Icon_MainIcon>
-        <PostBuildEvent><![CDATA[D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.console.exe
+        <PostBuildEvent><![CDATA[D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $EA48 -oem 58656
 $(PostBuildEvent)]]></PostBuildEvent>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
+        <DCCReference Include="..\src\NixVM.Passe.pas"/>
+        <DCCReference Include="..\src\NixVM.Passe.Memory.pas"/>
+        <DCCReference Include="..\src\NixVM.Passe.Video.pas"/>
+        <DCCReference Include="..\src\NixVM.Passe.Renderer.pas"/>
+        <DCCReference Include="..\src\NixVM.Harness.Passe.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
@@ -80,7 +85,7 @@ $(PostBuildEvent)]]></PostBuildEvent>
         <BorlandProject>
             <Delphi.Personality>
                 <Source>
-                    <Source Name="MainSource">harness.console.dpr</Source>
+                    <Source Name="MainSource">harness.passe.dpr</Source>
                 </Source>
             </Delphi.Personality>
             <Deployment Version="5">

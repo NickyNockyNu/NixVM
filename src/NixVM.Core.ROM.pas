@@ -141,7 +141,7 @@ begin
 
   ROM.Major := 1;
 
-  UserAddress := (SizeOf(TCoreSystemMemory) + 3) and not Cardinal(3);
+  //UserAddress := (SizeOf(TCoreSystemMemory) + 3) and not Cardinal(3);
 
   HeapSize  := 64 * 1024;
   StackSize := 16 * 1024;

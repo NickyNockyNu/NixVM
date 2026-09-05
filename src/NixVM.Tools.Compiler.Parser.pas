@@ -94,6 +94,8 @@ type
     function ParseRepeat:           TASTStatement;
     function ParseFor:              TASTStatement;
     function ParseCase:             TASTStatement;
+    function ParseExit:             TASTStatement;
+    function ParseRaise:            TASTStatement;
     function ParseAssignmentOrCall: TASTStatement;
     {$ENDREGION}
 
@@ -1580,6 +1582,37 @@ begin
   Result := CaseStmt;
 end;
 
+function TParser.ParseExit: TASTStatement;
+var
+  Tok: TLexer.TToken;
+begin
+  Tok := FCurTok;
+
+  var RetExpr: TASTExpression := nil;
+
+  if Match(TLexer.TToken.TKind.LParen) then
+  begin
+    RetExpr := ParseExpression;
+    Expect(TLexer.TToken.TKind.RParen, 'Expected ")" after Exit return value');
+  end;
+
+  Exit(TASTExit.Create(RetExpr, Tok.Line, Tok.Col));
+end;
+
+function TParser.ParseRaise: TASTStatement;
+var
+  Tok: TLexer.TToken;
+begin
+  Tok := FCurTok;
+
+  var Expr: TASTExpression := nil;
+
+  if not Check(TLexer.TToken.TKind.Semicolon) and not Check(TLexer.TToken.TKind.End) then
+    Expr := ParseExpression;
+
+  Exit(TASTRaise.Create(Expr, Tok.Line, Tok.Col));
+end;
+
 function TParser.ParseAssignmentOrCall: TASTStatement;
 var
   StartTok: TLexer.TToken;
@@ -1649,16 +1682,6 @@ begin
   if Check(TLexer.TToken.TKind.Begin) then
     Exit(ParseBlock);
 
-  if Match(TLexer.TToken.TKind.Raise) then
-  begin
-    var Expr: TASTExpression := nil;
-
-    if not Check(TLexer.TToken.TKind.Semicolon) and not Check(TLexer.TToken.TKind.End) then
-      Expr := ParseExpression;
-
-    Exit(TASTRaise.Create(Expr, Tok.Line, Tok.Col));
-  end;
-
   if Check(TLexer.TToken.TKind.With) then
     Exit(ParseWith);
 
@@ -1678,17 +1701,10 @@ begin
     Exit(ParseCase);
 
   if Match(TLexer.TToken.TKind.Exit) then
-  begin
-    var RetExpr: TASTExpression := nil;
+    Exit(ParseExit);
 
-    if Match(TLexer.TToken.TKind.LParen) then
-    begin
-      RetExpr := ParseExpression;
-      Expect(TLexer.TToken.TKind.RParen, 'Expected ")" after Exit return value');
-    end;
-
-    Exit(TASTExit.Create(RetExpr, Tok.Line, Tok.Col));
-  end;
+  if Match(TLexer.TToken.TKind.Raise) then
+    Exit(ParseRaise);
 
   if Match(TLexer.TToken.TKind.Break) then
     Exit(TASTBreak.Create(Tok.Line, Tok.Col));

@@ -48,8 +48,8 @@ type
     OEMAddress: Cardinal;
     OEMSize:    Cardinal;
 
-    UserAddres: Cardinal;
-    UserSize:   Cardinal;
+    UserAddress: Cardinal;
+    UserSize:    Cardinal;
 
     HeapAddress: Cardinal;
     HeapSize:    Cardinal;

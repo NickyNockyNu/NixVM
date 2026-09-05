@@ -1,25 +1,25 @@
 program testpanic targets console;
 
 {$HEAP 2k}
-{$STACK 2k}
+{$STACK 1k}
 
 uses
   SysConst,
   System;
   
 type
-  PException = ^TException;
-  TException = record
+  PCustomException = ^TCustomException;
+  TCustomException = record
     Code: Cardinal;
   end;
   
 procedure OnPanic; interrupt;
 var
-  e: PException;
+  e: PCustonException;
 begin
   Println('Caught panic %d. User code %d', SystemState^.PanicCode, SystemState^.UserCode);
   
-  if SystemState^.PanicCode = 8 then
+ if SystemState^.PanicCode = TPanicCode.Exception then
   begin
     e := PException(SystemState^.UserCode);
     Println('Exception code %d', e^.Code);
@@ -29,11 +29,9 @@ begin
 end;
 
 var
-  e: TException;
+  e: TCustomException;
 begin
-  SystemState^.PanicCode := 8;
-
-  Interrupts[0] := @OnPanic;
+  Interrupts[TInterruptID.Panic] := @OnPanic;
   
   Println('Raising exception...');
   

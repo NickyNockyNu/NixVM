@@ -253,11 +253,13 @@ type
   {$REGION 'Identifier'}
   TASTIdentifier = class(TASTExpression)
   private
-    FName: String;
+    FName:   String;
+    FSymbol: TObject;
   public
     constructor Create(const AName: String; ALine: Integer = 0; ACol: Integer = 0);
 
-    property Name: String read FName write FName;
+    property Name:   String  read FName   write FName;
+    property Symbol: TObject read FSymbol write FSymbol;
   end;
   {$ENDREGION}
 
@@ -503,6 +505,7 @@ type
     FBody:         TASTStatement;
     FIsInlineVar:  Boolean;
     FExplicitType: TASTType;
+    FSymbol:       TObject;
   public
     constructor Create(const ALoopVar: String; AStartExpr, AStopExpr: TASTExpression; ADownto: Boolean; ABody: TASTStatement; ALine: Integer = 0; ACol: Integer = 0);
     destructor  Destroy; override;
@@ -514,6 +517,7 @@ type
     property Body:         TASTStatement  read FBody         write FBody;
     property IsInlineVar:  Boolean        read FIsInlineVar  write FIsInlineVar;
     property ExplicitType: TASTType       read FExplicitType write FExplicitType;
+    property Symbol:       TObject        read FSymbol       write FSymbol;
   end;
   {$ENDREGION}
 
@@ -525,6 +529,7 @@ type
     FBody:         TASTStatement;
     FIsInlineVar:  Boolean;
     FExplicitType: TASTType;
+    FSymbol:       TObject;
   public
     constructor Create(const ALoopVar: String; ACollection: TASTExpression; ABody: TASTStatement; ALine: Integer = 0; ACol: Integer = 0);
     destructor  Destroy; override;
@@ -534,6 +539,7 @@ type
     property Body:         TASTStatement  read FBody         write FBody;
     property IsInlineVar:  Boolean        read FIsInlineVar  write FIsInlineVar;
     property ExplicitType: TASTType       read FExplicitType write FExplicitType;
+    property Symbol:       TObject        read FSymbol       write FSymbol;
   end;
   {$ENDREGION}
 
@@ -1014,11 +1020,7 @@ begin
           var VarDecl := TASTVarDecl(Node);
 
           if Assigned(VarDecl.VarType) then
-          begin
-            var FieldSize := (VarDecl.VarType.Size + 3) and not Cardinal(3);
-
-            Result := Result + (Cardinal(VarDecl.Names.Count) * FieldSize);
-          end;
+            Result := Result + (Cardinal(VarDecl.Names.Count) * VarDecl.VarType.Size);
         end;
       end;
     end;

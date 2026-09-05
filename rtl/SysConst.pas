@@ -10,6 +10,7 @@ const
   _Addr_MemoryMap        = $00000490;
   _Addr_Timers           = $000004F8;
   _Addr_SystemRegisters  = $00000518;
+  _Addr_OEM              = $00000528;
 
 const
   // Interrupt ID's

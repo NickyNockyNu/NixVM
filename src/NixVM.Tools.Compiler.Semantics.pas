@@ -204,13 +204,16 @@ type
   TScope = class
   private
     FParent:     TScope;
-    FSymbols:    TObjectDictionary<String, TSymbol>;
+    FSymbols:    TDictionary<String, TSymbol>;
+    FOwnedList:  TObjectList<TSymbol>;
     FLocalSize:  Cardinal;
   public
     constructor Create(AParent: TScope = nil);
     destructor  Destroy; override;
 
-    function Define(ASymbol: TSymbol): Boolean;
+    function Define(ASymbol: TSymbol; AOwns: Boolean = True): Boolean;
+
+    procedure OwnSymbol(ASymbol: TSymbol);
 
     function Resolve     (const AName: String): TSymbol;
     function ResolveLocal(const AName: String): TSymbol;
@@ -256,6 +259,9 @@ type
     procedure AnalyzeRepeat   (ARepeat: TASTRepeat);
     procedure AnalyzeFor      (AFor:    TASTFor);
     procedure AnalyzeForIn    (AForIn:  TASTForIn);
+    procedure AnalyzeExit     (AExit:   TASTExit);
+    procedure AnalyzeRaise    (ARaise:  TASTRaise);
+    procedure AnalyzeCase     (ACase:   TASTCase);
     procedure AnalyzeProcCall (ACall:   TASTProcCall);
 
     function AnalyzeExpression  (AExpr:     TASTExpression):   TType;
@@ -481,26 +487,37 @@ begin
   inherited Create;
 
   FParent    := AParent;
-  FSymbols   := TObjectDictionary<String, TSymbol>.Create([doOwnsValues]);
+  FSymbols   := TDictionary<String, TSymbol>.Create;
+  FOwnedList := TObjectList<TSymbol>.Create(True);
   FLocalSize := 0;
 end;
 
 destructor TScope.Destroy;
 begin
   FSymbols.Free;
+  FOwnedList.Free;
 
   inherited;
 end;
 
-function TScope.Define(ASymbol: TSymbol): Boolean;
+function TScope.Define(ASymbol: TSymbol; AOwns: Boolean): Boolean;
 begin
   var Key := LowerCase(ASymbol.Name);
 
   if FSymbols.ContainsKey(Key) then
     Exit(False);
 
+  if AOwns then
+    FOwnedList.Add(ASymbol);
+
   FSymbols.Add(Key, ASymbol);
   Result := True;
+end;
+
+procedure TScope.OwnSymbol(ASymbol: TSymbol);
+begin
+  if (ASymbol <> nil) and (FOwnedList.IndexOf(ASymbol) < 0) then
+    FOwnedList.Add(ASymbol);
 end;
 
 function TScope.ResolveLocal(const AName: String): TSymbol;
@@ -628,6 +645,10 @@ begin
   FGlobalScope.Define(TSymbol.Create('succ',     TSymbol.TKind.Function, FuncInt));
   FGlobalScope.Define(TSymbol.Create('pred',     TSymbol.TKind.Function, FuncInt));
   FGlobalScope.Define(TSymbol.Create('assigned', TSymbol.TKind.Function, FuncBool));
+
+  FGlobalScope.Define(TSymbol.Create('_bsetf', TSymbol.TKind.Procedure, ProcType));
+  FGlobalScope.Define(TSymbol.Create('_bclrf', TSymbol.TKind.Procedure, ProcType));
+  FGlobalScope.Define(TSymbol.Create('_btstf', TSymbol.TKind.Function,  FuncBool));
 end;
 
 procedure TSemanticAnalyzer.Error(const AMsg: String; ANode: TASTNode);
@@ -752,8 +773,7 @@ begin
 
             Result.RecordFields.Add(RField);
 
-            var AlignedSize := (FieldType.Size + 3) and not Cardinal(3);
-            Inc(CurrentOffset, AlignedSize);
+            Inc(CurrentOffset, FieldType.Size);
           end;
         end;
       end;
@@ -761,6 +781,38 @@ begin
       Result.Size := CurrentOffset;
       FBuiltinTypes.Add(Format('Record_%p', [Pointer(Result)]), Result);
     end;
+
+//    TASTType.TKind.Record:
+//    begin
+//      Result := TType.CreateRecord('Record');
+//      var CurrentOffset: Cardinal := 0;
+//
+//      for var FieldNode in AAstType.RecordFields do
+//      begin
+//        if FieldNode is TASTVarDecl then
+//        begin
+//          var VarDecl := TASTVarDecl(FieldNode);
+//          var FieldType := ResolveType(VarDecl.VarType);
+//
+//          for var FName in VarDecl.Names do
+//          begin
+//            var RField: TType.TRecordField;
+//
+//            RField.Name   := FName;
+//            RField.&Type  := FieldType;
+//            RField.Offset := CurrentOffset;
+//
+//            Result.RecordFields.Add(RField);
+//
+//            var AlignedSize := (FieldType.Size + 3) and not Cardinal(3);
+//            Inc(CurrentOffset, AlignedSize);
+//          end;
+//        end;
+//      end;
+//
+//      Result.Size := CurrentOffset;
+//      FBuiltinTypes.Add(Format('Record_%p', [Pointer(Result)]), Result);
+//    end;
 
     TASTType.TKind.Set:
     begin
@@ -1415,6 +1467,8 @@ begin
 
   if LocalSym <> nil then
   begin
+    AIdent.Symbol := LocalSym;
+
     if LocalSym.Kind = TSymbol.TKind.Function then
     begin
       if Assigned(LocalSym.SymbolType) and Assigned(LocalSym.SymbolType.ReturnType) then
@@ -1455,6 +1509,8 @@ begin
 
   if GlobalSym <> nil then
   begin
+    AIdent.Symbol := GlobalSym;
+
     if GlobalSym.Kind = TSymbol.TKind.Function then
     begin
       if Assigned(GlobalSym.SymbolType) and Assigned(GlobalSym.SymbolType.ReturnType) then
@@ -2243,6 +2299,7 @@ var
   VarType:    TType;
   StartType:  TType;
   StopType:   TType;
+  LoopScope:  TScope;
 begin
   var StartExp := AFor.StartExpr;
   var StopExp  := AFor.StopExpr;
@@ -2266,33 +2323,32 @@ begin
     else
       VarType := StartType;
 
-    LoopVarSym := FCurrentScope.ResolveLocal(AFor.LoopVar);
+    var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
+    FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
 
-    if LoopVarSym = nil then
-    begin
-      var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
+    LoopVarSym := TSymbol.Create(AFor.LoopVar, TSymbol.TKind.Variable, VarType);
+    LoopVarSym.Storage     := TSymbol.TStorage.Local;
+    LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
 
-      FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+    AFor.Symbol := LoopVarSym;
+    FCurrentScope.OwnSymbol(LoopVarSym);
 
-      LoopVarSym := TSymbol.Create(AFor.LoopVar, TSymbol.TKind.Variable, VarType);
+    LoopScope := TScope.Create(FCurrentScope);
+    FCurrentScope := LoopScope;
 
-      LoopVarSym.Storage     := TSymbol.TStorage.Local;
-      LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
-
-      FCurrentScope.Define(LoopVarSym);
-    end
-    else
-    begin
-      if not CheckTypeCompatibility(LoopVarSym.SymbolType, VarType) then
-        Error(Format('Inline loop variable "%s" conflicts with previous declaration of type "%s"', [AFor.LoopVar, LoopVarSym.SymbolType.Name]), AFor);
+    try
+      LoopScope.Define(LoopVarSym, False);
+      AnalyzeStatement(AFor.Body);
+    finally
+      FCurrentScope := LoopScope.Parent;
+      LoopScope.Free;
     end;
-
-    AnalyzeStatement(AFor.Body);
 
     Exit;
   end;
 
-  LoopVarSym := FCurrentScope.Resolve(AFor.LoopVar);
+  LoopVarSym  := FCurrentScope.Resolve(AFor.LoopVar);
+  AFor.Symbol := LoopVarSym;
 
   if LoopVarSym = nil then
     Error(Format('Undeclared loop variable "%s"', [AFor.LoopVar]), AFor)
@@ -2307,6 +2363,7 @@ var
   LoopVarSym: TSymbol;
   VarType:    TType;
   CollType:   TType;
+  LoopScope:  TScope;
 begin
   CollType := AnalyzeExpression(AForIn.Collection);
 
@@ -2328,33 +2385,34 @@ begin
         VarType := FBuiltinTypes['integer'];
     end;
 
-    LoopVarSym := FCurrentScope.ResolveLocal(AForIn.LoopVar);
+    var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
 
-    if LoopVarSym = nil then
-    begin
-      var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
+    FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
 
-      FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+    LoopVarSym := TSymbol.Create(AForIn.LoopVar, TSymbol.TKind.Variable, VarType);
 
-      LoopVarSym := TSymbol.Create(AForIn.LoopVar, TSymbol.TKind.Variable, VarType);
+    LoopVarSym.Storage     := TSymbol.TStorage.Local;
+    LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
 
-      LoopVarSym.Storage     := TSymbol.TStorage.Local;
-      LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
+    AForIn.Symbol := LoopVarSym;
+    FCurrentScope.OwnSymbol(LoopVarSym);
 
-      FCurrentScope.Define(LoopVarSym);
-    end
-    else
-    begin
-      if not CheckTypeCompatibility(LoopVarSym.SymbolType, VarType) then
-        Error(Format('Inline loop variable "%s" conflicts with previous declaration of type "%s"', [AForIn.LoopVar, LoopVarSym.SymbolType.Name]), AForIn);
+    LoopScope := TScope.Create(FCurrentScope);
+    FCurrentScope := LoopScope;
+
+    try
+      LoopScope.Define(LoopVarSym, False);
+      AnalyzeStatement(AForIn.Body);
+    finally
+      FCurrentScope := LoopScope.Parent;
+      LoopScope.Free;
     end;
-
-    AnalyzeStatement(AForIn.Body);
 
     Exit;
   end;
 
   LoopVarSym := FCurrentScope.Resolve(AForIn.LoopVar);
+  AForIn.Symbol := LoopVarSym;
 
   if LoopVarSym = nil then
   begin
@@ -2392,6 +2450,46 @@ begin
     Error('Expression in "for..in" must be an array, set, or string', AForIn.Collection);
 
   AnalyzeStatement(AForIn.Body);
+end;
+
+procedure TSemanticAnalyzer.AnalyzeExit(AExit: TASTExit);
+begin
+  if AExit.Expression <> nil then
+  begin
+    var RetExpr := AExit.Expression;
+
+    FoldExpression(RetExpr);
+    AExit.Expression := RetExpr;
+
+    var RetType := AnalyzeExpression(AExit.Expression);
+    var ResultSym := FCurrentScope.Resolve('result');
+
+    if ResultSym = nil then
+      Error('Exit with a return value is only allowed in functions', AExit)
+
+    else if not CheckTypeCompatibility(ResultSym.SymbolType, RetType) then
+      Error(Format('Cannot assign type "%s" to function return type "%s"', [RetType.Name, ResultSym.SymbolType.Name]), AExit);
+  end;
+end;
+
+procedure TSemanticAnalyzer.AnalyzeRaise(ARaise: TASTRaise);
+begin
+  if Assigned(ARaise.Expression) then
+    AnalyzeExpression(ARaise.Expression);
+end;
+
+procedure TSemanticAnalyzer.AnalyzeCase(ACase: TASTCase);
+begin
+  var SelType := AnalyzeExpression(ACase.Selector);
+
+  if not SelType.IsInteger and not SelType.IsBoolean and (SelType.Kind <> TType.TKind.Char) then
+    Error('Case selector must evaluate to an ordinal type (Integer, Char, Boolean, Enum)', ACase.Selector);
+
+  for var Branch in ACase.Branches do
+    AnalyzeStatement(Branch.Statement);
+
+  if Assigned(ACase.ElseStmt) then
+    AnalyzeStatement(ACase.ElseStmt);
 end;
 
 procedure TSemanticAnalyzer.AnalyzeProcCall(ACall: TASTProcCall);
@@ -2453,46 +2551,9 @@ begin
   else if AStmt is TASTFor      then AnalyzeFor     (TASTFor     (AStmt))
   else if AStmt is TASTForIn    then AnalyzeForIn   (TASTForIn   (AStmt))
   else if AStmt is TASTProcCall then AnalyzeProcCall(TASTProcCall(AStmt))
-  else if AStmt is TASTExit then
-  begin
-    var ExitStmt := TASTExit(AStmt);
-
-    if ExitStmt.Expression <> nil then
-    begin
-      var RetExpr := ExitStmt.Expression;
-
-      FoldExpression(RetExpr);
-      ExitStmt.Expression := RetExpr;
-
-      var RetType := AnalyzeExpression(ExitStmt.Expression);
-      var ResultSym := FCurrentScope.Resolve('result');
-
-      if ResultSym = nil then
-        Error('Exit with a return value is only allowed in functions', ExitStmt)
-
-      else if not CheckTypeCompatibility(ResultSym.SymbolType, RetType) then
-        Error(Format('Cannot assign type "%s" to function return type "%s"', [RetType.Name, ResultSym.SymbolType.Name]), ExitStmt);
-    end;
-  end
-  else if AStmt is TASTCase then
-  begin
-    var CaseStmt := TASTCase(AStmt);
-    var SelType := AnalyzeExpression(CaseStmt.Selector);
-
-    if not SelType.IsInteger and not SelType.IsBoolean and (SelType.Kind <> TType.TKind.Char) then
-      Error('Case selector must evaluate to an ordinal type (Integer, Char, Boolean, Enum)', CaseStmt.Selector);
-
-    for var Branch in CaseStmt.Branches do
-      AnalyzeStatement(Branch.Statement);
-
-    if Assigned(CaseStmt.ElseStmt) then
-      AnalyzeStatement(CaseStmt.ElseStmt);
-  end
-  else if AStmt is TASTRaise then
-  begin
-    if Assigned(TASTRaise(AStmt).Expression) then
-      AnalyzeExpression(TASTRaise(AStmt).Expression);
-  end;
+  else if AStmt is TASTExit     then AnalyzeExit    (TASTExit    (AStmt))
+  else if AStmt is TASTRaise    then AnalyzeRaise   (TASTRaise   (AStmt))
+  else if AStmt is TASTCase     then AnalyzeCase    (TASTCase    (AStmt));
 end;
 
 procedure TSemanticAnalyzer.AnalyzeDeclaration(ADecl: TASTDeclaration);
@@ -2897,11 +2958,9 @@ begin
       end;
 
       var RType := TType.Create(TType.TKind.Procedure, RDecl.Name, 0);
-
       RType.ReturnType := RetType;
 
       var RSym := TSymbol.Create(RDecl.Name, RKind, RType);
-
       RSym.Declaration := RDecl;
       RSym.IsSysCall   := RDecl.IsSysCall;
       RSym.SysCallID   := RDecl.SysCallID;
@@ -2911,11 +2970,23 @@ begin
     else
       AnalyzeDeclaration(Decl);
 
+  for var Decl in AUnit.InterfaceDecls do
+    if Decl is TASTTypeDecl then
+      for var MNode in TASTTypeDecl(Decl).DeclType.RecordMethods do
+        if (MNode is TASTRoutineDecl) and (TASTRoutineDecl(MNode).Body <> nil) then
+          AnalyzeRoutine(TASTRoutineDecl(MNode));
+
   for var Decl in AUnit.ImplementationDecls do
     if Decl is TASTRoutineDecl then
       AnalyzeRoutine(TASTRoutineDecl(Decl))
     else
       AnalyzeDeclaration(Decl);
+
+  for var Decl in AUnit.ImplementationDecls do
+    if Decl is TASTTypeDecl then
+      for var MNode in TASTTypeDecl(Decl).DeclType.RecordMethods do
+        if (MNode is TASTRoutineDecl) and (TASTRoutineDecl(MNode).Body <> nil) then
+          AnalyzeRoutine(TASTRoutineDecl(MNode));
 
   if Assigned(AUnit.InitializationBlock) then
     AnalyzeBlock(AUnit.InitializationBlock);

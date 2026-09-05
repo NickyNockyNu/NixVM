@@ -26,22 +26,29 @@ program nvm;
 
   Language features:
 
+    "packed" for records (They are now packed by default, they used to be aligned so it should be easy to add)
+
     labled for (for continue and break)
+      or contine and break can take the "for variable" as a parameter. eg:
+        for var y := 0 to 99 do
+          for var x := 0 to 99 do
+            if someexitcondition then break y;
+      ... or named block `begin is name` and a `break name;`
+
+  Compiler:
+
+    TCodeGenerator.GenCallExpr - More checks for literal arguments (see `_bsetf` etc)
 
   This tool:
 
-    Finish up the "gen" tool
+    Stubfile elimnation on non windows targets
+    Finish up the "gen" tool and GenUnits
 
   Core features:
 
-    Do we add simple file IO in the core syscalls?
-
-  Harnesses:
-
-    "Passe" harness - We'll refactor (probably rewrite) our old Passe project to be an nvm harness.
-
   IDE (WiP):
 
+    Keyword: raise, SetLength,
     So big it requires it's own TODO list (see the nvmide source for the TODO list)
 
   Other possible languages (way down the line):
@@ -59,6 +66,12 @@ program nvm;
 {$RTTI EXPLICIT METHODS([]) PROPERTIES([]) FIELDS([])}
 
 uses
+{$IF DEFINED(MSWINDOWS)}
+  Winapi.Windows,
+  Winapi.ShellAPI,
+{$ELSE IF DEFINED(POSIX)}
+  Posix.Stdlib,
+{$ENDIF}
   System.SysUtils,
   System.Classes,
   System.IOUtils,
@@ -77,7 +90,9 @@ uses
   NixVM.Tools.IR,
   NixVM.Tools.Assembler,
   NixVM.Tools.Disasm,
+{$IF DEFINED(MSWINDOWS)}
   NixVM.Tools.BuildPE,
+{$ENDIF}
   NixVM.Tools.Compiler,
   NixVM.Tools.Compiler.Lexer,
   NixVM.Tools.Compiler.AST,
@@ -126,14 +141,19 @@ end;
 
 procedure PrintBuildOptions;
 begin
+{$IF DEFINED(MSWINDOWS)}
   Writeln('  -x, --exe              Build executable file');
+{$ENDIF}
   Writeln('  -t, --target <name>    Override target');
   Writeln('  -z, --optimize         Optimise output');
   Writeln('  -base <addr>           Override base address (e.g. -base 0x4E0)');
   Writeln('  -heap <size>           Override heap size (e.g. -heap 128k, -heap $20000)');
   Writeln('  -stack <size>          Override stack size');
+{$IF DEFINED(MSWINDOWS)}
   Writeln('  -i, --icon <file.ico>  Override the executables icon');
   Writeln('  -vi, --version         Emit version information in executable (disable with -vi-)');
+{$ENDIF}
+  Writeln('  -r, --run              Run the output on successful build');
 end;
 
 procedure AddBuildOptions;
@@ -146,11 +166,15 @@ begin
 
   TParams.AddOpt(TParams.TOption.TKind.Str, 't', 'target');
 
+{$IF DEFINED(MSWINDOWS)}
   TParams.AddOpt(TParams.TOption.TKind.Bool, 'x', 'exe');
 
   TParams.AddOpt(TParams.TOption.TKind.Str, 'i', 'icon');
 
   TParams.AddOpt(TParams.TOption.TKind.Bool, 'vi', 'version');
+{$ENDIF}
+
+  TParams.AddOpt(TParams.TOption.TKind.Bool, 'r', 'run');
 end;
 
 procedure PrintUsage;
@@ -165,16 +189,73 @@ begin
   Writeln;
 end;
 
-procedure ProcessFiles(const AOutExt: String);
+procedure ProcessFiles(const AOutExt: String; const AInExt: String = '');
 begin
   InputFile  := TParams.Params[1];
   OutputFile := TParams.GetOpt('-o', ChangeFileExt(InputFile, '.' + AOutExt));
 
   if not FileExists(InputFile) then
   begin
+    if Length(AInExt) > 0 then
+    begin
+      var NewFile := ChangeFileExt(InputFile, '.' + AInExt);
+
+      if FileExists(NewFile) then
+      begin
+        InputFIle := NewFile;
+        Exit;
+      end;
+    end;
+
     Writeln('File does not exist: ', InputFile);
     Halt(1);
   end;
+end;
+
+procedure Execute(const AExe, AParams: String);
+var
+  CommandLine: String;
+{$IF DEFINED(MSWINDOWS)}
+  SI: TStartupInfo;
+  PI: TProcessInformation;
+begin
+  if Length(AParams) > 0 then
+    CommandLine := '"' + AExe + '" ' + AParams
+  else
+    CommandLine := '"' + AExe + '"';
+
+  FillChar(SI, SizeOf(SI), 0);
+  SI.cb := SizeOf(SI);
+
+  if Verbose then
+    Writeln(#13#10'Executing ' + CommandLine + #13#10);
+
+  var Result := CreateProcess(nil, PChar(CommandLine), nil, nil, True, 0, nil, nil, SI, PI);
+
+  if Result then
+    try
+      WaitForSingleObject(PI.hProcess, INFINITE);
+      //GetExitCodeProcess(PI.hProcess, ExitCode);
+    finally
+      CloseHandle(PI.hThread);
+      CloseHandle(PI.hProcess);
+    end
+  else if Verbose then
+    Writeln('Failed to create process');
+
+  //ShellExecute(0, 'open', PChar(AExe), PChar(AParams), nil, SW_SHOWNORMAL);
+{$ELSE IF DEFINED(POSIX)}
+begin
+  if Length(AParams) > 0 then
+    CommandLine := AExe + ' ' + AParams
+  else
+    CommandLine := AExe;
+
+  if Verbose then
+    Writeln(#13#10'Executing ' + CommandLine + #13#10);
+
+  _wsystem(PAnsiChar(UTF8Encode(CommandLine)));
+{$ENDIF}
 end;
 
 procedure DoCompile;
@@ -192,7 +273,11 @@ begin
   TParams.Process;
 
   Assemble := TParams.GetOpt('-a', False);
-  Build    := TParams.GetOpt('-x', False);
+{$IF DEFINED(MSWINDOWS)}
+  Build := TParams.GetOpt('-x', False);
+{$ELSE}
+  Build := False;
+{$ENDIF}
 
   if TParams.GetOpt('-h', False) or (TParams.ParamCount < 2) then
   begin
@@ -207,11 +292,11 @@ begin
   end;
 
   if Assemble then
-    ProcessFiles('asm')
+    ProcessFiles('asm', 'pas')
   else if Build then
-    ProcessFiles('exe')
+    ProcessFiles('exe', 'pas')
   else
-    ProcessFiles('nvm');
+    ProcessFiles('nvm', 'pas');
 
   Compiler := TCompiler.Create;
 
@@ -243,6 +328,7 @@ begin
     if Verbose then
       Writeln('Target: ', StubFile);
 
+    // TODO: Can only do this on windows
     StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + StubFile + '.exe');
 
     if FileExists(StubFile) then
@@ -308,6 +394,7 @@ begin
         end;
       end;
     end
+{$IF DEFINED(MSWINDOWS)}
     else if Build then
     begin
       var ROMStream := TBytesStream.Create;
@@ -416,6 +503,7 @@ begin
         ROMStream.Free;
       end;
     end
+{$ENDIF}
     else
     begin
       if Verbose then
@@ -448,6 +536,14 @@ begin
   finally
     Compiler.Free;
   end;
+
+  if TParams.GetOpt('-r', False) then
+  begin
+    if Build then
+      Execute(OutputFile, '')
+    else
+      Execute(StubFile, OutputFile);
+  end;
 end;
 
 procedure DoAssemble;
@@ -464,7 +560,12 @@ begin
   TParams.Process;
 
   RawBinary := TParams.GetOpt('-r', False);
-  Build     := TParams.GetOpt('-x', False);
+
+{$IF DEFINED(MSWINDOWS)}
+  Build := TParams.GetOpt('-x', False);
+{$ELSE}
+  Build := False;
+{$ENDIF}
 
   if TParams.GetOpt('-h', False) or (TParams.ParamCount < 2) then
   begin
@@ -479,11 +580,11 @@ begin
   end;
 
   if RawBinary then
-    ProcessFiles('bin')
+    ProcessFiles('bin', 'asm')
   else if Build then
-    ProcessFiles('exe')
+    ProcessFiles('exe', 'asm')
   else
-    ProcessFiles('nvm');
+    ProcessFiles('nvm', 'asm');
 
   &Assembler := TAssembler.Create;
   &Assembler.Optimise := TParams.GetOpt('-z', &Assembler.Optimise);
@@ -514,6 +615,8 @@ begin
     if Verbose then
       Writeln('Target: ', StubFile);
 
+
+    // TODO: Can't do this on non windows platforms
     StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + StubFile + '.exe');
 
     if FileExists(StubFile) then
@@ -556,6 +659,7 @@ begin
     &Assembler.ROMHeader.UserAddress := TParams.GetOpt('-base',  &Assembler.ROMHeader.UserAddress);
     &Assembler.ROMHeader.HeapSize    := TParams.GetOpt('-heap',  &Assembler.ROMHeader.HeapSize);
     &Assembler.ROMHeader.StackSize   := TParams.GetOpt('-stack', &Assembler.ROMHeader.StackSize);
+
 
     if Build then
     begin
@@ -696,6 +800,14 @@ begin
   finally
     &Assembler.Free;
   end;
+
+  if TParams.GetOpt('-r', False) then
+  begin
+    if Build then
+      Execute(OutputFile, '')
+    else
+      Execute(StubFile, OutputFile);
+  end;
 end;
 
 procedure DoDisassemble;
@@ -723,7 +835,7 @@ begin
     Halt(0);
   end;
 
-  ProcessFiles('asm');
+  ProcessFiles('asm', 'nvm');
 
   Disassembler := TDisassembler.Create;
 
@@ -821,7 +933,7 @@ begin
     Halt(0);
   end;
 
-  ProcessFiles('exe');
+  ProcessFiles('exe', 'nvm');
 
   if Verbose then
     Write('Reading ', InputFile, ' ... ');
@@ -960,14 +1072,17 @@ begin
     Halt(0);
   end;
 
-  ProcessFiles('exe');
+  ProcessFiles('exe', 'exe');
 
   TargetInfo.Reset;
 
-  TargetInfo.UserAddress  := TParams.GetOpt('base',  TargetInfo.UserAddress);
-  TargetInfo.HarnessMajor := TParams.GetOpt('major', TargetInfo.HarnessMajor);
-  TargetInfo.HarnessMinor := TParams.GetOpt('minor', TargetInfo.HarnessMinor);
-  TargetInfo.OEMSize      := TParams.GetOpt('oem',   TargetInfo.OEMSize);
+  if TParams.GetOpt('t', False) then
+    Writeln('true');
+
+  TargetInfo.UserAddress  := TParams.GetOpt('-base',  TargetInfo.UserAddress);
+  TargetInfo.HarnessMajor := TParams.GetOpt('-major', TargetInfo.HarnessMajor);
+  TargetInfo.HarnessMinor := TParams.GetOpt('-minor', TargetInfo.HarnessMinor);
+  TargetInfo.OEMSize      := TParams.GetOpt('-oem',   TargetInfo.OEMSize);
 
   if InputFile <> OutputFile then
     TFile.Copy(InputFile, OutputFile, True);
@@ -1092,7 +1207,9 @@ begin
     Halt(0);
   end;
 
-  TConsole.Run(TParams.Params[1]);
+  ProcessFiles('nvm', 'nvm');
+
+  TConsole.Run(InputFile);
 end;
 
 procedure DoGenUnits;

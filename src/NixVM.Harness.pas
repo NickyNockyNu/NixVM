@@ -97,6 +97,9 @@ type
     constructor Create(const AROMFile: String = '');
     destructor  Destroy; override;
 
+    class procedure CError(const AMessage: String; AErrorCode: Integer = 1); virtual;
+          procedure  Error(const AMessage: String; AErrorCode: Integer = 1); virtual;
+
     procedure Start;
     procedure Stop;
 
@@ -540,6 +543,30 @@ begin
   FMemory.Free;
 
   inherited;
+end;
+
+class procedure TCustomHarness<TSystemMemory>.CError(const AMessage: String; AErrorCode: Integer = 1);
+begin
+  if IsConsole then
+    Writeln(AMessage);
+
+  Halt(AErrorCode);
+end;
+
+procedure TCustomHarness<TSystemMemory>.Error(const AMessage: String; AErrorCode: Integer = 1);
+begin
+  if FRunning then
+  begin
+    DebugPrint(AnsiString(AMessage));
+    FCPU.Halt;
+  end
+  else
+  begin
+    if IsConsole then
+      Writeln(AMessage);
+
+    Halt(AErrorCode);
+  end;
 end;
 
 procedure TCustomHarness<TSystemMemory>.Start;

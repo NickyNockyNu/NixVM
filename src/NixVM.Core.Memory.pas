@@ -1513,8 +1513,6 @@ procedure TMemory.ArrayClear(AArray: TDynArray);
 begin
   FHeap.Arrays.Clear(AArray);
 end;
-
-
 {$ENDREGION}
 
 {$REGION 'TMemory<TSystemMemory>'}

@@ -20,7 +20,6 @@ var
   ptPtr: PPoint;
   hero: TEntity;
   grid: array[0..2, 0..2] of Integer;
-  i, j: Integer;
 
 procedure ScalePoint(var pt: TPoint; factor: Integer);
 begin
@@ -32,7 +31,7 @@ begin
 end;
 
 begin
-  for i := 0 to 2 do
+  for var i := 0 to 2 do
   begin
     points[i].x := (i + 1) * 10;
     points[i].y := (i + 1) * 20;
@@ -60,8 +59,8 @@ begin
   Println('Hero ID=%d, Pos=(%d, %d), HP=%d, ATK=%d', 
           hero.id, hero.pos.x, hero.pos.y, hero.stats[0], hero.stats[2]);
 
-  for i := 0 to 2 do
-    for j := 0 to 2 do
+  for var i := 0 to 2 do
+    for var j := 0 to 2 do
       grid[i, j] := (i * 10) + j;
 
   Println('Grid[1, 2] = %d', grid[1, 2]);
