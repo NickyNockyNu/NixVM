@@ -31,7 +31,7 @@ begin
     VideoRegisters^.Flags := not VideoRegisters^.Flags;
   end;
 
-  //Yield;
+  Yield;
 end;
 
 begin

@@ -59,10 +59,12 @@ begin
   Println('Hero ID=%d, Pos=(%d, %d), HP=%d, ATK=%d', 
           hero.id, hero.pos.x, hero.pos.y, hero.stats[0], hero.stats[2]);
 
+
   for var i := 0 to 2 do
     for var j := 0 to 2 do
       grid[i, j] := (i * 10) + j;
 
   Println('Grid[1, 2] = %d', grid[1, 2]);
   Println('Grid[2, 0] = %d', grid[2, 0]);
+
 end.

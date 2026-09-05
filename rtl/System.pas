@@ -32,6 +32,7 @@ type
   TSystemState = record
     PC:        Cardinal;
     Flags:     Byte;
+    Padding:   array[0..2] of Byte;
     Registers: TRegisters;
     PanicCode: Cardinal;
     UserCode:  Cardinal;

@@ -15,13 +15,13 @@ type
   
 procedure OnPanic; interrupt;
 var
-  e: PCustonException;
+  e: PCustomException;
 begin
   Println('Caught panic %d. User code %d', SystemState^.PanicCode, SystemState^.UserCode);
   
- if SystemState^.PanicCode = TPanicCode.Exception then
+ if SystemState^.PanicCode = 8 then
   begin
-    e := PException(SystemState^.UserCode);
+    e := PCustomException(SystemState^.UserCode);
     Println('Exception code %d', e^.Code);
   end;
   
@@ -31,7 +31,7 @@ end;
 var
   e: TCustomException;
 begin
-  Interrupts[TInterruptID.Panic] := @OnPanic;
+  Interrupts[0] := @OnPanic;
   
   Println('Raising exception...');
   

@@ -208,11 +208,10 @@ type
     FOwnedList:  TObjectList<TSymbol>;
     FLocalSize:  Cardinal;
   public
-    constructor Create(AParent: TScope = nil);
+    constructor Create(AParent: TScope = nil; AOwnsSymbols: Boolean = True);
     destructor  Destroy; override;
 
-    function Define(ASymbol: TSymbol; AOwns: Boolean = True): Boolean;
-
+    function Define(ASymbol: TSymbol): Boolean;
     procedure OwnSymbol(ASymbol: TSymbol);
 
     function Resolve     (const AName: String): TSymbol;
@@ -482,42 +481,55 @@ end;
 {$ENDREGION}
 
 {$REGION 'Scope'}
-constructor TScope.Create(AParent: TScope);
+constructor TScope.Create(AParent: TScope; AOwnsSymbols: Boolean);
 begin
   inherited Create;
 
-  FParent    := AParent;
-  FSymbols   := TDictionary<String, TSymbol>.Create;
-  FOwnedList := TObjectList<TSymbol>.Create(True);
+  FParent  := AParent;
+  FSymbols := TDictionary<String, TSymbol>.Create;
+
+  if AOwnsSymbols then
+    FOwnedList := TObjectList<TSymbol>.Create(True)
+  else
+    FOwnedList := nil;
+
   FLocalSize := 0;
 end;
 
 destructor TScope.Destroy;
 begin
   FSymbols.Free;
-  FOwnedList.Free;
+
+  if Assigned(FOwnedList) then
+    FOwnedList.Free;
 
   inherited;
 end;
 
-function TScope.Define(ASymbol: TSymbol; AOwns: Boolean): Boolean;
+function TScope.Define(ASymbol: TSymbol): Boolean;
 begin
   var Key := LowerCase(ASymbol.Name);
 
   if FSymbols.ContainsKey(Key) then
     Exit(False);
 
-  if AOwns then
-    FOwnedList.Add(ASymbol);
+  OwnSymbol(ASymbol);
 
   FSymbols.Add(Key, ASymbol);
   Result := True;
 end;
 
 procedure TScope.OwnSymbol(ASymbol: TSymbol);
+var
+  TargetScope: TScope;
 begin
-  if (ASymbol <> nil) and (FOwnedList.IndexOf(ASymbol) < 0) then
-    FOwnedList.Add(ASymbol);
+  TargetScope := Self;
+
+  while (TargetScope.Parent <> nil) and (TargetScope.FOwnedList = nil) do
+    TargetScope := TargetScope.Parent;
+
+  if (ASymbol <> nil) and (TargetScope.FOwnedList <> nil) and (TargetScope.FOwnedList.IndexOf(ASymbol) < 0) then
+    TargetScope.FOwnedList.Add(ASymbol);
 end;
 
 function TScope.ResolveLocal(const AName: String): TSymbol;
@@ -2330,14 +2342,26 @@ begin
     LoopVarSym.Storage     := TSymbol.TStorage.Local;
     LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
 
+//    AFor.Symbol := LoopVarSym;
+//    FCurrentScope.OwnSymbol(LoopVarSym);
+//
+//    LoopScope := TScope.Create(FCurrentScope);
+//    FCurrentScope := LoopScope;
+//
+//    try
+//      LoopScope.Define(LoopVarSym, False);
+//      AnalyzeStatement(AFor.Body);
+//    finally
+//      FCurrentScope := LoopScope.Parent;
+//      LoopScope.Free;
+//    end;
+//
+//    Exit;
     AFor.Symbol := LoopVarSym;
-    FCurrentScope.OwnSymbol(LoopVarSym);
-
-    LoopScope := TScope.Create(FCurrentScope);
+    LoopScope := TScope.Create(FCurrentScope, False);
     FCurrentScope := LoopScope;
-
     try
-      LoopScope.Define(LoopVarSym, False);
+      LoopScope.Define(LoopVarSym);
       AnalyzeStatement(AFor.Body);
     finally
       FCurrentScope := LoopScope.Parent;
@@ -2394,14 +2418,27 @@ begin
     LoopVarSym.Storage     := TSymbol.TStorage.Local;
     LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
 
+//    AForIn.Symbol := LoopVarSym;
+//    FCurrentScope.OwnSymbol(LoopVarSym);
+//
+//    LoopScope := TScope.Create(FCurrentScope);
+//    FCurrentScope := LoopScope;
+//
+//    try
+//      LoopScope.Define(LoopVarSym, False);
+//      AnalyzeStatement(AForIn.Body);
+//    finally
+//      FCurrentScope := LoopScope.Parent;
+//      LoopScope.Free;
+//    end;
+//
+//    Exit;
     AForIn.Symbol := LoopVarSym;
-    FCurrentScope.OwnSymbol(LoopVarSym);
 
-    LoopScope := TScope.Create(FCurrentScope);
+    LoopScope := TScope.Create(FCurrentScope, False);
     FCurrentScope := LoopScope;
-
     try
-      LoopScope.Define(LoopVarSym, False);
+      LoopScope.Define(LoopVarSym);
       AnalyzeStatement(AForIn.Body);
     finally
       FCurrentScope := LoopScope.Parent;
