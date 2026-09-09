@@ -24,10 +24,12 @@ const
   // SysCall ID's
   _SysCall_DebugBreak       = $00;
   _SysCall_DebugPrint       = $01;
+  
   _SysCall_DebugPrintLn     = $02;
   _SysCall_MemoryFill       = $10;
   _SysCall_MemoryCopy       = $11;
   _SysCall_MemoryCompare    = $12;
+  
   _SysCall_HeapAlloc        = $20;
   _SysCall_HeapRealloc      = $21;
   _SysCall_HeapFree         = $22;
@@ -35,6 +37,7 @@ const
   _SysCall_HeapAvailable    = $24;
   _SysCall_HeapLoad         = $25;
   _SysCall_HeapSave         = $26;
+  
   _SysCall_StringNew        = $30;
   _SysCall_StringInit       = $31;
   _SysCall_StringDispose    = $32;
@@ -44,6 +47,7 @@ const
   _SysCall_StringCopy       = $36;
   _SysCall_StringCompare    = $37;
   _SysCall_StringFormat     = $38;
+  
   _SysCall_ArrayNew         = $40;
   _SysCall_ArrayDispose     = $41;
   _SysCall_ArrayLength      = $42;
@@ -51,6 +55,11 @@ const
   _SysCall_ArrayCopy        = $44;
   _SysCall_ArrayConcat      = $45;
   _SysCall_ArrayClear       = $46;
+  
+  _SysCall_RandomRandomize  = $50;
+  _SysCall_RandomNext       = $51;
+  _SysCall_RandomNextInt    = $52;
+  _SysCall_RandomNextFloat  = $53;
 
 implementation
 

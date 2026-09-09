@@ -37,7 +37,8 @@ type
   {$REGION 'CPU'}
   TCPU = class
   type
-    TPanicHandler = procedure of object;
+    TOnPanic = procedure of object;
+    TOnYield = procedure of object;
   private
     FMemory: TMemory;
 
@@ -50,7 +51,11 @@ type
     FCurrentCPUInstruction: TCPUInstruction;
 
     FSysCallHandler: TSysCalls.THandler;
-    FPanicHandler:   TPanicHandler;
+
+    FOnPanic: TOnPanic;
+    FOnYield: TOnYield;
+
+    FRNGState: UInt64;
 
     function NextWord:  Word;     inline;
     function NextDWord: Cardinal; inline;
@@ -69,7 +74,7 @@ type
     procedure Reset;
 
     procedure Step; inline;
-    procedure Execute(AMaxInstructions: Integer; AAbortOp: TCPUInstruction.TOpCode = TCPUInstruction.TOpCode.HALT); inline;
+    function  Execute(AMaxInstructions: Integer; AAbortOp: TCPUInstruction.TOpCode = TCPUInstruction.TOpCode.HALT): Boolean; inline;
 
     procedure Push(AValue: Cardinal);
     function  Pop: Cardinal;
@@ -90,7 +95,9 @@ type
     property PanicState: Boolean read FPanic;
 
     property SysCallHandler: TSysCalls.THandler read FSysCallHandler write FSysCallHandler;
-    property PanicHandler:   TPanicHandler      read FPanicHandler   write FPanicHandler;
+
+    property OnPanic: TOnPanic read FOnPanic write FOnPanic;
+    property OnYield: TOnYield read FOnYield write FOnYield;
 
     property StepCount: Integer read FStepCount write FStepCount;
   public
@@ -198,6 +205,8 @@ type
     procedure DoFSQRT;
     procedure DoFCE;
     procedure DoFCMP;
+    procedure DoFCEIL;
+    procedure DoFFLR;
 
     procedure DoSETE;  inline;
     procedure DoSETNE; inline;
@@ -212,6 +221,9 @@ type
     procedure DoBSETF; inline;
     procedure DoBCLRF; inline;
     procedure DoBTSTF; inline;
+
+    procedure DoRAND; inline;
+    procedure DoSEED; inline;
 
     procedure DoNOP; inline;
     {$ENDREGION}
@@ -269,8 +281,8 @@ end;
 
 procedure TCPU.InternalPanic;
 begin
-  if Assigned(FPanicHandler) then
-    FPanicHandler
+  if Assigned(FOnPanic) then
+    FOnPanic
   else
   begin
     SysCall(TSysCalls.ID.DebugBreak);
@@ -290,6 +302,8 @@ begin
   FHalt  := False;
   FYield := False;
   FPanic := False;
+
+  FRNGState := $853C49E6748FEA9B;
 
   Registers := Default(TRegisters);
 
@@ -416,6 +430,8 @@ begin
     TCPUInstruction.TOpCode.FSQRT: DoFSQRT;
     TCPUInstruction.TOpCode.FCE:   DoFCE;
     TCPUInstruction.TOpCode.FCMP:  DoFCMP;
+    TCPUInstruction.TOpCode.FCEIL: DoFCEIL;
+    TCPUInstruction.TOpCode.FFLR:  DoFFLR;
 
     TCPUInstruction.TOpCode.SETE:  DoSETE;
     TCPUInstruction.TOpCode.SETNE: DoSETNE;
@@ -431,6 +447,9 @@ begin
     TCPUInstruction.TOpCode.BCLRF: DoBCLRF;
     TCPUInstruction.TOpCode.BTSTF: DoBTSTF;
 
+    TCPUInstruction.TOpCode.RAND: DoRAND;
+    TCPUInstruction.TOpCode.SEED: DoSEED;
+
     TCPUInstruction.TOpCode.NOP: DoNOP;
     {$ENDREGION}
   else
@@ -443,10 +462,12 @@ begin
 {$ENDIF}
 end;
 
-procedure TCPU.Execute(AMaxInstructions: Integer; AAbortOp: TCPUInstruction.TOpCode);
+function TCPU.Execute(AMaxInstructions: Integer; AAbortOp: TCPUInstruction.TOpCode): Boolean;
 var
   Count: Integer;
 begin
+  Result:= False;
+
   if AMaxInstructions <= 0 then
     Exit;
 
@@ -458,7 +479,7 @@ begin
     Inc(Count);
 
     if FHalt or FYield or (FCurrentCPUInstruction.OpCode = AAbortOp) then
-      Break;
+      Exit(True);
   end;
 end;
 
@@ -563,13 +584,15 @@ function TCPU.Interrupt(AInterruptID: TInterrupts.ID; AMaxInstructions: Integer)
 var
   TargetPC: Cardinal;
 begin
+  Result := False;
+
   if (not Registers.Flags.InterruptsEnabled) and (AInterruptID <> TInterrupts.ID.Panic) and (AInterruptID <> TInterrupts.ID.NMI) then
-    Exit(False);
+    Exit;
 
   TargetPC := FMemory.CoreSystem.Interrupts.Vectors[AInterruptID];
 
   if not FMemory.IsAddressExecutable(TargetPC) then
-    Exit(False);
+    Exit;
 
   Push(Registers.Flags);
   Push(Registers.PC);
@@ -578,10 +601,8 @@ begin
 
   Registers.PC := TargetPC;
 
-  Result := True;
-
   if AMaxInstructions > 0 then
-    Execute(AMaxInstructions, TCPUInstruction.TOpCode.IRET);
+    Result := Execute(AMaxInstructions, TCPUInstruction.TOpCode.IRET);
 end;
 {$ENDREGION}
 
@@ -594,6 +615,9 @@ end;
 procedure TCPU.DoYIELD;
 begin
   FYield := True;
+
+  if Assigned(FOnYield) then
+    FOnYield;
 end;
 
 procedure TCPU.DoRAISE;
@@ -1597,6 +1621,40 @@ begin
   Registers.Flags.Overflow := False;
   Registers.Flags.Carry    := False;
 end;
+
+procedure TCPU.DoFCEIL;
+var
+  F: Single;
+  I: Integer;
+begin
+  F := DWordToSingle(Registers.r[FCurrentCPUInstruction.RegB]);
+  I := Trunc(F);
+
+  if (F > 0) and (Frac(F) <> 0) then
+      Inc(I);
+
+  Registers.r[FCurrentCPUInstruction.RegA] := Cardinal(I);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrentCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoFFLR;
+var
+  F: Single;
+  I: Integer;
+begin
+  F := DWordToSingle(Registers.r[FCurrentCPUInstruction.RegB]);
+  I := Trunc(F);
+
+  if (F < 0) and (Frac(F) <> 0) then
+      Dec(I);
+
+  Registers.r[FCurrentCPUInstruction.RegA] := Cardinal(I);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrentCPUInstruction.RegA]);
+end;
+
+
 {$ENDREGION}
 
 {$REGION 'Set condition'}
@@ -1664,6 +1722,25 @@ begin
   Registers.Flags.UpdateZN(Byte(Registers.Flags) and (Registers.r[FCurrentCPUInstruction.RegB] and $FF));
 end;
 {$ENDREGION}
+
+procedure TCPU.DoRAND;
+begin
+  FRNGState := FRNGState xor (FRNGState shl 13);
+  FRNGState := FRNGState xor (FRNGState shr  7);
+  FRNGState := FRNGState xor (FRNGState shl 17);
+
+  Registers.r[FCurrentCPUInstruction.RegA] := Cardinal(FRNGState and $FFFFFFFF);
+
+  Registers.Flags.UpdateZN(Registers.r[FCurrentCPUInstruction.RegA]);
+end;
+
+procedure TCPU.DoSEED;
+begin
+  FRNGState := Registers.r[FCurrentCPUInstruction.RegB];
+
+  if FRNGState = 0 then
+    FRNGState := $853C49E6748FEA9B;
+end;
 
 procedure TCPU.DoNOP;
 begin

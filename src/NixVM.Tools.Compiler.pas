@@ -68,6 +68,9 @@ type
     FDescription: String;
     FCopyright:   String;
 
+    FAutoIncludeSystem: Boolean;
+    FAutoIncludeTarget: Boolean;
+
     function  LoadUnitRecursive(const AUnitName: String): TASTUnit;
     function  ResolveUnitSource(const AUnitName: String; out ASource, AFilePath: String): Boolean;
   public
@@ -102,6 +105,9 @@ type
     property IconFile:    String read FIconFile    write FIconFile;
     property Description: String read FDescription write FDescription;
     property Copyright:   String read FCopyright   write FCopyright;
+
+    property AutoIncludeSystem: Boolean read FAutoIncludeSystem write FAutoIncludeSystem;
+    property AutoIncludeTarget: Boolean read FAutoIncludeTarget write FAutoIncludeTarget;
   end;
   {$ENDREGION}
 
@@ -197,6 +203,9 @@ begin
   AddDefaultSearchPaths;
 
   FOptimise := True;
+
+  FAutoIncludeSystem := True;
+  FAutoIncludeTarget := True;
 end;
 
 destructor TCompiler.Destroy;
@@ -222,7 +231,9 @@ procedure TCompiler.AddDefaultSearchPaths;
 begin
   AddPath('.\');
   AddPath('..\rtl\');
+  AddPath('.\rtl\');
   AddPath(TPath.GetDirectoryName(ParamStr(0)) + '\..\rtl\');
+  AddPath(TPath.GetDirectoryName(ParamStr(0)) + '\rtl\');
   AddPath(TPath.GetDirectoryName(ParamStr(0)));
 end;
 
@@ -252,6 +263,17 @@ begin
     FIconFile    := ProgAST.IconFIle;
     FDescription := ProgAST.Description;
     FCopyright   := ProgAST.Copyright;
+
+    if FAutoIncludeSystem and (ProgAST.UsesUnits.IndexOf('System') < 0) then
+       ProgAST.UsesUnits.Insert(0, 'System');
+
+    if FAutoIncludeTarget and (ProgAST.Header.Harness.Name <> '') and (ProgAST.UsesUnits.IndexOf(ProgAST.Header.Harness.Name) < 0) then
+    begin
+      var DummySrc, DummyPath: String;
+
+      if ResolveUnitSource(ProgAST.Header.Harness.Name, DummySrc, DummyPath) then
+        ProgAST.UsesUnits.Add(ProgAST.Header.Harness.Name);
+    end;
 
     for var UnitName in ProgAST.UsesUnits do
       if LoadUnitRecursive(UnitName) = nil then

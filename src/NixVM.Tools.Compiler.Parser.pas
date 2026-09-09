@@ -1791,6 +1791,7 @@ begin
     ADecls.Add(TASTConstDecl.Create(ConstName, ValueExpr, Default(TConstValue), ConstType, StartTok.Line, StartTok.Col));
   end;
 end;
+
 procedure TParser.ParseTypeSection(ADecls: TObjectList<TASTDeclaration>);
 begin
   Expect(TLexer.TToken.TKind.Type);
@@ -1983,7 +1984,7 @@ begin
       Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after varargs directive');
     end;
 
-    if Match(TLexer.TToken.TKind.SysCall) then
+     if Match(TLexer.TToken.TKind.SysCall) then
     begin
       Result.IsSysCall   := True;
       Result.SysCallExpr := ParseExpression;

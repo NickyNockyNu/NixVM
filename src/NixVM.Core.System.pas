@@ -109,6 +109,12 @@ type
       ArrayCopy      = &Array + 4;
       ArrayConcat    = &Array + 5;
       ArrayClear     = &Array + 6;
+
+      Random = $50;
+      RandomRandomize = &Random + 0;
+      RandomNext      = &Random + 1;
+      RandomNextInt   = &Random + 2;
+      RandomNextFloat = &Random + 3;
     public
       function ToString: String;
     end;
@@ -228,7 +234,12 @@ type
     RefreshRate: Cardinal;
     Elapsed:     Cardinal;
     Delta:       Single;
-    Reserved:    Cardinal;
+    RNGState:    Cardinal;
+
+    procedure RNGRandomize;
+    function  RNGNext: Cardinal;
+    function  RNGNextInt(ARange: Integer): Integer;
+    function  RNGNextFloat: Cardinal;
 
     procedure Reset;
   end;
@@ -263,6 +274,7 @@ type
 implementation
 
 uses
+  NixVM.Harness.Timing,
   NixVM.Core.Strings;
 
 {$REGION 'Interrupts'}
@@ -323,6 +335,11 @@ begin
     ArrayCopy:      Result := Prefix + 'ArrayCopy';
     ArrayConcat:    Result := Prefix + 'ArrayConcat';
     ArrayClear:     Result := Prefix + 'ArrayClear';
+
+    RandomRandomize: Result := Result + Prefix + 'RandomRandomize';
+    RandomNext:      Result := Result + Prefix + 'RandomNext';
+    RandomNextInt:   Result := Result + Prefix + 'RandomNextInt';
+    RandomNextFloat: Result := Result + Prefix + 'RandomNextFloat';
   else
     Result := '';//Prefix + IntToStr(Self);
   end;
@@ -446,6 +463,44 @@ end;
 {$ENDREGION}
 
 {$REGION 'SystemRegisters'}
+procedure TSystemRegisters.RNGRandomize;
+begin
+  RNGState := TTicks.SysElapsed;
+end;
+
+function TSystemRegisters.RNGNext: Cardinal;
+var
+  Tmp:    UInt64;
+  m1, m2: Cardinal;
+begin
+  RNGState := RNGState + $E120FC15;
+
+  Tmp := UInt64(RNGState) * $4A39B70D; m1 := UInt64(Tmp shr 32) xor Tmp;
+  Tmp := UInt64(m1)       * $12FAD5C9; m2 := UInt64(Tmp shr 32) xor Tmp;
+
+  Result := m2;
+end;
+
+function TSystemRegisters.RNGNextInt(ARange: Integer): Integer;
+begin
+  if ARange = 0 then
+    Exit(0);
+
+  if ARange > 0 then
+    Result := (UInt64(ARange) * UInt64(RNGNext)) shr 32
+  else
+    Result := -Integer((UInt64(Abs(ARange)) * UInt64(RNGNext)) shr 32);
+end;
+
+function TSystemRegisters.RNGNextFloat: Cardinal;
+const
+  Two2Neg32: Double = (1.0 / $10000) / $10000;
+var
+  ResultF: Single absolute Result;
+begin
+  ResultF := {Int64}(RNGNext) * Two2Neg32;
+end;
+
 procedure TSystemRegisters.Reset;
 begin
   FillChar(Self, SizeOf(Self), 0);

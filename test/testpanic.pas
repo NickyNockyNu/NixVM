@@ -2,10 +2,6 @@ program testpanic targets console;
 
 {$HEAP 2k}
 {$STACK 1k}
-
-uses
-  SysConst,
-  System;
   
 type
   PCustomException = ^TCustomException;

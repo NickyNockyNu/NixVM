@@ -211,7 +211,10 @@ type
     constructor Create(AParent: TScope = nil; AOwnsSymbols: Boolean = True);
     destructor  Destroy; override;
 
+    function GetFrameScope: TScope;
+
     function Define(ASymbol: TSymbol): Boolean;
+
     procedure OwnSymbol(ASymbol: TSymbol);
 
     function Resolve     (const AName: String): TSymbol;
@@ -506,6 +509,14 @@ begin
   inherited;
 end;
 
+function TScope.GetFrameScope: TScope;
+begin
+  Result := Self;
+
+  while (Result.Parent <> nil) and (Result.FOwnedList = nil) do
+    Result := Result.Parent;
+end;
+
 function TScope.Define(ASymbol: TSymbol): Boolean;
 begin
   var Key := LowerCase(ASymbol.Name);
@@ -521,15 +532,12 @@ end;
 
 procedure TScope.OwnSymbol(ASymbol: TSymbol);
 var
-  TargetScope: TScope;
+  FrameScope: TScope;
 begin
-  TargetScope := Self;
+  FrameScope := GetFrameScope;
 
-  while (TargetScope.Parent <> nil) and (TargetScope.FOwnedList = nil) do
-    TargetScope := TargetScope.Parent;
-
-  if (ASymbol <> nil) and (TargetScope.FOwnedList <> nil) and (TargetScope.FOwnedList.IndexOf(ASymbol) < 0) then
-    TargetScope.FOwnedList.Add(ASymbol);
+  if (ASymbol <> nil) and (FrameScope.FOwnedList <> nil) and (FrameScope.FOwnedList.IndexOf(ASymbol) < 0) then
+    FrameScope.FOwnedList.Add(ASymbol);
 end;
 
 function TScope.ResolveLocal(const AName: String): TSymbol;
@@ -649,6 +657,8 @@ begin
 
   FGlobalScope.Define(TSymbol.Create('round', TSymbol.TKind.Function, FuncInt));
   FGlobalScope.Define(TSymbol.Create('trunc', TSymbol.TKind.Function, FuncInt));
+  FGlobalScope.Define(TSymbol.Create('ceil',  TSymbol.TKind.Function, FuncInt));
+  FGlobalScope.Define(TSymbol.Create('floor', TSymbol.TKind.Function, FuncInt));
 
   FGlobalScope.Define(TSymbol.Create('low',      TSymbol.TKind.Function, FuncInt));
   FGlobalScope.Define(TSymbol.Create('high',     TSymbol.TKind.Function, FuncInt));
@@ -998,7 +1008,8 @@ begin
 
     if (CalleeLower = 'sin')  or (CalleeLower = 'cos')   or (CalleeLower = 'tan')   or
        (CalleeLower = 'atan') or (CalleeLower = 'exp')   or (CalleeLower = 'ln')    or
-       (CalleeLower = 'sqrt') or (CalleeLower = 'round') or (CalleeLower = 'trunc') then
+       (CalleeLower = 'sqrt') or (CalleeLower = 'round') or (CalleeLower = 'trunc') or
+       (CalleeLower = 'ceil') or (CalleeLower = 'floor') then
    begin
       if Call.Arguments.Count = 1 then
       begin
@@ -1023,7 +1034,9 @@ begin
           else if CalleeLower = 'ln'    then begin if FVal > 0 then AValue := TConstValue.MakeFloat(System.Ln(FVal)) else Exit(False); end
           else if CalleeLower = 'sqrt'  then begin if FVal >= 0 then AValue := TConstValue.MakeFloat(System.Sqrt(FVal)) else Exit(False); end
           else if CalleeLower = 'round' then AValue := TConstValue.MakeInt(Cardinal(System.Round(FVal)))
-          else if CalleeLower = 'trunc' then AValue := TConstValue.MakeInt(Cardinal(System.Trunc(FVal)));
+          else if CalleeLower = 'trunc' then AValue := TConstValue.MakeInt(Cardinal(System.Trunc(FVal)))
+          else if CalleeLower = 'ceil'  then AValue := TConstValue.MakeInt(Cardinal(System.Trunc(FVal))) // TODO: Ceil/Floor
+          else if CalleeLower = 'floor' then AValue := TConstValue.MakeInt(Cardinal(System.Trunc(FVal)));
 
           Exit(True);
         end;
@@ -1761,7 +1774,8 @@ begin
 
   if (CalleeLower = 'sin')  or (CalleeLower = 'cos')   or (CalleeLower = 'tan')   or
      (CalleeLower = 'atan') or (CalleeLower = 'exp')   or (CalleeLower = 'ln')    or
-     (CalleeLower = 'sqrt') or (CalleeLower = 'round') or (CalleeLower = 'trunc') then
+     (CalleeLower = 'sqrt') or (CalleeLower = 'round') or (CalleeLower = 'trunc') or
+     (CalleeLower = 'ceil') or (CalleeLower = 'floor') then
   begin
     if ACall.Arguments.Count <> 1 then
       Error(Format('Function "%s" expects exactly 1 argument', [ACall.CalleeName]), ACall)
@@ -1773,7 +1787,7 @@ begin
         Error(Format('Argument to "%s" must be a numeric expression', [ACall.CalleeName]), ACall.Arguments[0]);
     end;
 
-    if (CalleeLower = 'round') or (CalleeLower = 'trunc') then
+    if (CalleeLower = 'round') or (CalleeLower = 'trunc') or (CalleeLower = 'ceil') or (CalleeLower = 'floor') then
       Exit(FBuiltinTypes['integer'])
     else
       Exit(FBuiltinTypes['single']);
@@ -1831,12 +1845,21 @@ begin
     Exit(FBuiltinTypes['string']);
   end;
 
-  if CalleeLower = 'format' then
+  if (CalleeLower = 'println') or (CalleeLower = 'print') or (CalleeLower = 'format') then
   begin
-    for var Arg in ACall.Arguments do
+    for var i := 0 to ACall.Arguments.Count - 1 do
+    begin
+      var Arg := ACall.Arguments[i];
       AnalyzeExpression(Arg);
 
-    Exit(FBuiltinTypes['string']);
+      if (i = 0) and (Arg is TASTLiteral) and (TASTLiteral(Arg).Kind in [TASTLiteral.TKind.String, TASTLiteral.TKind.Char]) then
+        Arg.ResolvedType := TASTType.Create(TASTType.TKind.String);
+    end;
+
+    if CalleeLower = 'format' then
+      Exit(FBuiltinTypes['string'])
+    else
+      Exit(FBuiltinTypes['void']);
   end;
 
   if (CalleeLower = 'inc') or (CalleeLower = 'dec') then
@@ -2335,29 +2358,17 @@ begin
     else
       VarType := StartType;
 
+    var FrameScope := FCurrentScope.GetFrameScope;
     var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
-    FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+    FrameScope.LocalSize := FrameScope.LocalSize + AlignedSize;
 
     LoopVarSym := TSymbol.Create(AFor.LoopVar, TSymbol.TKind.Variable, VarType);
     LoopVarSym.Storage     := TSymbol.TStorage.Local;
-    LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
+    LoopVarSym.StackOffset := -Integer(FrameScope.LocalSize);
 
-//    AFor.Symbol := LoopVarSym;
-//    FCurrentScope.OwnSymbol(LoopVarSym);
-//
-//    LoopScope := TScope.Create(FCurrentScope);
-//    FCurrentScope := LoopScope;
-//
-//    try
-//      LoopScope.Define(LoopVarSym, False);
-//      AnalyzeStatement(AFor.Body);
-//    finally
-//      FCurrentScope := LoopScope.Parent;
-//      LoopScope.Free;
-//    end;
-//
-//    Exit;
     AFor.Symbol := LoopVarSym;
+    FrameScope.OwnSymbol(LoopVarSym);
+
     LoopScope := TScope.Create(FCurrentScope, False);
     FCurrentScope := LoopScope;
     try
@@ -2409,34 +2420,20 @@ begin
         VarType := FBuiltinTypes['integer'];
     end;
 
+    var FrameScope := FCurrentScope.GetFrameScope;
     var AlignedSize := (VarType.Size + 3) and not Cardinal(3);
-
-    FCurrentScope.LocalSize := FCurrentScope.LocalSize + AlignedSize;
+    FrameScope.LocalSize := FrameScope.LocalSize + AlignedSize;
 
     LoopVarSym := TSymbol.Create(AForIn.LoopVar, TSymbol.TKind.Variable, VarType);
-
     LoopVarSym.Storage     := TSymbol.TStorage.Local;
-    LoopVarSym.StackOffset := -Integer(FCurrentScope.LocalSize);
+    LoopVarSym.StackOffset := -Integer(FrameScope.LocalSize);
 
-//    AForIn.Symbol := LoopVarSym;
-//    FCurrentScope.OwnSymbol(LoopVarSym);
-//
-//    LoopScope := TScope.Create(FCurrentScope);
-//    FCurrentScope := LoopScope;
-//
-//    try
-//      LoopScope.Define(LoopVarSym, False);
-//      AnalyzeStatement(AForIn.Body);
-//    finally
-//      FCurrentScope := LoopScope.Parent;
-//      LoopScope.Free;
-//    end;
-//
-//    Exit;
     AForIn.Symbol := LoopVarSym;
+    FrameScope.OwnSymbol(LoopVarSym);
 
     LoopScope := TScope.Create(FCurrentScope, False);
     FCurrentScope := LoopScope;
+
     try
       LoopScope.Define(LoopVarSym);
       AnalyzeStatement(AForIn.Body);
@@ -2595,7 +2592,7 @@ end;
 
 procedure TSemanticAnalyzer.AnalyzeDeclaration(ADecl: TASTDeclaration);
 begin
-   if ADecl is TASTConstDecl then
+  if ADecl is TASTConstDecl then
   begin
     var ConstDecl := TASTConstDecl(ADecl);
     var ValType: TType;
@@ -2776,9 +2773,7 @@ begin
 
   ExistingSym := FCurrentScope.Resolve(RoutineName);
 
-  if (ExistingSym <> nil) and (ExistingSym.Declaration <> nil) and
-     (ExistingSym.Declaration.IsForward or (ExistingSym.Declaration.Body = nil)) and
-     (not ExistingSym.IsSysCall) then
+  if (ExistingSym <> nil) and (ExistingSym.Declaration <> nil) and (ExistingSym.Declaration.IsForward or (ExistingSym.Declaration.Body = nil)) and (not ExistingSym.IsSysCall) then
   begin
     ExistingSym.Declaration.IsForward := False;
 
@@ -2995,12 +2990,24 @@ begin
       end;
 
       var RType := TType.Create(TType.TKind.Procedure, RDecl.Name, 0);
+
       RType.ReturnType := RetType;
 
       var RSym := TSymbol.Create(RDecl.Name, RKind, RType);
+
       RSym.Declaration := RDecl;
       RSym.IsSysCall   := RDecl.IsSysCall;
       RSym.SysCallID   := RDecl.SysCallID;
+
+      if RDecl.IsSysCall and (RDecl.SysCallExpr <> nil) then
+      begin
+        var SysVal: TConstValue;
+        if EvaluateConstValue(RDecl.SysCallExpr, SysVal) then
+        begin
+          RSym.SysCallID  := SysVal.ValueInt;
+          RDecl.SysCallID := SysVal.ValueInt;
+        end;
+      end;
 
       FCurrentScope.Define(RSym);
     end

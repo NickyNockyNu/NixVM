@@ -21,6 +21,20 @@
 
 unit NixVM.Passe;
 
+{
+  TODO:
+    System flag to switch between PollRate=FrameRate and PollRate=YieldRate
+    May as well profile that (Yields per second - Yields:Frame ratio)
+    We could probably even try to implement some kind of smart CPU batch size based on
+    instruction count between yields - or at least have some interesting profiling stats
+
+    if Yield=Poll then do we switch keyboard reading methods to read from the message queue?
+
+    Fullscreen switch (Part of TCustomWindow harness or here?)
+
+    SysRq key
+}
+
 {$INCLUDE 'NixVM.Options.inc'}
 
 interface
@@ -33,6 +47,7 @@ uses
   Winapi.OpenGLext,
 
   NixVM.Core.System,
+  NixVM.Core.Memory,
 
   NixVM.Harness,
   NixVM.Harness.PE,
@@ -41,7 +56,10 @@ uses
   NixVM.Harness.Passe,
 
   NixVM.Passe.Memory,
+  NixVM.Passe.Input,
+  NixVM.Passe.Input.HID,
   NixVM.Passe.Video,
+  NixVM.Passe.Video.VDU,
   NixVM.Passe.Renderer;
 
 type
@@ -52,6 +70,9 @@ type
     FClientHeight: Integer;
     FViewport:     TRect;
     FScale:        Single;
+
+    FHID: THID;
+    FVDU: TVDU;
 
     FRenderer: TRenderer;
 
@@ -70,12 +91,22 @@ type
 
     procedure Resized;
 
+    procedure HandleYield; override;
+
+    function HandleSysCall(ASysCall: TSysCalls.ID): Boolean; override;
+
     property Renderer: TRenderer read FRenderer;
   protected
     procedure WMWindowPosChanged(var AMessage: TWMWindowPosChanged); message WM_WINDOWPOSCHANGED;
     procedure WMSize            (var AMessage: TWMSize);             message WM_SIZE;
+    procedure WMChar            (var AMessage: TWMChar);             message WM_CHAR;
+    procedure WMMouseWheel      (var AMessage: TWMMouseWheel);       message WM_MOUSEWHEEL;
   public
     class procedure CError(const AMessage: String; AErrorCode: Integer = 0); override;
+
+    function HandleScanlineIRQ: Boolean;
+
+    procedure DebugPrint(const AString: AnsiString); override;
 
     property ClientWidth:  Integer read FClientWidth;
     property ClientHeight: Integer read FClientHeight;
@@ -83,6 +114,9 @@ type
     property Viewport: TRect read FViewport;
 
     property Scale: Single read FScale write SetScale;
+
+    property HID: THID read FHID;
+    property VDU: TVDU read FVDU;
   end;
   {$ENDREGION}
 
@@ -162,14 +196,30 @@ end;
 
 procedure TPasse.Initialize;
 begin
+  Writeln('  _Addr_KeyStates      = $', IntToHex(TPasseMemory.KeyStatesAddress), ';');
+  Writeln('  _Addr_KeyboardBuffer = $', IntToHex(TPasseMemory.KeyboardBufferAddress), ';');
+  Writeln('  _Addr_Mouse          = $', IntToHex(TPasseMemory.MouseAddress), ';');
+  Writeln('  _Addr_Gamepads       = $', IntToHex(TPasseMemory.GamepadsAddress), ';');
+  Writeln('  _Addr_VideoRegisters = $', IntToHex(TPasseMemory.VideoRegistersAddress), ';');
+  Writeln('  _Addr_Stickers       = $', IntToHex(TPasseMemory.StickersAddress), ';');
+  Writeln('  _Addr_Atlas          = $', IntToHex(TPasseMemory.SpritesAddress), ';');
+  Writeln('  _Addr_Sprites        = $', IntToHex(TPasseMemory.SpritesAddress + (SizeOf(TSprites.TAtlasEntry) * TSprites.AtlasCount)), ';');
+
   Writeln('D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $' + IntToHex(Memory.UserAddress, 0) + ' -oem ' + IntToStr(SizeOf(TPasseMemory)));
 
   if Assigned(Passe) then
     Error('An instance of passe already exists');
 
+  //StopOnHalt := True;
+
   Passe := Self;
 
   inherited;
+
+  FHID := THID.Create(Self);
+  FVDU := TVDU.Create(Self);
+
+  FRenderer := TRenderer.Create(Self);
 
   SetScale(0);
 end;
@@ -178,26 +228,30 @@ procedure TPasse.Finalize;
 begin
   inherited;
 
+  FRenderer.Free;
+
+  FHID.Free;
+  FVDU.Free;
+
   Passe := nil;
 end;
 
 procedure TPasse.CreateWindow;
 begin
   inherited;
-
-  FRenderer := TRenderer.Create(Self);
 end;
 
 procedure TPasse.DestroyWindow;
 begin
-  FRenderer.Free;
-
   inherited;
 end;
 
 procedure TPasse.Started;
 begin
   Memory.System.Reset;
+
+  FVDU.Reset;
+  FHID.Reset;
 
   inherited;
 end;
@@ -211,10 +265,12 @@ procedure TPasse.Update(const ADelta: TTicks);
 begin
   inherited;
 
-  FRenderer.Render;
-  FRenderer.Paint;
+  FHID.PollMouse;
 
-  ProcessMessages(False);
+  if not Memory.System.VideoRegisters.Flags.HardwareBuffered then
+     FRenderer.Render;
+
+  FRenderer.Paint;
 end;
 
 procedure TPasse.Resized;
@@ -258,6 +314,62 @@ begin
     FRenderer.Paint;
 end;
 
+procedure TPasse.HandleYield;
+begin
+  inherited;
+
+  FHID.PollKeys;
+  FHID.PollMouse;
+  FHID.UpdateDeltas;
+
+  if Memory.System.VideoRegisters.Flags.HardwareBuffered then
+     FRenderer.Render;
+end;
+
+function TPasse.HandleSysCall(ASysCall: TSysCalls.ID): Boolean;
+begin
+  Result := inherited;
+
+  if Result then
+    Exit;
+
+  Result := True;
+
+  with CPU.Registers do
+    case ASysCall of
+      TVDU.TSysCalls.Reset: FVDU.Reset;
+      TVDU.TSysCalls.Clear: FVDU.Clear(R0);
+
+      TVDU.TSysCalls.GetPixel: R0 := FVDU.GetPixel(R0, R1);
+      TVDU.TSysCalls.SetPIxel:       FVDU.SetPixel(R0, R1, R2);
+
+      TVDU.TSysCalls.HLine: FVDU.HLine(R0, R1, R2, R3);
+      TVDU.TSysCalls.VLine: FVDU.VLine(R0, R1, R2, R3);
+
+      TVDU.TSysCalls.Line: FVDU.Line(R0, R1, R2, R3, R4);
+
+      TVDU.TSysCalls.DrawRectangle: FVDU.DrawRectangle(R0, R1, R2, R3, R4);
+      TVDU.TSysCalls.FillRectangle: FVDU.FillRectangle(R0, R1, R2, R3, R4);
+
+      TVDU.TSysCalls.DrawCircle: FVDU.DrawCircle(R0, R1, R2, R3);
+      TVDU.TSysCalls.FillCircle: FVDU.FillCircle(R0, R1, R2, R3);
+
+      TVDU.TSysCalls.DrawEllipse: FVDU.DrawEllipse(R0, R1, R2, R3, R4);
+      TVDU.TSysCalls.FillEllipse: FVDU.FillEllipse(R0, R1, R2, R3, R4);
+
+      TVDU.TSysCalls.DrawTriangle: FVDU.DrawTriangle(R0, R1, R2, R3, R4, R5, R6);
+      TVDU.TSysCalls.FillTriangle: FVDU.FillTriangle(R0, R1, R2, R3, R4, R5, R6);
+
+      TVDU.TSysCalls.Cls:    FVDU.Cls;
+      TVDU.TSysCalls.Write:  FVDU.Write(R0, R1, Memory.ReadString(R2), R3);
+      TVDU.TSysCalls.Print:  FVDU.Print(Memory.ReadString(R0));
+      TVDU.TSysCalls.Locate: FVDU.Locate(R0, R1);
+      TVDU.TSysCalls.Colour: FVDU.Colour(R0, R1, (R2 <> 0));
+    else
+      Result:= False;
+    end;
+end;
+
 procedure TPasse.WMWindowPosChanged(var AMessage: TWMWindowPosChanged);
 begin
   if (AMessage.WindowPos.flags and SWP_NOSIZE) = 0 then
@@ -269,10 +381,36 @@ begin
   Resized;
 end;
 
-class procedure TPasse.CError(const AMessage: String; AErrorCode: Integer = 0);
+procedure TPasse.WMChar(var AMessage: TWMChar);
+begin
+  if Assigned(FHID) then
+    FHID.PushChar(AnsiChar(AMessage.CharCode));
+end;
+
+procedure TPasse.WMMouseWheel(var AMessage: TWMMouseWheel);
+begin
+  if Assigned(FHID) then
+    FHID.HandleScroll(AMessage.WheelDelta div WHEEL_DELTA);
+end;
+
+class procedure TPasse.CError(const AMessage: String; AErrorCode: Integer);
 begin
   if Assigned(Passe) then
     Passe.Error(AMessage, AErrorCode)
+  else
+    inherited;
+end;
+
+function TPasse.HandleScanlineIRQ: Boolean;
+begin
+  // TODO: Work out a good instruction budget size for scanline interrupts
+  Result := CPU.Interrupt(TPasseMemory.ScanlineIRQID, 10000);
+end;
+
+procedure TPasse.DebugPrint(const AString: AnsiString);
+begin
+  if Assigned(FVDU) and Running then
+    FVDU.Print(AString)
   else
     inherited;
 end;

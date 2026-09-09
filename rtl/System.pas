@@ -86,7 +86,7 @@ type
     RefreshRate: Cardinal;
     Elapsed:     Cardinal;
     Delta:       Single;
-    Reserved:    Cardinal;
+    RNGState:    Cardinal;
   end;
 
 const
@@ -123,6 +123,13 @@ function  StrLength(AStr: PChar): Cardinal;           syscall _SysCall_StringLen
 function  StrConcat(AStrL, AStrR: PChar): PChar;      syscall _SysCall_StringConcat;
 function  StrCompare(AStrL, AStrR: PChar): Integer;   syscall _SysCall_StringCompare;
 function  StrFormat(AFormat: String): PChar; varargs; syscall _SysCall_StringFormat;
+
+// ---------------------------------------------------------------------------
+
+procedure Randomize;                        syscall _SysCall_RandomRandomize;
+function  RNGNext: Cardinal;                syscall _SysCall_RandomNext;
+function  Random(ARange: Integer): Integer; syscall _SysCall_RandomNextInt;
+function  RandomF: Single;                  syscall _SysCall_RandomNextFloat;
 
 // ---------------------------------------------------------------------------
 

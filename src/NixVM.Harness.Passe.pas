@@ -31,7 +31,7 @@ uses
   NixVM.Passe.Memory;
 
 type
-  TPasseHarness = TCustomWindowHarness<TPasseMemory>;
+  TPasseHarness = class(TCustomWindowHarness<TPasseMemory>);
 
 var
   Passe: TPasseHarness = nil;

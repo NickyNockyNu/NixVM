@@ -132,36 +132,41 @@ type
       pushr = $94;
       popr  = $95;
 
-      fadd  = $B0;
-      fsub  = $B1;
-      fmul  = $B2;
-      fdiv  = $B3;
-      itof  = $B4;
-      ftoi  = $B5;
-      frnd  = $B6;
-      fsin  = $B7;
-      fcos  = $B8;
-      ftan  = $B9;
-      fatan = $BA;
-      fexp  = $BB;
-      fln   = $BC;
-      fsqrt = $BD;
-      fce   = $BE;
-      fcmp  = $BF;
+      fadd   = $B0;
+      fsub   = $B1;
+      fmul   = $B2;
+      fdiv   = $B3;
+      itof   = $B4;
+      ftoi   = $B5;
+      frnd   = $B6;
+      fsin   = $B7;
+      fcos   = $B8;
+      ftan   = $B9;
+      fatan  = $BA;
+      fexp   = $BB;
+      fln    = $BC;
+      fsqrt  = $BD;
+      fce    = $BE;
+      fcmp   = $BF;
+      fceil  = $C0;
+      fflr   = $C1;
 
-      sete  = $C0;
-      setne = $C1;
-      setl  = $C2;
-      setle = $C3;
-      setg  = $C4;
-      setge = $C5;
+      sete  = $D0;
+      setne = $D1;
+      setl  = $D2;
+      setle = $D3;
+      setg  = $D4;
+      setge = $D5;
 
-      bset  = $D0;
-      bclr  = $D1;
-      btst  = $D2;
-      bsetf = $D3;
-      bclrf = $D4;
-      btstf = $D5;
+      bset  = $E0;
+      bclr  = $E1;
+      btst  = $E2;
+      bsetf = $E3;
+      bclrf = $E4;
+      btstf = $E5;
+
+      rand = $F0;
+      seed = $F1;
 
       nop = $FF;
       {$ENDREGION}
@@ -379,12 +384,12 @@ type
       {BE}(Mnemonic:'fce'),
       {BF}(Mnemonic:'fcmp';  Params:TParameters.R1R2),
 
-      {C0}(Mnemonic:'sete';  Params:TParameters.R1),
-      {C1}(Mnemonic:'setne'; Params:TParameters.R1),
-      {C2}(Mnemonic:'setl';  Params:TParameters.R1),
-      {C3}(Mnemonic:'setle'; Params:TParameters.R1),
-      {C4}(Mnemonic:'setg';  Params:TParameters.R1),
-      {C5}(Mnemonic:'setge'; Params:TParameters.R1),
+      {C0}(),
+      {C1}(),
+      {C2}(),
+      {C3}(),
+      {C4}(),
+      {C5}(),
       {C6}(),
       {C7}(),
       {C8}(),
@@ -396,12 +401,12 @@ type
       {CE}(),
       {CF}(),
 
-      {D0}(Mnemonic:'bset';   Params:TParameters.R1R2),
-      {D1}(Mnemonic:'bclr';   Params:TParameters.R1R2),
-      {D2}(Mnemonic:'btst';   Params:TParameters.R1R2),
-      {D3}(Mnemonic:'bsetf';  Params:TParameters.RImm),
-      {D4}(Mnemonic:'bclrf';  Params:TParameters.RImm),
-      {D5}(Mnemonic:'btstf';  Params:TParameters.RImm),
+      {D0}(Mnemonic:'sete';  Params:TParameters.R1),
+      {D1}(Mnemonic:'setne'; Params:TParameters.R1),
+      {D2}(Mnemonic:'setl';  Params:TParameters.R1),
+      {D3}(Mnemonic:'setle'; Params:TParameters.R1),
+      {D4}(Mnemonic:'setg';  Params:TParameters.R1),
+      {D5}(Mnemonic:'setge'; Params:TParameters.R1),
       {D6}(),
       {D7}(),
       {D8}(),
@@ -413,12 +418,12 @@ type
       {DE}(),
       {DF}(),
 
-      {E0}(),
-      {E1}(),
-      {E2}(),
-      {E3}(),
-      {E4}(),
-      {E5}(),
+      {E0}(Mnemonic:'bset';   Params:TParameters.R1R2),
+      {E1}(Mnemonic:'bclr';   Params:TParameters.R1R2),
+      {E2}(Mnemonic:'btst';   Params:TParameters.R1R2),
+      {E3}(Mnemonic:'bsetf';  Params:TParameters.RImm),
+      {E4}(Mnemonic:'bclrf';  Params:TParameters.RImm),
+      {E5}(Mnemonic:'btstf';  Params:TParameters.RImm),
       {E6}(),
       {E7}(),
       {E8}(),
@@ -430,8 +435,8 @@ type
       {EE}(),
       {EF}(),
 
-      {F0}(),
-      {F1}(),
+      {F0}(Mnemonic:'rand';  Params:TParameters.R1),
+      {F1}(Mnemonic:'seed';  Params:TParameters.RImm),
       {F2}(),
       {F3}(),
       {F4}(),

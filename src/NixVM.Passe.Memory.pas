@@ -28,19 +28,42 @@ interface
 uses
   NixVM.Core.System,
 
-  NixVM.Passe.Video;
+  NixVM.Passe.Video,
+  NixVM.Passe.Input;
 
 type
-  {$REGION 'Memory'}
-  PPasseMemory = ^TPasseMemory;
+  {$REGION 'System'}
+  PPasseSystem = ^TPasseMemory;
   TPasseMemory = packed record
   const
-    VideoRegistersAddress = 0;
+    ScanlineIRQID = 5;
+
+    KeyStatesAddress       = SizeOf(TCoreSystemMemory);
+    KeyboardBufferAddress  = KeyStatesAddress      + SizeOf(TKeyStates);
+    MouseAddress           = KeyboardBufferAddress + SizeOf(TKeyboardBuffer);
+    GamepadsAddress        = MouseAddress          + SizeOf(TMouse);
+
+    VideoRegistersAddress = GamepadsAddress       + SizeOf(TGamepads);
     PaletteAddress        = VideoRegistersAddress + SizeOf(TVideoRegisters);
-    FrameBufferAddress    = PaletteAddress        + SizeOf(TPalette);
+    ScanlinesAddress      = PaletteAddress        + SizeOf(TPalette);
+    FontAddress           = ScanlinesAddress      + SizeOf(TScanlines);
+    ConsoleAddress        = FontAddress           + SizeOf(TFont);
+    StickersAddress       = ConsoleAddress        + SizeOf(TConsole);
+    SpritesAddress        = StickersAddress       + SizeOf(TStickers);
+    FrameBufferAddress    = SpritesAddress        + SizeOf(TSprites);
   public
+    KeyStates:      TKeyStates;
+    KeyboardBuffer: TKeyboardBuffer;
+    Mouse:          TMouse;
+    Gamepads:       TGamepads;
+
     VideoRegisters: TVideoRegisters;
     Palette:        TPalette;
+    Scanlines:      TScanlines;
+    Font:           TFont;
+    Console:        TConsole;
+    Stickers:       TStickers;
+    Sprites:        TSprites;
     FrameBuffer:    TFrameBuffer;
 
     procedure Reset;
@@ -52,18 +75,8 @@ implementation
 {$REGION 'Memory'}
 procedure TPasseMemory.Reset;
 begin
-  with VideoRegisters do
-  begin
-    Reset;
-
-    DisplayBuffer := SizeOf(TCoreSystemMemory) + TPasseMemory.FrameBufferAddress;
-    DrawBuffer    := DisplayBuffer;
-    Palette       := SizeOf(TCoreSystemMemory) + TPasseMemory.PaletteAddress;
-  end;
-
-  Palette.Reset;
-
-  FrameBuffer.Clear(1);
+  // Video memory reset handled by VDU
+  // Input memory reset handled by HID
 end;
 {$ENDREGION}
 

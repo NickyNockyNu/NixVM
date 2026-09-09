@@ -87,10 +87,10 @@ type
 
     procedure EverySecond; virtual;
 
-    function HandleSysCall    (ASysCall:   TSysCalls.ID):   Boolean; virtual;
-    function DispatchInterrupt(AInterrupt: TInterrupts.ID): Boolean; virtual;
+    function HandleSysCall(ASysCall: TSysCalls.ID): Boolean; virtual;
 
     procedure HandlePanic; virtual;
+    procedure HandleYield; virtual;
 
     function LoadROM(const AROMFile: String): Boolean;
   public
@@ -244,6 +244,7 @@ var
   RefreshRate: Cardinal;
   ExecuteTime: Double;
 begin
+
   RefreshRate := FMemory.CoreSystem.Registers.RefreshRate;
 
   if RefreshRate = 0 then
@@ -282,7 +283,7 @@ procedure TCustomHarness<TSystemMemory>.UpdateTimers(AMilliseconds: Cardinal);
 begin
   for var i := 0 to TTimers.Count - 1 do
     if FMemory.CoreSystem.Timers.Timers[i].Update(AMilliseconds) then
-      DispatchInterrupt(TInterrupts.ID.Timer0 + i);
+      FCPU.Interrupt(TInterrupts.ID.Timer0 + i, 0);
 end;
 
 procedure TCustomHarness<TSystemMemory>.Initialize;
@@ -387,30 +388,14 @@ begin
       TSysCalls.ID.ArrayCopy:      R0 := FMemory.ArrayCopy(R0, R1, R2);
       TSysCalls.ID.ArrayConcat:    R0 := FMemory.ArrayConcat(R0, R1);
       TSysCalls.ID.ArrayClear:           FMemory.ArrayClear(R0);
+
+      TSysCalls.ID.RandomRandomize:       FMemory.CoreSystem.Registers.RNGRandomize;
+      TSysCalls.ID.RandomNext:      R0 := FMemory.CoreSystem.Registers.RNGNext;
+      TSysCalls.ID.RandomNextInt:   R0 := FMemory.CoreSystem.Registers.RNGNextInt(R0);
+      TSysCalls.ID.RandomNextFloat: R0 := FMemory.CoreSystem.Registers.RNGNextFloat;
     else
       Result := False;
     end;
-end;
-
-function TCustomHarness<TSystemMemory>.DispatchInterrupt(AInterrupt: TInterrupts.ID): Boolean;
-var
-  MaxInstructions: Integer;
-begin
-  if FRunning then
-  begin
-    case AInterrupt of
-      TInterrupts.ID.Timer0..TInterrupts.ID.Timer0 + (TTimers.Count - 1):
-        // If timer MaxInstructions are zero they'll simply begin execution on the next CPUExecute cycle.
-        // Or we can give them a batch size here if we need timer code to be executed as soon as possible (this will add a tiny bit of lag to our update cycle).
-        MaxInstructions := 0;
-    else
-      MaxInstructions := FCPUBatchSize;
-    end;
-
-    Result := FCPU.Interrupt(AInterrupt, MaxInstructions);
-  end
-  else
-    Result := False;
 end;
 
 procedure TCustomHarness<TSystemMemory>.HandlePanic;
@@ -421,6 +406,11 @@ begin
     Writeln(' ** PANIC: ', TSystemState.TPanicCode(FMemory.CoreSystem.SystemState.PanicCode).ToString, ' ** ');
 
   DebugBreak;
+end;
+
+procedure TCustomHarness<TSystemMemory>.HandleYield;
+begin
+
 end;
 
 function TCustomHarness<TSystemMemory>.LoadROM(const AROMFile: String): Boolean;
@@ -526,7 +516,8 @@ begin
   FCPU    := TCPU.Create(FMemory);
 
   FCPU.SysCallHandler := HandleSysCall;
-  FCPU.PanicHandler   := HandlePanic;
+  FCPU.OnPanic        := HandlePanic;
+  FCPU.OnYield        := HandleYield;
 
   FCPUBatchSize := 16 * 1024;
 

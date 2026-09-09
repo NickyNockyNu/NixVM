@@ -225,13 +225,87 @@ begin
   if (ANode is TASTCallExpr) or (ANode is TASTProcCall) then
     Exit(True);
 
+  if ANode is TASTIdentifier then
+  begin
+    var IdentName := TASTIdentifier(ANode).Name;
+
+    for var i := FWithStack.Count - 1 downto 0 do
+    begin
+      var Ctx := FWithStack[i];
+
+      if Ctx.RecordType <> nil then
+      begin
+        var MethodDecl: TASTRoutineDecl;
+
+        if (Ctx.RecordType.Methods <> nil) and Ctx.RecordType.Methods.TryGetValue(LowerCase(IdentName), MethodDecl) then
+          Exit(True);
+
+        var Prop: TType.TProperty;
+
+        if Ctx.RecordType.FindProperty(IdentName, Prop) and (not Prop.IsDirectRead) and (Length(Prop.ReadSpec) > 0) then
+          Exit(True);
+      end;
+    end;
+
+    var SelfSym := FCurrentScope.Resolve('self');
+
+    if (SelfSym <> nil) and (SelfSym.SymbolType <> nil) and (SelfSym.SymbolType.Kind = TType.TKind.Record) then
+    begin
+      var MethodDecl: TASTRoutineDecl;
+
+      if (SelfSym.SymbolType.Methods <> nil) and SelfSym.SymbolType.Methods.TryGetValue(LowerCase(IdentName), MethodDecl) then
+        Exit(True);
+
+      var Prop: TType.TProperty;
+
+      if SelfSym.SymbolType.FindProperty(IdentName, Prop) and (not Prop.IsDirectRead) and (Length(Prop.ReadSpec) > 0) then
+        Exit(True);
+    end;
+
+    var Sym: TSymbol := TSymbol(TASTIdentifier(ANode).Symbol);
+
+    if Sym = nil then
+      Sym := FCurrentScope.Resolve(IdentName);
+
+    if (Sym <> nil) and (Sym.Kind in [TSymbol.TKind.Function, TSymbol.TKind.Procedure]) then
+      Exit(True);
+  end;
+
   if ANode is TASTMemberAccess then
-    Exit(HasCalls(TASTMemberAccess(ANode).Expression));
+  begin
+    var MemAcc := TASTMemberAccess(ANode);
+
+    if (MemAcc.Expression <> nil) and (MemAcc.Expression.ResolvedType <> nil) then
+    begin
+      var BaseType := MemAcc.Expression.ResolvedType;
+
+      if (BaseType.Kind = TASTType.TKind.Pointer) and (BaseType.ElementType <> nil) then
+        BaseType := BaseType.ElementType;
+
+      var Sym := FAnalyzer.GlobalScope.Resolve(BaseType.TypeName);
+
+      if (Sym <> nil) and (Sym.SymbolType <> nil) and (Sym.SymbolType.Kind = TType.TKind.Record) then
+      begin
+        var MethodDecl: TASTRoutineDecl;
+
+        if (Sym.SymbolType.Methods <> nil) and Sym.SymbolType.Methods.TryGetValue(LowerCase(MemAcc.MemberName), MethodDecl) then
+          Exit(True);
+
+        var Prop: TType.TProperty;
+
+        if Sym.SymbolType.FindProperty(MemAcc.MemberName, Prop) and (not Prop.IsDirectRead) and (Length(Prop.ReadSpec) > 0) then
+          Exit(True);
+      end;
+    end;
+
+    Exit(HasCalls(MemAcc.Expression));
+  end;
 
   if ANode is TASTBlock then
   begin
     for var Stmt in TASTBlock(ANode).Statements do
-      if HasCalls(Stmt) then Exit(True);
+      if HasCalls(Stmt) then
+        Exit(True);
 
     Exit(False);
   end;
@@ -248,7 +322,8 @@ begin
   if ANode is TASTRepeat then
   begin
     for var S in TASTRepeat(ANode).Statements do
-      if HasCalls(S) then Exit(True);
+      if HasCalls(S) then
+        Exit(True);
 
     Exit(HasCalls(TASTRepeat(ANode).Condition));
   end;
@@ -288,7 +363,16 @@ begin
     end;
 
     TASTLiteral.TKind.Char:
-      FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, Ord(ALiteral.ValueStr[1]));
+    begin
+      if (ALiteral.ResolvedType <> nil) and ALiteral.ResolvedType.IsString then
+      begin
+        var StrLbl := GetStringLabel(ALiteral.ValueStr);
+
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, TLabelString(StrLbl));
+      end
+      else
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, Ord(ALiteral.ValueStr[1]));
+    end;
 
     TASTLiteral.TKind.Nil:
       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, 0);
@@ -377,81 +461,84 @@ begin
     end;
   end;
 
-  var SelfSym := FCurrentScope.Resolve('self');
+  var Sym: TSymbol := TSymbol(AIdent.Symbol);
 
-  if (SelfSym <> nil) and (SelfSym.SymbolType <> nil) and (SelfSym.SymbolType.Kind = TType.TKind.Record) then
+  if Sym = nil then
   begin
-    var Field: TType.TRecordField;
+    var SelfSym := FCurrentScope.Resolve('self');
 
-    if SelfSym.SymbolType.FindField(AIdent.Name, Field) then
+    if (SelfSym <> nil) and (SelfSym.SymbolType <> nil) and (SelfSym.SymbolType.Kind = TType.TKind.Record) then
     begin
-      FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R5, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
+      var Field: TType.TRecordField;
 
-      case Field.&Type.Size of
-        1:
-        begin
-          FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldob, ADestReg, TRegisters.ID.R5, Field.Offset);
-
-          if Field.&Type.IsSigned then
-            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.iextb, ADestReg, ADestReg);
-        end;
-
-        2:
-        begin
-          FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldow, ADestReg, TRegisters.ID.R5, Field.Offset);
-
-          if Field.&Type.IsSigned then
-            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.iextw, ADestReg, ADestReg);
-        end;
-      else
-        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, ADestReg, TRegisters.ID.R5, Field.Offset);
-      end;
-
-      Exit;
-    end;
-
-    var Prop: TType.TProperty;
-
-    if SelfSym.SymbolType.FindProperty(AIdent.Name, Prop) then
-    begin
-      FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
-
-      if Prop.IsDirectRead then
+      if SelfSym.SymbolType.FindField(AIdent.Name, Field) then
       begin
-        case Prop.PropType.Size of
+        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R5, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
+
+        case Field.&Type.Size of
           1:
           begin
-            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldob, ADestReg, TRegisters.ID.R0, Prop.ReadOffset);
+            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldob, ADestReg, TRegisters.ID.R5, Field.Offset);
 
-            if Prop.PropType.IsSigned then
+            if Field.&Type.IsSigned then
               FIR.AddInstrR1R2(TCPUInstruction.TOpCode.iextb, ADestReg, ADestReg);
           end;
 
           2:
           begin
-            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldow, ADestReg, TRegisters.ID.R0, Prop.ReadOffset);
+            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldow, ADestReg, TRegisters.ID.R5, Field.Offset);
 
-            if Prop.PropType.IsSigned then
+            if Field.&Type.IsSigned then
               FIR.AddInstrR1R2(TCPUInstruction.TOpCode.iextw, ADestReg, ADestReg);
           end;
         else
-          FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, ADestReg, TRegisters.ID.R0, Prop.ReadOffset);
+          FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, ADestReg, TRegisters.ID.R5, Field.Offset);
         end;
-      end
-      else
-      begin
-        var MangledName := SelfSym.SymbolType.Name + '_' + Prop.ReadSpec;
-        FIR.AddInstrRImm(TCPUInstruction.TOpCode.call, TLabelString(MangledName));
 
-        if ADestReg <> TRegisters.ID.R0 then
-          FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, ADestReg, TRegisters.ID.R0);
+        Exit;
       end;
 
-      Exit;
+      var Prop: TType.TProperty;
+
+      if SelfSym.SymbolType.FindProperty(AIdent.Name, Prop) then
+      begin
+        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
+
+        if Prop.IsDirectRead then
+        begin
+          case Prop.PropType.Size of
+            1:
+            begin
+              FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldob, ADestReg, TRegisters.ID.R0, Prop.ReadOffset);
+
+              if Prop.PropType.IsSigned then
+                FIR.AddInstrR1R2(TCPUInstruction.TOpCode.iextb, ADestReg, ADestReg);
+            end;
+
+            2:
+            begin
+              FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldow, ADestReg, TRegisters.ID.R0, Prop.ReadOffset);
+
+              if Prop.PropType.IsSigned then
+                FIR.AddInstrR1R2(TCPUInstruction.TOpCode.iextw, ADestReg, ADestReg);
+            end;
+          else
+            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, ADestReg, TRegisters.ID.R0, Prop.ReadOffset);
+          end;
+        end
+        else
+        begin
+          var MangledName := SelfSym.SymbolType.Name + '_' + Prop.ReadSpec;
+          FIR.AddInstrRImm(TCPUInstruction.TOpCode.call, TLabelString(MangledName));
+
+          if ADestReg <> TRegisters.ID.R0 then
+            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, ADestReg, TRegisters.ID.R0);
+        end;
+
+        Exit;
+      end;
     end;
   end;
-
-  var Sym: TSymbol := TSymbol(AIdent.Symbol);
 
   if Sym = nil then
     Sym := FCurrentScope.Resolve(AIdent.Name);
@@ -510,7 +597,7 @@ begin
         1:
         begin
           FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R5, TLabelString(Sym.GlobalLabel));
-          FIR.AddInstrR1R2 (TCPUInstruction.TOpCode.ldb, ADestReg, TRegisters.ID.R5);
+          FIR.AddInstrR1R2 (TCPUInstruction.TOpCode.ldb, ADestReg,         TRegisters.ID.R5);
 
           if IsSignedType then
             FIR.AddInstrR1R2(TCPUInstruction.TOpCode.iextb, ADestReg, ADestReg);
@@ -519,7 +606,7 @@ begin
         2:
         begin
           FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R5, TLabelString(Sym.GlobalLabel));
-          FIR.AddInstrR1R2 (TCPUInstruction.TOpCode.ldw, ADestReg, TRegisters.ID.R5);
+          FIR.AddInstrR1R2 (TCPUInstruction.TOpCode.ldw, ADestReg,         TRegisters.ID.R5);
 
           if IsSignedType then
             FIR.AddInstrR1R2(TCPUInstruction.TOpCode.iextw, ADestReg, ADestReg);
@@ -597,7 +684,6 @@ begin
         if SameText(Elem.Name, AMember.MemberName) then
         begin
           FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, Cardinal(Elem.Value));
-
           Exit;
         end;
   end;
@@ -647,7 +733,9 @@ begin
         if Length(Prop.ReadSpec) > 0 then
         begin
           GenAddressOf(AMember.Expression, TRegisters.ID.R0);
+
           var MangledName := Sym.SymbolType.Name + '_' + Prop.ReadSpec;
+
           FIR.AddInstrRImm(TCPUInstruction.TOpCode.call, TLabelString(MangledName));
 
           if ADestReg <> TRegisters.ID.R0 then
@@ -655,6 +743,22 @@ begin
 
           Exit;
         end;
+      end;
+
+      var MethodDecl: TASTRoutineDecl;
+
+      if (Sym.SymbolType.Methods <> nil) and Sym.SymbolType.Methods.TryGetValue(LowerCase(AMember.MemberName), MethodDecl) then
+      begin
+        GenAddressOf(AMember.Expression, TRegisters.ID.R0);
+
+        var MangledName := Sym.SymbolType.Name + '_' + MethodDecl.Name;
+
+        FIR.AddInstrRImm(TCPUInstruction.TOpCode.call, TLabelString(MangledName));
+
+        if ADestReg <> TRegisters.ID.R0 then
+          FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, ADestReg, TRegisters.ID.R0);
+
+        Exit;
       end;
     end;
   end;
@@ -674,7 +778,6 @@ begin
     1:
     begin
       FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldob, ADestReg, ADestReg, AMember.FieldOffset);
-
       if IsSignedType then
         FIR.AddInstrR1R2(TCPUInstruction.TOpCode.iextb, ADestReg, ADestReg);
     end;
@@ -808,7 +911,6 @@ procedure TCodeGenerator.GenBinary(ABinary: TASTBinary; ADestReg: TRegisters.ID)
 
     Result := False;
   end;
-
 var
   ScratchReg: TRegisters.ID;
 begin
@@ -953,61 +1055,110 @@ begin
     Exit;
   end;
 
-  var IsFloatOp := ((ABinary.Left.ResolvedType <> nil) and ABinary.Left.ResolvedType.IsFloat) or
+//  var IsFloatOp := ((ABinary.Left.ResolvedType <> nil) and ABinary.Left.ResolvedType.IsFloat) or
+//                   ((ABinary.Right.ResolvedType <> nil) and ABinary.Right.ResolvedType.IsFloat);
+//
+//  if (not IsFloatOp) and (ABinary.Right is TASTLiteral) and (TASTLiteral(ABinary.Right).Kind in [TASTLiteral.TKind.Integer, TASTLiteral.TKind.Set]) then
+//  begin
+//    GenExpression(ABinary.Left, ADestReg);
+//    var LitVal := TASTLiteral(ABinary.Right).ValueInt;
+//
+//    case ABinary.Op of
+//      TASTBinary.TOp.Add:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add,  ADestReg, LitVal);
+//      TASTBinary.TOp.Subtract:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.sub,  ADestReg, LitVal);
+//      TASTBinary.TOp.Multiply:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul,  ADestReg, LitVal);
+//      TASTBinary.TOp.IntDivide: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.div,  ADestReg, LitVal);
+//      TASTBinary.TOp.Modulo:    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mod,  ADestReg, LitVal);
+//      TASTBinary.TOp.And:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.&and, ADestReg, LitVal);
+//      TASTBinary.TOp.Or:        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.&or,  ADestReg, LitVal);
+//      TASTBinary.TOp.Xor:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.&xor, ADestReg, LitVal);
+//      TASTBinary.TOp.Shl:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl,  ADestReg, LitVal);
+//      TASTBinary.TOp.Shr:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shr,  ADestReg, LitVal);
+//      TASTBinary.TOp.Sar:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.isar, ADestReg, LitVal);
+//
+//      TASTBinary.TOp.Equal,
+//      TASTBinary.TOp.NotEqual,
+//      TASTBinary.TOp.Less,
+//      TASTBinary.TOp.LessEqual,
+//      TASTBinary.TOp.Greater,
+//      TASTBinary.TOp.GreaterEqual:
+//      begin
+//        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.cmp, ADestReg, LitVal);
+//
+//        case ABinary.Op of
+//          TASTBinary.TOp.Equal:        FIR.AddInstrR1(TCPUInstruction.TOpCode.sete,  ADestReg);
+//          TASTBinary.TOp.NotEqual:     FIR.AddInstrR1(TCPUInstruction.TOpCode.setne, ADestReg);
+//          TASTBinary.TOp.Less:         FIR.AddInstrR1(TCPUInstruction.TOpCode.setl,  ADestReg);
+//          TASTBinary.TOp.LessEqual:    FIR.AddInstrR1(TCPUInstruction.TOpCode.setle, ADestReg);
+//          TASTBinary.TOp.Greater:      FIR.AddInstrR1(TCPUInstruction.TOpCode.setg,  ADestReg);
+//          TASTBinary.TOp.GreaterEqual: FIR.AddInstrR1(TCPUInstruction.TOpCode.setge, ADestReg);
+//        end;
+//      end;
+//    end;
+//
+//    Exit;
+//  end;
+//
+//  if HasCalls(ABinary.Right) and not HasCalls(ABinary.Left) then
+//  begin
+//    GenExpression(ABinary.Right, ScratchReg);
+//    GenExpression(ABinary.Left,  ADestReg);
+//  end
+//  else if HasCalls(ABinary.Right) and HasCalls(ABinary.Left) then
+//  begin
+//    GenExpression   (ABinary.Left,                 ADestReg);
+//    FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, ADestReg);
+//    GenExpression   (ABinary.Right,                ScratchReg);
+//    FIR.AddInstrR1  (TCPUInstruction.TOpCode.pop,  ADestReg);
+//  end
+//  else
+//  begin
+//    GenExpression(ABinary.Left,  ADestReg);
+//    GenExpression(ABinary.Right, ScratchReg);
+//  end;
+
+  var IsFloatOp := (ABinary.Op = TASTBinary.TOp.Divide) or
+                   ((ABinary.ResolvedType <> nil) and ABinary.ResolvedType.IsFloat) or
+                   ((ABinary.Left.ResolvedType <> nil) and ABinary.Left.ResolvedType.IsFloat) or
                    ((ABinary.Right.ResolvedType <> nil) and ABinary.Right.ResolvedType.IsFloat);
 
-  if (not IsFloatOp) and (ABinary.Right is TASTLiteral) and (TASTLiteral(ABinary.Right).Kind in [TASTLiteral.TKind.Integer, TASTLiteral.TKind.Set]) then
+  if HasCalls(ABinary.Right) and not HasCalls(ABinary.Left) then
+  begin
+    GenExpression(ABinary.Right, ScratchReg);    if IsFloatOp and (ABinary.Right.ResolvedType <> nil) and ABinary.Right.ResolvedType.IsInteger then
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, ScratchReg, ScratchReg);
+
+    GenExpression(ABinary.Left, ADestReg);
+
+    if IsFloatOp and (ABinary.Left.ResolvedType <> nil) and ABinary.Left.ResolvedType.IsInteger then
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, ADestReg, ADestReg);
+  end
+  else if HasCalls(ABinary.Right) and HasCalls(ABinary.Left) then
   begin
     GenExpression(ABinary.Left, ADestReg);
-    var LitVal := TASTLiteral(ABinary.Right).ValueInt;
 
-    case ABinary.Op of
-      TASTBinary.TOp.Add:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add,  ADestReg, LitVal);
-      TASTBinary.TOp.Subtract:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.sub,  ADestReg, LitVal);
-      TASTBinary.TOp.Multiply:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul,  ADestReg, LitVal);
-      TASTBinary.TOp.IntDivide: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.div,  ADestReg, LitVal);
-      TASTBinary.TOp.Modulo:    FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mod,  ADestReg, LitVal);
-      TASTBinary.TOp.And:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.&and, ADestReg, LitVal);
-      TASTBinary.TOp.Or:        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.&or,  ADestReg, LitVal);
-      TASTBinary.TOp.Xor:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.&xor, ADestReg, LitVal);
-      TASTBinary.TOp.Shl:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl,  ADestReg, LitVal);
-      TASTBinary.TOp.Shr:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shr,  ADestReg, LitVal);
-      TASTBinary.TOp.Sar:       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.isar, ADestReg, LitVal);
+    if IsFloatOp and (ABinary.Left.ResolvedType <> nil) and ABinary.Left.ResolvedType.IsInteger then
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, ADestReg, ADestReg);
 
-      TASTBinary.TOp.Equal,
-      TASTBinary.TOp.NotEqual,
-      TASTBinary.TOp.Less,
-      TASTBinary.TOp.LessEqual,
-      TASTBinary.TOp.Greater,
-      TASTBinary.TOp.GreaterEqual:
-      begin
-        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.cmp, ADestReg, LitVal);
-
-        case ABinary.Op of
-          TASTBinary.TOp.Equal:        FIR.AddInstrR1(TCPUInstruction.TOpCode.sete,  ADestReg);
-          TASTBinary.TOp.NotEqual:     FIR.AddInstrR1(TCPUInstruction.TOpCode.setne, ADestReg);
-          TASTBinary.TOp.Less:         FIR.AddInstrR1(TCPUInstruction.TOpCode.setl,  ADestReg);
-          TASTBinary.TOp.LessEqual:    FIR.AddInstrR1(TCPUInstruction.TOpCode.setle, ADestReg);
-          TASTBinary.TOp.Greater:      FIR.AddInstrR1(TCPUInstruction.TOpCode.setg,  ADestReg);
-          TASTBinary.TOp.GreaterEqual: FIR.AddInstrR1(TCPUInstruction.TOpCode.setge, ADestReg);
-        end;
-      end;
-    end;
-
-    Exit;
-  end;
-
-  if HasCalls(ABinary.Right) then
-  begin
-    GenExpression(ABinary.Left, ADestReg);
     FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, ADestReg);
+
     GenExpression(ABinary.Right, ScratchReg);
+
+    if IsFloatOp and (ABinary.Right.ResolvedType <> nil) and ABinary.Right.ResolvedType.IsInteger then
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, ScratchReg, ScratchReg);
+
     FIR.AddInstrR1(TCPUInstruction.TOpCode.pop, ADestReg);
   end
   else
   begin
     GenExpression(ABinary.Left, ADestReg);
+
+    if IsFloatOp and (ABinary.Left.ResolvedType <> nil) and ABinary.Left.ResolvedType.IsInteger then
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, ADestReg, ADestReg);
+
     GenExpression(ABinary.Right, ScratchReg);
+
+    if IsFloatOp and (ABinary.Right.ResolvedType <> nil) and ABinary.Right.ResolvedType.IsInteger then
+      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, ScratchReg, ScratchReg);
   end;
 
   case ABinary.Op of
@@ -1047,9 +1198,7 @@ begin
     TASTBinary.TOp.Greater,
     TASTBinary.TOp.GreaterEqual:
     begin
-      var IsFloatComparison := (ABinary.Left.ResolvedType <> nil) and ABinary.Left.ResolvedType.IsFloat;
-
-      if IsFloatComparison then
+      if IsFloatOp then
         FIR.AddInstrR1R2(TCPUInstruction.TOpCode.fcmp, ADestReg, ScratchReg)
       else
         FIR.AddInstrR1R2(TCPUInstruction.TOpCode.cmp, ADestReg, ScratchReg);
@@ -1236,24 +1385,29 @@ begin
 
   if (CalleeLower = 'sin')  or (CalleeLower = 'cos')   or (CalleeLower = 'tan')   or
      (CalleeLower = 'atan') or (CalleeLower = 'exp')   or (CalleeLower = 'ln')    or
-     (CalleeLower = 'sqrt') or (CalleeLower = 'round') or (CalleeLower = 'trunc') then
+     (CalleeLower = 'sqrt') or (CalleeLower = 'round') or (CalleeLower = 'trunc') or
+     (CalleeLower = 'ceil') or (CalleeLower = 'floor') then
   begin
     if ACall.Arguments.Count = 1 then
     begin
       var Arg := ACall.Arguments[0];
       GenExpression(Arg, ADestReg);
 
-      if (Arg.ResolvedType <> nil) and Arg.ResolvedType.IsInteger and (CalleeLower <> 'trunc') and (CalleeLower <> 'round') then
+      if (Arg.ResolvedType <> nil) and Arg.ResolvedType.IsInteger and (CalleeLower <> 'trunc') and (CalleeLower <> 'round') and (CalleeLower <> 'ceil') and (CalleeLower <> 'floor') then
         FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, ADestReg, ADestReg);
 
-      if (CalleeLower = 'trunc') or (CalleeLower = 'round') then
+      if (CalleeLower = 'trunc') or (CalleeLower = 'round') or (CalleeLower = 'ceil') or (CalleeLower = 'floor') then
       begin
         if (Arg.ResolvedType <> nil) and Arg.ResolvedType.IsFloat then
         begin
           if CalleeLower = 'trunc' then
-            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ftoi, ADestReg, ADestReg)
-          else
-            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.frnd, ADestReg, ADestReg);
+            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.ftoi,  ADestReg, ADestReg)
+          else if CalleeLower = 'round' then
+            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.frnd,  ADestReg, ADestReg)
+          else if CalleeLower = 'ceil' then
+            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.fceil, ADestReg, ADestReg)
+          else if CalleeLower = 'floor' then
+            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.fflr,  ADestReg, ADestReg)
         end;
       end
       else
@@ -1647,6 +1801,7 @@ begin
     end;
 
     AnyCalls := False;
+
     for var i := 0 to TotalArgs - 1 do
       if HasCalls(ArgList[i]) then
       begin
@@ -1687,7 +1842,7 @@ begin
     begin
       for var i := TotalArgs - 1 downto RegArgs do
       begin
-        GenExpression(ArgList[i], TRegisters.ID.R5);
+        GenExpression   (ArgList[i],                   TRegisters.ID.R5);
         FIR.AddInstrRImm(TCPUInstruction.TOpCode.push, TRegisters.ID.R5);
       end;
 
@@ -2050,59 +2205,62 @@ begin
       end;
     end;
 
-    var SelfSym := FCurrentScope.Resolve('self');
+    var Sym: TSymbol := TSymbol(TASTIdentifier(ATarget).Symbol);
 
-    if (SelfSym <> nil) and (SelfSym.SymbolType <> nil) and (SelfSym.SymbolType.Kind = TType.TKind.Record) then
+    if Sym = nil then
     begin
-      var Field: TType.TRecordField;
+      var SelfSym := FCurrentScope.Resolve('self');
 
-      if SelfSym.SymbolType.FindField(TargetName, Field) then
+      if (SelfSym <> nil) and (SelfSym.SymbolType <> nil) and (SelfSym.SymbolType.Kind = TType.TKind.Record) then
       begin
-        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R5, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
+        var Field: TType.TRecordField;
 
-        case Field.&Type.Size of
-          1: FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stob, TRegisters.ID.R5, ASrcReg, Field.Offset);
-          2: FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stow, TRegisters.ID.R5, ASrcReg, Field.Offset);
-        else
-          FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto,  TRegisters.ID.R5, ASrcReg, Field.Offset);
-        end;
-
-        Exit;
-      end;
-
-      var Prop: TType.TProperty;
-
-      if SelfSym.SymbolType.FindProperty(TargetName, Prop) then
-      begin
-        if not Prop.IsDirectWrite and (Length(Prop.WriteSpec) > 0) then
-        begin
-          if ASrcReg <> TRegisters.ID.R1 then
-            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, ASrcReg);
-
-          FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo,  TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
-          var MangledName := SelfSym.SymbolType.Name + '_' + Prop.WriteSpec;
-          FIR.AddInstrRImm   (TCPUInstruction.TOpCode.call, TLabelString(MangledName));
-
-          Exit;
-        end;
-
-        if Prop.IsDirectWrite then
+        if SelfSym.SymbolType.FindField(TargetName, Field) then
         begin
           FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R5, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
 
-          case Prop.PropType.Size of
-            1: FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stob, TRegisters.ID.R5, ASrcReg, Prop.WriteOffset);
-            2: FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stow, TRegisters.ID.R5, ASrcReg, Prop.WriteOffset);
+          case Field.&Type.Size of
+            1: FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stob, TRegisters.ID.R5, ASrcReg, Field.Offset);
+            2: FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stow, TRegisters.ID.R5, ASrcReg, Field.Offset);
           else
-            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto,  TRegisters.ID.R5, ASrcReg, Prop.WriteOffset);
+            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto,  TRegisters.ID.R5, ASrcReg, Field.Offset);
           end;
 
           Exit;
         end;
+
+        var Prop: TType.TProperty;
+
+        if SelfSym.SymbolType.FindProperty(TargetName, Prop) then
+        begin
+          if not Prop.IsDirectWrite and (Length(Prop.WriteSpec) > 0) then
+          begin
+            if ASrcReg <> TRegisters.ID.R1 then
+              FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TRegisters.ID.R1, ASrcReg);
+
+            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo,  TRegisters.ID.R0, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
+            var MangledName := SelfSym.SymbolType.Name + '_' + Prop.WriteSpec;
+            FIR.AddInstrRImm   (TCPUInstruction.TOpCode.call, TLabelString(MangledName));
+
+            Exit;
+          end;
+
+          if Prop.IsDirectWrite then
+          begin
+            FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.ldo, TRegisters.ID.R5, TRegisters.ID.BP, Cardinal(SelfSym.StackOffset));
+
+            case Prop.PropType.Size of
+              1: FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stob, TRegisters.ID.R5, ASrcReg, Prop.WriteOffset);
+              2: FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.stow, TRegisters.ID.R5, ASrcReg, Prop.WriteOffset);
+            else
+              FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.sto,  TRegisters.ID.R5, ASrcReg, Prop.WriteOffset);
+            end;
+
+            Exit;
+          end;
+        end;
       end;
     end;
-
-    var Sym: TSymbol := TSymbol(TASTIdentifier(ATarget).Symbol);
 
     if Sym = nil then
       Sym := FCurrentScope.Resolve(TargetName);
@@ -2122,17 +2280,17 @@ begin
           1:
           begin
             FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R5, TLabelString(Sym.GlobalLabel));
-            FIR.AddInstrR1R2 (TCPUInstruction.TOpCode.stb, TRegisters.ID.R5, ASrcReg);
+            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.stb, TRegisters.ID.R5, ASrcReg);
           end;
 
           2:
           begin
             FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R5, TLabelString(Sym.GlobalLabel));
-            FIR.AddInstrR1R2 (TCPUInstruction.TOpCode.stw, TRegisters.ID.R5, ASrcReg);
+            FIR.AddInstrR1R2(TCPUInstruction.TOpCode.stw, TRegisters.ID.R5, ASrcReg);
           end;
         else
           FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R5, TLabelString(Sym.GlobalLabel));
-          FIR.AddInstrR1R2 (TCPUInstruction.TOpCode.st,  TRegisters.ID.R5, ASrcReg);
+          FIR.AddInstrR1R2(TCPUInstruction.TOpCode.st, TRegisters.ID.R5, ASrcReg);
         end;
       end;
 
@@ -2174,19 +2332,24 @@ begin
 
   if (AAssign.Target.ResolvedType <> nil) and (AAssign.Target.ResolvedType.Kind in [TASTType.TKind.Record, TASTType.TKind.Array]) then
   begin
-    var StructSize: Cardinal;
+    var StructSize: Cardinal := 0;
 
-    var Sym := FAnalyzer.GlobalScope.Resolve(AAssign.Target.ResolvedType.TypeName);
+    if AAssign.Target.ResolvedType.TypeName <> '' then
+    begin
+      var Sym := FAnalyzer.GlobalScope.Resolve(AAssign.Target.ResolvedType.TypeName);
 
-    if (Sym <> nil) and (Sym.SymbolType <> nil) then
-      StructSize := Sym.SymbolType.Size
-    else
+      if (Sym <> nil) and (Sym.SymbolType <> nil) then
+        StructSize := Sym.SymbolType.Size;
+    end;
+
+    if StructSize = 0 then
       StructSize := AAssign.Target.ResolvedType.Size;
 
     if StructSize > 0 then
     begin
-      GenAddressOf     (AAssign.Target,              TRegisters.ID.R0);
-      GenAddressOf     (AAssign.Expression,          TRegisters.ID.R1);
+      GenAddressOf(AAssign.Expression, TRegisters.ID.R0);
+      GenAddressOf(AAssign.Target,     TRegisters.ID.R1);
+
       FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, TRegisters.ID.R2, StructSize);
       FIR.AddSysCall   (TSysCalls.ID.MemoryCopy);
     end;
@@ -2195,6 +2358,9 @@ begin
   end;
 
   GenExpression(AAssign.Expression, TRegisters.ID.R0);
+
+  if (AAssign.Target.ResolvedType <> nil) and AAssign.Target.ResolvedType.IsFloat and (AAssign.Expression.ResolvedType <> nil) and AAssign.Expression.ResolvedType.IsInteger then
+    FIR.AddInstrR1R2(TCPUInstruction.TOpCode.itof, TRegisters.ID.R0, TRegisters.ID.R0);
 
   if AAssign.Op in [TASTAssign.TOp.PlusAssign, TASTAssign.TOp.MinusAssign] then
   begin
@@ -2207,18 +2373,19 @@ begin
       if IsFloatMath then
         FIR.AddInstrR1R2(TCPUInstruction.TOpCode.fadd, TRegisters.ID.R5, TRegisters.ID.R0)
       else
-        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.add , TRegisters.ID.R5, TRegisters.ID.R0);
+        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.add, TRegisters.ID.R5, TRegisters.ID.R0);
     end
     else
     begin
       if IsFloatMath then
         FIR.AddInstrR1R2(TCPUInstruction.TOpCode.fsub, TRegisters.ID.R5, TRegisters.ID.R0)
       else
-        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.sub,  TRegisters.ID.R5, TRegisters.ID.R0);
+        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.sub, TRegisters.ID.R5, TRegisters.ID.R0);
     end;
 
     GenStoreToTarget(AAssign.Target, TRegisters.ID.R5);
     Exit;
+
   end;
 
   GenStoreToTarget(AAssign.Target, TRegisters.ID.R0);
@@ -3100,6 +3267,14 @@ begin
       if (Sym.Kind = TSymbol.TKind.Constant) and Sym.IsEmbed then
       begin
         FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, TLabelString(Sym.GlobalLabel));
+
+        Exit;
+      end;
+
+      if Sym.Kind = TSymbol.TKind.Constant then
+      begin
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, Sym.ConstVal.ValueInt);
+
         Exit;
       end;
 
@@ -3145,140 +3320,62 @@ begin
         Sym := FCurrentScope.Resolve(TASTIdentifier(ArrayAcc.ArrayExpr).Name);
     end;
 
-    var IsHeapRef := (ArrayAcc.ArrayExpr.ResolvedType <> nil) and (ArrayAcc.ArrayExpr.ResolvedType.IsString or (ArrayAcc.ArrayExpr.ResolvedType.Kind in [TASTType.TKind.Pointer, TASTType.TKind.DynamicArray]));
-
-    if (not IsHeapRef) and (Sym <> nil) and (Sym.SymbolType <> nil) and (Sym.SymbolType.IsString or (Sym.SymbolType.Kind in [TType.TKind.Pointer, TType.TKind.DynamicArray])) then
-      IsHeapRef := True;
-
-    if IsHeapRef then
-    begin
-      var IdxReg: TRegisters.ID;
-      if ADestReg <> TRegisters.ID.R6 then
-        IdxReg := TRegisters.ID.R6
-      else
-        IdxReg := TRegisters.ID.R7;
-
-      GenExpression(ArrayAcc.IndexExprs[0], IdxReg);
-
-      if ArrayAcc.LowBound > 0 then
-        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.sub, IdxReg, Cardinal(ArrayAcc.LowBound));
-
-      case ArrayAcc.ElementSize of
-        1: ;
-        2:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, IdxReg, 1);
-        4:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, IdxReg, 2);
-        8:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, IdxReg, 3);
-        12: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, IdxReg, 12);
-        16: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, IdxReg, 4);
-      else
-        if ArrayAcc.ElementSize > 1 then
-          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, IdxReg, ArrayAcc.ElementSize);
-      end;
-
-      GenExpression(ArrayAcc.ArrayExpr, ADestReg);
-
-      FIR.AddInstrR1R2(TCPUInstruction.TOpCode.add, ADestReg, IdxReg);
-      Exit;
-    end;
-
-    if ArrayAcc.IndexExprs.Count = 1 then
-    begin
-      var IdxExpr := ArrayAcc.IndexExprs[0];
-
-      if IdxExpr is TASTLiteral then
-      begin
-        var ConstIdx := Integer(TASTLiteral(IdxExpr).ValueInt);
-        var ByteOffset := (ConstIdx - ArrayAcc.LowBound) * Integer(ArrayAcc.ElementSize);
-
-        if (Sym <> nil) and (Sym.Storage = TSymbol.TStorage.Local) then
-        begin
-          var TotalOfs := Sym.StackOffset + ByteOffset;
-
-          FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, ADestReg, TRegisters.ID.BP, Cardinal(TotalOfs));
-
-          Exit;
-        end
-
-        else if (Sym <> nil) and (Sym.Storage = TSymbol.TStorage.Global) then
-        begin
-          var Idx := FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, TLabelString(Sym.GlobalLabel));
-
-          if ByteOffset <> 0 then
-          begin
-            var Item := FIR.Items[Idx];
-            Item.Imm.Delta := ByteOffset;
-            FIR.Items[Idx] := Item;
-          end;
-
-          Exit;
-        end;
-      end;
-
-      GenExpression(IdxExpr, ADestReg);
-
-      if ArrayAcc.LowBound > 0 then
-        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.sub, ADestReg, Cardinal(ArrayAcc.LowBound));
-
-      case ArrayAcc.ElementSize of
-        1: ;
-        2:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, ADestReg, 1);
-        4:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, ADestReg, 2);
-        8:  FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, ADestReg, 3);
-        12: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, ADestReg, 12);
-        16: FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.shl, ADestReg, 4);
-      else
-        if ArrayAcc.ElementSize > 1 then
-          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mul, ADestReg, ArrayAcc.ElementSize);
-      end;
-
-      if (Sym <> nil) and (Sym.Storage = TSymbol.TStorage.Global) then
-      begin
-        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, ADestReg, ADestReg, TLabelString(Sym.GlobalLabel));
-        Exit;
-      end
-      else if (Sym <> nil) and (Sym.Storage = TSymbol.TStorage.Local) then
-      begin
-        FIR.AddInstrR1R2 (TCPUInstruction.TOpCode.add, ADestReg, TRegisters.ID.BP);
-        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, ADestReg, Cardinal(Sym.StackOffset));
-
-        Exit;
-      end
-      else
-      begin
-        var TempReg: TRegisters.ID;
-
-        if ADestReg <> TRegisters.ID.R6 then
-          TempReg := TRegisters.ID.R6
-        else
-          TempReg := TRegisters.ID.R7;
-
-        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.mov, TempReg, ADestReg);
-        GenAddressOf    (ArrayAcc.ArrayExpr, ADestReg);
-        FIR.AddInstrR1R2(TCPUInstruction.TOpCode.add, ADestReg, TempReg);
-
-        Exit;
-      end;
-    end;
-
-    GenAddressOf(ArrayAcc.ArrayExpr, ADestReg);
-
     var CurType: TType := nil;
 
     if (Sym <> nil) and (Sym.SymbolType <> nil) then
       CurType := Sym.SymbolType
-
     else if (ArrayAcc.ArrayExpr.ResolvedType <> nil) and (ArrayAcc.ArrayExpr.ResolvedType.TypeName <> '') then
     begin
       var SymLookup := FAnalyzer.GlobalScope.Resolve(ArrayAcc.ArrayExpr.ResolvedType.TypeName);
-
       if (SymLookup <> nil) and (SymLookup.SymbolType <> nil) then
         CurType := SymLookup.SymbolType;
     end;
 
+    // Dynamic arrays and pointers store a heap address in the variable
+    var IsPointerBase := False;
+    if (CurType <> nil) and (CurType.Kind in [TType.TKind.Pointer, TType.TKind.DynamicArray]) then
+      IsPointerBase := True
+    else if (ArrayAcc.ArrayExpr.ResolvedType <> nil) and (ArrayAcc.ArrayExpr.ResolvedType.Kind in [TASTType.TKind.Pointer, TASTType.TKind.DynamicArray]) then
+      IsPointerBase := True;
+
+    // Fast path for 1-dimensional constant index on static local/global value arrays
+    if (not IsPointerBase) and (ArrayAcc.IndexExprs.Count = 1) and (ArrayAcc.IndexExprs[0] is TASTLiteral) and (Sym <> nil) then
+    begin
+      var ConstIdx := Integer(TASTLiteral(ArrayAcc.IndexExprs[0]).ValueInt);
+      var ByteOffset := (ConstIdx - ArrayAcc.LowBound) * Integer(ArrayAcc.ElementSize);
+
+      if Sym.Storage = TSymbol.TStorage.Local then
+      begin
+        var TotalOfs := Sym.StackOffset + ByteOffset;
+        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, ADestReg, TRegisters.ID.BP, Cardinal(TotalOfs));
+        Exit;
+      end
+      else if Sym.Storage = TSymbol.TStorage.Global then
+      begin
+        var Idx := FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, TLabelString(Sym.GlobalLabel));
+        if ByteOffset <> 0 then
+        begin
+          var Item := FIR.Items[Idx];
+          Item.Imm.Delta := ByteOffset;
+          FIR.Items[Idx] := Item;
+        end;
+        Exit;
+      end;
+    end;
+
+    // Load heap pointer with GenExpression vs compute stack address with GenAddressOf
+    if IsPointerBase then
+      GenExpression(ArrayAcc.ArrayExpr, ADestReg)
+    else
+      GenAddressOf(ArrayAcc.ArrayExpr, ADestReg);
+
+    // Unwrap pointer / dynamic array to element type
+    if (CurType <> nil) and (CurType.Kind in [TType.TKind.Pointer, TType.TKind.DynamicArray]) and (CurType.ElementType <> nil) then
+      CurType := CurType.ElementType;
+
     for var i := 0 to ArrayAcc.IndexExprs.Count - 1 do
     begin
       var DimReg: TRegisters.ID;
-
       if ADestReg <> TRegisters.ID.R6 then
         DimReg := TRegisters.ID.R6
       else
@@ -3292,7 +3389,6 @@ begin
       if (CurType <> nil) and (CurType.Kind = TType.TKind.Array) then
       begin
         DimLow := CurType.SubrangeLow;
-
         if CurType.ElementType <> nil then
           DimStride := CurType.ElementType.Size
         else

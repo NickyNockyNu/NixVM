@@ -1,4 +1,4 @@
-program HelloWorld targets console;
+program HelloWorld targets passe;
 
 {$HEAP 2k}
 {$STACK 2k}

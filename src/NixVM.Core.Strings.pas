@@ -43,6 +43,8 @@ function Sanitise(const AString: String): String;
 function ExtractFilePath(const AFileName: String): String;
 function ExtractFileName(const AFileName: String; ARemoveExt: Boolean = True): String;
 
+function Unescape(const AString: AnsiString): AnsiString;
+
 implementation
 
 function Lowercase(const AString: String): String;
@@ -291,5 +293,135 @@ begin
       end;
 end;
 
+function Unescape(const AString: AnsiString): AnsiString;
+var
+  Src:   PAnsiChar;
+  Dst:   PAnsiChar;
+  Val:   Integer;
+  Count: Integer;
+
+  function TryGetHex(p: PAnsiChar; out b: Byte): Boolean; inline;
+  var
+    h1: Word;
+    h2: Word;
+  begin
+    h1 := Ord(p[0]);
+    h2 := Ord(p[1]);
+
+    b := 0;
+
+    case h1 of
+      48..57:  b := (h1 - 48) shl 4;
+      65..70:  b := (h1 - 55) shl 4;
+      97..102: b := (h1 - 87) shl 4;
+    else
+      Exit(False);
+    end;
+
+    case h2 of
+      48..57:  b := b or (h2 - 48);
+      65..70:  b := b or (h2 - 55);
+      97..102: b := b or (h2 - 87);
+    else
+      Exit(False);
+    end;
+
+    Result := True;
+  end;
+begin
+  if Length(AString) = 0 then
+    Exit('');
+
+  SetLength(Result, Length(AString));
+
+  Src := PAnsiChar(AString);
+  Dst := PAnsiChar(Result);
+
+  while Src^ <> #0 do
+  begin
+    if Src^ = '\' then
+    begin
+      Inc(Src);
+
+      if Src^ = #0 then
+      begin
+        Dst^ := '\';
+        Inc(Dst);
+        Break;
+      end;
+
+      case Src^ of
+        'a': Dst^ := #7;
+        'b': Dst^ := #8;
+        't': Dst^ := #9;
+        'n': Dst^ := #10;
+        'v': Dst^ := #11;
+        'f': Dst^ := #12;
+        'r': Dst^ := #13;
+        'e': Dst^ := #27;
+
+        '?': Dst^ := '?';
+        '\': Dst^ := '\';
+
+        '"':  Dst^ := '"';
+        '''': Dst^ := '''';
+
+        'x':
+        begin
+          Inc(Src);
+
+          var b: Byte;
+          var HexCount := 0;
+
+          while TryGetHex(Src, b) do
+          begin
+            Dst^ := AnsiChar(b);
+
+            Inc(Dst);
+            Inc(Src, 2);
+            Inc(HexCount);
+          end;
+
+          if HexCount > 0 then
+          begin
+            Dec(Src);
+            Dec(Dst);
+          end
+          else
+            Dst^ := 'x';
+        end;
+
+        '0'..'9':
+        begin
+          Val   := 0;
+          Count := 0;
+
+          while (Src^ >= '0') and (Src^ <= '9') and (Count < 3) do
+          begin
+            Val := (Val * 10) + (Ord(Src^) - 48);
+
+            Inc(Src);
+            Inc(Count);
+          end;
+
+          if Val > 255 then
+            Val := 255;
+
+          Dst^ := AnsiChar(Val);
+          Dec(Src);
+        end;
+      else
+        Dst^ := Src^;
+      end;
+    end
+    else
+      Dst^ := Src^;
+
+    Inc(Src);
+    Inc(Dst);
+  end;
+
+  SetLength(Result, Dst - PAnsiChar(Result));
+end;
 
 end.

@@ -426,19 +426,49 @@ begin
         Continue;
       end;
 
-      // Direct Global Load: mov R1, _var + ld R0, R1 ==> ld R0, _var
+      // Direct Global/Constant Load with Offset: mov RegA, Addr + ld/ldo RegDest, RegA, Ofs ==> ld RegDest, (Addr + Ofs)
       if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB = TRegisters.ID.Imm) and
-         (NextItem.OpCode in [TCPUInstruction.TOpCode.ld, TCPUInstruction.TOpCode.ldb, TCPUInstruction.TOpCode.ldw]) and (NextItem.RegB = Item.RegA) then
+         (NextItem.OpCode in [TCPUInstruction.TOpCode.ld,   TCPUInstruction.TOpCode.ldb,  TCPUInstruction.TOpCode.ldw,
+                              TCPUInstruction.TOpCode.ldo,  TCPUInstruction.TOpCode.ldob, TCPUInstruction.TOpCode.ldow]) and
+         (NextItem.RegB = Item.RegA) then
       begin
         if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) or (Item.RegA = NextItem.RegA) then
         begin
+          var TargetOp: TCPUInstruction.TOpCode;
+
+          case NextItem.OpCode of
+            TCPUInstruction.TOpCode.ldb,
+            TCPUInstruction.TOpCode.ldob: TargetOp := TCPUInstruction.TOpCode.ldb;
+
+            TCPUInstruction.TOpCode.ldw,
+            TCPUInstruction.TOpCode.ldow: TargetOp := TCPUInstruction.TOpCode.ldw;
+          else
+            TargetOp := TCPUInstruction.TOpCode.ld;
+          end;
+
           var Replacement := Default(TIRItem);
 
           Replacement.Kind   := TIRItem.TKind.Instruction;
-          Replacement.OpCode := NextItem.OpCode;
+          Replacement.OpCode := TargetOp;
           Replacement.RegA   := NextItem.RegA;
           Replacement.RegB   := TRegisters.ID.Imm;
           Replacement.Imm    := Item.Imm;
+
+          if NextItem.OpCode in [TCPUInstruction.TOpCode.ldo, TCPUInstruction.TOpCode.ldob, TCPUInstruction.TOpCode.ldow] then
+          begin
+            if Replacement.Imm.&Label <> '' then
+              Replacement.Imm.Delta := Replacement.Imm.Delta + Integer(NextItem.Offset.Value) + NextItem.Offset.Delta
+            else
+            begin
+              if NextItem.Offset.&Label <> '' then
+              begin
+                Replacement.Imm.&Label := NextItem.Offset.&Label;
+                Replacement.Imm.Delta  := NextItem.Offset.Delta;
+              end;
+
+              Replacement.Imm.Value := Replacement.Imm.Value + NextItem.Offset.Value + Cardinal(NextItem.Offset.Delta);
+            end;
+          end;
 
           AIR.Delete(NextIdx);
           AIR[i] := Replacement;
@@ -447,6 +477,28 @@ begin
           Continue;
         end;
       end;
+
+//      // Direct Global Load: mov R1, _var + ld R0, R1 ==> ld R0, _var
+//      if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB = TRegisters.ID.Imm) and
+//         (NextItem.OpCode in [TCPUInstruction.TOpCode.ld, TCPUInstruction.TOpCode.ldb, TCPUInstruction.TOpCode.ldw]) and (NextItem.RegB = Item.RegA) then
+//      begin
+//        if not IsRegLiveDownstream(AIR, NextIdx + 1, Item.RegA) or (Item.RegA = NextItem.RegA) then
+//        begin
+//          var Replacement := Default(TIRItem);
+//
+//          Replacement.Kind   := TIRItem.TKind.Instruction;
+//          Replacement.OpCode := NextItem.OpCode;
+//          Replacement.RegA   := NextItem.RegA;
+//          Replacement.RegB   := TRegisters.ID.Imm;
+//          Replacement.Imm    := Item.Imm;
+//
+//          AIR.Delete(NextIdx);
+//          AIR[i] := Replacement;
+//
+//          Result := True;
+//          Continue;
+//        end;
+//      end;
 
       // Load-Forwarding: ld R0, Addr + mov R1, R0 ==> ld R1, Addr
       if (Item.OpCode in [TCPUInstruction.TOpCode.ld, TCPUInstruction.TOpCode.ldb, TCPUInstruction.TOpCode.ldw,

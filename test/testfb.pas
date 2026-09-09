@@ -1,43 +1,43 @@
 program testfb targets passe;
 
 {$HEAP 0}
-{$STACK 256}
+{$STACK 2k}
 
-uses
-  Passe;
-  
-procedure SetPixel(x, y: Integer; c: Byte);
-var
-  Addr: Cardinal;
+ function CalcPattern(x, y: Integer): Byte;
+ begin
+   Exit((x and $FF) xor (y and $FF));
+ end;
+
+procedure DrawPattern;
 begin
-  Addr := (y * FrameBufferWidth) + x;
-  VideoRegisters^.DisplayBuffer^[Addr] := c;
+  for var y := 0 to FrameBufferHeight - 1 do
+    for var x := 0 to FrameBufferWidth - 1 do
+      SetPixel(x, y, CalcPattern(x, y));
 end;
 
 var
   i: Integer;
 
-procedure Main;
+procedure Update;
 begin 
   VideoRegisters^.OffsetX := VideoRegisters^.OffsetX + 1;
-
-  for var i := 0 to 255 do
-    SetPixel(10 + i, 10, i);
 
   i := i + 1;
   if i > 100 then
   begin
     i := 0;
-    VideoRegisters^.Flags := not VideoRegisters^.Flags;
+    VideoRegisters^.Flags := VideoRegisters^.Flags xor %00000011;
   end;
-
-  Yield;
 end;
 
 begin
+  PrintLn('Hello\nWorld\n');
   i := 0;
   
+  //DrawPattern;
+  
   repeat
-    Main;
+    //Update;
+    Yield;
   until False;
 end.

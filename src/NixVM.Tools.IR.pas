@@ -33,7 +33,8 @@ uses
   NixVM.Core.System,
   NixVM.Core.Registers,
   NixVM.Core.Instructions,
-  NixVM.Core.Memory;
+  NixVM.Core.Memory,
+  NixVM.Core.Strings;
 
 type
   TLabelString = String[63];
@@ -843,8 +844,11 @@ function TIRList.AddDataString(const AString: AnsiString; ANullTerminated: Boole
 var
   Item: TIRItem;
   Len:  Integer;
+  UStr: AnsiString;
 begin
-  Len := Length(AString);
+  UStr := Unescape(AString);
+
+  Len := Length(UStr);
 
   if ANullTerminated then
     Inc(Len);
@@ -855,7 +859,7 @@ begin
   Item.DataSize := Len;
 
   if Len > 0 then
-    Item.DataPtr := StoreData(PAnsiChar(AString), Len);
+    Item.DataPtr := StoreData(PAnsiChar(UStr), Len);
 
   Result := Add(Item);
 end;
@@ -865,6 +869,7 @@ var
   Item: TIRItem;
 begin
   Item := Default(TIRItem);
+
   Item.Kind     := TIRItem.TKind.DataString;
   Item.DataSize := Length(AData);
 

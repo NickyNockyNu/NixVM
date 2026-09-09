@@ -24,41 +24,18 @@ program nvm;
 {
   TODO:
 
-  Language features:
-
-    "packed" for records (They are now packed by default, they used to be aligned so it should be easy to add)
-
-    labled for (for continue and break)
-      or contine and break can take the "for variable" as a parameter. eg:
-        for var y := 0 to 99 do
-          for var x := 0 to 99 do
-            if someexitcondition then break y;
-      ... or named block `begin is name` and a `break name;`
-
   Compiler:
 
-    TCodeGenerator.GenCallExpr - More checks for literal arguments (see `_bsetf` etc)
+    Optimise:
+        sto     bp, r0, -12
+        jmp     @exit_CalcPattern_1
+      @exit_CalcPattern_1:
+        ldo     r0, bp, -12
 
   This tool:
 
     Stubfile elimnation on non windows targets
     Finish up the "gen" tool and GenUnits
-
-  Core features:
-
-  IDE (WiP):
-
-    Keyword: raise, SetLength,
-    So big it requires it's own TODO list (see the nvmide source for the TODO list)
-
-  Other possible languages (way down the line):
-
-    C-like with extended language features:
-       Structs with method and property support
-       Managed strings
-       Dynamic managed arrays
-
-    BASIC (QB45-like) with extended language features
 
 }
 
@@ -216,8 +193,9 @@ procedure Execute(const AExe, AParams: String);
 var
   CommandLine: String;
 {$IF DEFINED(MSWINDOWS)}
-  SI: TStartupInfo;
-  PI: TProcessInformation;
+  SI:       TStartupInfo;
+  PI:       TProcessInformation;
+  ExitCode: Cardinal;
 begin
   if Length(AParams) > 0 then
     CommandLine := '"' + AExe + '" ' + AParams
@@ -235,7 +213,8 @@ begin
   if Result then
     try
       WaitForSingleObject(PI.hProcess, INFINITE);
-      //GetExitCodeProcess(PI.hProcess, ExitCode);
+      GetExitCodeProcess(PI.hProcess, ExitCode);
+      System.ExitCode := Integer(ExitCode);
     finally
       CloseHandle(PI.hThread);
       CloseHandle(PI.hProcess);
@@ -263,12 +242,16 @@ var
   Compiler:    TCompiler;
   Assemble:    Boolean;
   Build:       Boolean;
+  Target:      String;
   TargetInfo:  TTargetInfo;
   StubFile:    String;
   VersionInfo: TVersionInfo;
 begin
   AddBuildOptions;
   TParams.AddOpt(TParams.TOption.TKind.Bool, 'a', 'assemble');
+
+  TParams.AddOpt(TParams.TOption.TKind.Bool, 'su', 'systemunit');
+  TParams.AddOpt(TParams.TOption.TKind.Bool, 'tu', 'targetunit');
 
   TParams.Process;
 
@@ -287,6 +270,8 @@ begin
     PrintDefaultOptions;
     PrintBuildOptions;
     Writeln('  -a, --assemble         Output assembly only');
+    Writeln('  -su, --systemunit      Include the System.pas unit (Default, remove with -su-)');
+    Writeln('  -tu, --targetunit      Include the <target>.pas unit (Default, remove with -tu-)');
 
     Halt(0);
   end;
@@ -301,6 +286,9 @@ begin
   Compiler := TCompiler.Create;
 
   Compiler.Optimise := TParams.GetOpt('-z', Compiler.Optimise);
+
+  Compiler.AutoIncludeSystem := TParams.GetOpt('-su', True);
+  Compiler.AutoIncludeTarget := TParams.GetOpt('-tu', True);
 
   try
     if Verbose then
@@ -321,15 +309,15 @@ begin
       Writeln('[ok]');
 
     if Length(Compiler.ROMHeader.Harness.Name) > 0 then
-      StubFile := TParams.GetOpt('-t', Compiler.ROMHeader.Harness.Name)
+      Target := TParams.GetOpt('-t', Compiler.ROMHeader.Harness.Name)
     else
-      StubFile := TParams.GetOpt('-t', 'console');
+      Target := TParams.GetOpt('-t', 'console');
 
     if Verbose then
-      Writeln('Target: ', StubFile);
+      Writeln('Target: ', Target);
 
     // TODO: Can only do this on windows
-    StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + StubFile + '.exe');
+    StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + Target + '.exe');
 
     if FileExists(StubFile) then
     begin
@@ -367,9 +355,10 @@ begin
         Compiler.ROMHeader.UserAddress := (SizeOf(TCoreSystemMemory) + 3) and not Cardinal(3);
     end;
 
-    Compiler.ROMHeader.UserAddress := TParams.GetOpt('-base',  Compiler.ROMHeader.UserAddress);
-    Compiler.ROMHeader.HeapSize    := TParams.GetOpt('-heap',  Compiler.ROMHeader.HeapSize);
-    Compiler.ROMHeader.StackSize   := TParams.GetOpt('-stack', Compiler.ROMHeader.StackSize);
+    Compiler.ROMHeader.Harness.Name := Target;
+    Compiler.ROMHeader.UserAddress  := TParams.GetOpt('-base',  Compiler.ROMHeader.UserAddress);
+    Compiler.ROMHeader.HeapSize     := TParams.GetOpt('-heap',  Compiler.ROMHeader.HeapSize);
+    Compiler.ROMHeader.StackSize    := TParams.GetOpt('-stack', Compiler.ROMHeader.StackSize);
 
     if Assemble then
     begin
@@ -551,6 +540,7 @@ var
   &Assembler:  TAssembler;
   RawBinary:   Boolean;
   Build:       Boolean;
+  Target:      String;
   TargetInfo:  TTargetInfo;
   StubFile:    String;
   VersionInfo: TVersionInfo;
@@ -608,16 +598,15 @@ begin
       Writeln('[ok]');
 
     if Length(&Assembler.ROMHeader.Harness.Name) > 0 then
-      StubFile := TParams.GetOpt('-t', &Assembler.ROMHeader.Harness.Name)
+      Target := TParams.GetOpt('-t', &Assembler.ROMHeader.Harness.Name)
     else
-      StubFile := TParams.GetOpt('-t', 'console');
+      Target := TParams.GetOpt('-t', 'console');
 
     if Verbose then
-      Writeln('Target: ', StubFile);
+      Writeln('Target: ', Target);
 
-
-    // TODO: Can't do this on non windows platforms
-    StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + StubFile + '.exe');
+    // TODO: Can only do this on windows
+    StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + Target + '.exe');
 
     if FileExists(StubFile) then
     begin
@@ -656,10 +645,10 @@ begin
         &Assembler.ROMHeader.UserAddress := (SizeOf(TCoreSystemMemory) + 3) and not Cardinal(3);
     end;
 
-    &Assembler.ROMHeader.UserAddress := TParams.GetOpt('-base',  &Assembler.ROMHeader.UserAddress);
-    &Assembler.ROMHeader.HeapSize    := TParams.GetOpt('-heap',  &Assembler.ROMHeader.HeapSize);
-    &Assembler.ROMHeader.StackSize   := TParams.GetOpt('-stack', &Assembler.ROMHeader.StackSize);
-
+    &Assembler.ROMHeader.Harness.Name := Target;
+    &Assembler.ROMHeader.UserAddress  := TParams.GetOpt('-base',  &Assembler.ROMHeader.UserAddress);
+    &Assembler.ROMHeader.HeapSize     := TParams.GetOpt('-heap',  &Assembler.ROMHeader.HeapSize);
+    &Assembler.ROMHeader.StackSize    := TParams.GetOpt('-stack', &Assembler.ROMHeader.StackSize);
 
     if Build then
     begin
@@ -911,6 +900,7 @@ end;
 procedure DoLink;
 var
   Header:      TROMHeader;
+  Target:      String;
   StubFile:    String;
   VersionInfo: TVersionInfo;
   IconFile:    String;
@@ -951,19 +941,19 @@ begin
   if Verbose then
     Writeln('[ok]');
 
-  StubFile := TParams.GetOpt('-t', Header.Harness.Name);
+  Target := TParams.GetOpt('-t', Header.Harness.Name);
 
   if Verbose then
-    Writeln('Targetting "', StubFile, '"');
+    Writeln('Targetting "', Target, '"');
 
-  if Length(StubFile) = 0 then
+  if Length(Target) = 0 then
   begin
     Writeln('No harness specified');
 
     Halt(1);
   end;
 
-  StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + StubFile + '.exe');
+  StubFile := TPath.Combine(ExtractFilePath(ParamStr(0)), 'harness.' + Target + '.exe');
 
   var Errors := TStringList.Create;
 
