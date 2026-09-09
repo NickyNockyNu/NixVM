@@ -48,7 +48,8 @@ type
     end;
     {$ENDREGION}
   public
-    Volume: Single;
+    Volume:   Single;
+    OutLevel: Single;
 
     CutoffFreq: Single;
     DelayTime:  Single;
@@ -70,11 +71,6 @@ type
   const
     Count = 4;
 
-    Waveform_Sine     = 0;
-    Waveform_Square   = 1;
-    Waveform_Triangle = 2;
-    Waveform_Sawtooth = 3;
-    Waveform_Noise    = 4;
   type
     {$REGION 'Waveform'}
     TWaveform = (
@@ -114,6 +110,8 @@ type
       Decay:   Single;
       Sustain: Single;
       Release: Single;
+
+      OutLevel: Single;
 
       Flags: TFlags;
 
@@ -190,7 +188,7 @@ begin
     with Channels[i] do
     begin
       Frequency  := 440.0;
-      Volume     := 1.0;
+      Volume     := 1 / (Count + 1);
       PulseWidth := 0.5;
       GlideSpeed := 0.005;
 

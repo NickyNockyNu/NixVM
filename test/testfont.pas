@@ -19,10 +19,7 @@ begin
 		begin
 			c := (i * 32) + j;
 			
-			if (c = 0) or (c > 5) and (c < 17) then 
-				Print('.')
-			else
-				Print('%c', c);
+      Print('\e%c', c);
 			
 			if j = 15 then
 				Print(' - ');

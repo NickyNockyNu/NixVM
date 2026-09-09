@@ -32,10 +32,40 @@ unit NixVM.Passe;
 
     Fullscreen switch (Part of TCustomWindow harness or here?)
 
+    Panic screen
+
     SysRq key
+
+    Screen capture
+
+    Console capture (Ctrl+C -> to clipboard)
+
+    Debug layer
+
+    Audio PCM channel
+    Audio Beep channel
+
+    AudioRegisters.Level = Current audio level
+
+    Sprite raster operations
+      normal
+      add, sub
+      colour/mask (PaletteOfs becomes a the absolute palette index of the colour)
+
+    DrawBuffer
+      Scroll(x, y)
+      DrawText(x, y, text, colour)
+      DrawTextEx(x, y, text, colour, scalex, scaley, flipx, flipy, bold, italic, (font?))
+      DrawSprite(atlasid, x, y, scalex, scaley)
+      DrawSpriteEx(atlasid, x, y, scalex, scaley, pivetx, pivety, angle, rasterop)
+
+    Console
+      A way of supporting all characters in print (probably an escape code)
+      Scroll(x, y)
 }
 
 {$INCLUDE 'NixVM.Options.inc'}
+{.$DEFINE BUILD_HELPER}
 
 interface
 
@@ -106,6 +136,8 @@ type
     procedure WMMouseWheel      (var AMessage: TWMMouseWheel);       message WM_MOUSEWHEEL;
   public
     class procedure CError(const AMessage: String; AErrorCode: Integer = 0); override;
+
+    procedure HandleMessage(var AMessage: TMessage); override;
 
     function HandleScanlineIRQ: Boolean;
 
@@ -200,6 +232,7 @@ end;
 
 procedure TPasse.Initialize;
 begin
+{$IF DEFINED(BUILD_HELPER)}
   Writeln('  _Addr_KeyStates      = $', IntToHex(TPasseMemory.KeyStatesAddress), ';');
   Writeln('  _Addr_KeyboardBuffer = $', IntToHex(TPasseMemory.KeyboardBufferAddress), ';');
   Writeln('  _Addr_Mouse          = $', IntToHex(TPasseMemory.MouseAddress), ';');
@@ -213,6 +246,7 @@ begin
   Writeln('  _Addr_AudioChannels  = $', IntToHex(TPasseMemory.AudioChannelsAddress), ';');
 
   Writeln('D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $' + IntToHex(Memory.UserAddress, 0) + ' -oem ' + IntToStr(SizeOf(TPasseMemory)));
+{$ENDIF}
 
   if Assigned(Passe) then
     Error('An instance of passe already exists');
@@ -383,11 +417,22 @@ begin
       TVDU.TSysCalls.Colour: FVDU.Colour(R0, R1, (R2 <> 0));
 
       TSID.TSysCalls.Reset:   FSID.Reset;
-      TSID.TSysCalls.NoteOn:  FSID.NoteOn (R0);
+      TSID.TSysCalls.NoteOn:  FSID.NoteOn (R0, (R1 <> 0));
       TSID.TSysCalls.NoteOff: FSID.NoteOff(R0);
+      TSID.TSysCalls.Beep:    FSID.Beep(PSingle(@R0)^, PSingle(@R1)^);
     else
       Result:= False;
     end;
+end;
+
+procedure TPasse.HandleMessage(var AMessage: TMessage);
+begin
+  case AMessage.Msg of
+    WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN: SetCapture(Handle);
+    WM_LBUTTONUP,   WM_RBUTTONUP,   WM_MBUTTONUP:   ReleaseCapture;
+  end;
+
+  inherited;
 end;
 
 procedure TPasse.WMWindowPosChanged(var AMessage: TWMWindowPosChanged);

@@ -146,6 +146,9 @@ type
 
 implementation
 
+uses
+  NixVM.Passe;
+
 {$REGION 'VDU'}
 constructor TVDU.Create(AOwner: TPasseHarness);
 begin
@@ -852,6 +855,7 @@ procedure TVDU.Print(const AText: AnsiString);
   end;
 var
   Tab: Byte;
+  Esc: Boolean;
 begin
   NeedsConsole;
 
@@ -865,39 +869,11 @@ begin
     if CaretX >= Width  then CaretX := Width  - 1;
     if CaretY >= Height then CaretY := Height - 1;
 
+    Esc := False;
+
     for var c in AText do
-      case c of
-        #$00: ;
-        #$07: ; // TODO: Bleep
-
-        #$08:
-          if CaretX > 0 then
-          begin
-            Dec(CaretX);
-
-            Chars  [CaretY, CaretX] := #0;
-            Attribs[CaretY, CaretX] := CaretAttrib;
-          end;
-
-        #$09:
-        begin
-          CaretX := CaretX + (Tab - (CaretX mod Tab));
-
-          if CaretX >= Width then
-            NewLine;
-        end;
-
-        #$0A: NewLine;
-
-        #$0B:
-        begin
-          Inc(CaretY);
-          CheckScroll;
-        end;
-
-        #$0D: CaretX := 0;
-        #$1B: ; // TODO: Simple ANSI sequences support?
-      else
+      if Esc then
+      begin
         Chars  [CaretY, CaretX] := c;
         Attribs[CaretY, CaretX] := CaretAttrib;
 
@@ -905,7 +881,51 @@ begin
 
         if CaretX >= Width then
           NewLine;
-      end;
+
+        Esc := False;
+      end
+      else
+        case c of
+          #$00: ;
+          #$07: TPasse(FOwner).SID.Beep;
+
+          #$08:
+            if CaretX > 0 then
+            begin
+              Dec(CaretX);
+
+              Chars  [CaretY, CaretX] := #0;
+              Attribs[CaretY, CaretX] := CaretAttrib;
+            end;
+
+          #$09:
+          begin
+            CaretX := CaretX + (Tab - (CaretX mod Tab));
+
+            if CaretX >= Width then
+              NewLine;
+          end;
+
+          #$0A: NewLine;
+
+          #$0B:
+          begin
+            Inc(CaretY);
+            CheckScroll;
+          end;
+
+          #$0D: CaretX := 0;
+
+          #$1B: Esc := True;
+        else
+          Chars  [CaretY, CaretX] := c;
+          Attribs[CaretY, CaretX] := CaretAttrib;
+
+          Inc(CaretX);
+
+          if CaretX >= Width then
+            NewLine;
+        end;
   end;
 end;
 

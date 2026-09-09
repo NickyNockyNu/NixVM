@@ -82,8 +82,8 @@ type
           procedure  Error(const AMessage: String; AErrorCode: Integer = 0); override;
 
     procedure ProcessMessages(AWait: Boolean = False);
-    procedure HandleMessage  (var AMessage: TMessage); virtual;
-    procedure DefaultHandler (var AMessage);           override;
+    procedure HandleMessage (var AMessage: TMessage); virtual;
+    procedure DefaultHandler(var AMessage);           override;
 
     property Handle: HWND read FHandle;
 

@@ -10,14 +10,14 @@ const
   _Addr_KeyboardBuffer = $00000628;
   _Addr_Mouse          = $0000072A;
   _Addr_Gamepads       = $00000736;
-  
-  _Addr_AudioRegisters = $00000794;
-  _Addr_AudioChannels  = $000007AD;
 
-  _Addr_VideoRegisters = $00000831;
-  _Addr_Stickers       = $000020DD;
-  _Addr_Atlas          = $000022DD;
-  _Addr_Sprites        = $00002ADD;
+  _Addr_AudioRegisters = $00000794;
+  _Addr_AudioChannels  = $000007B1;
+
+  _Addr_VideoRegisters = $00000845;
+  _Addr_Stickers       = $000020F1;
+  _Addr_Atlas          = $000022F1;
+  _Addr_Sprites        = $00002AF1;
   
   _VDU = $A0;
 
@@ -57,6 +57,7 @@ const
   _SysCall_SIDReset   = _SID + 0;
   _SysCall_SIDNoteOn  = _SID + 1;
   _SysCall_SIDNoteOff = _SID + 2;
+  _SysCall_SIDBeep    = _SID + 3;
 
   AudioChannelCount = 4;
 
@@ -74,7 +75,7 @@ const
   SpriteCount = 32;
 
 type
-  TKey = record
+  TKeyState = record
     State: Byte;
     
     function IsUp:        Boolean; begin Result := (State and 1) = 0; end;
@@ -85,10 +86,10 @@ type
   end;
 
   PKeyStates = ^TKeyStates;
-  TKeyStates = array[0..255] of TKey;
+  TKeyStates = array[0..255] of TKeyState;
 
 const
-  KeyStates: PKeyStates = _Addr_KeyStates;
+  Keys: PKeyStates = _Addr_KeyStates;
 
 type
   PKeyboardBuffer = ^TKeyboardBuffer;
@@ -132,7 +133,8 @@ const
 type
   PAudioRegisters = ^TAudioRegisters;
   TAudioRegisters = record
-    Volume: Single;
+    Volume:   Single;
+    OutLevel: Single;
     
     CutoffFreq: Single;
     DelayTime:  Single;
@@ -147,6 +149,8 @@ const
   AudioRegisters: PAudioRegisters = _Addr_AudioRegisters;
 
 type
+  TWaveform = (wfSine, wfSquare, wfTriangle, wfSawtooth, wfNoise);
+
   TAudioChannel = record
     Frequency:  Single;
     Volume:     Single;
@@ -158,7 +162,21 @@ type
     Sustain: Single;
     Release: Single;
     
+    OutLevel: Single;
+
     Flags: Byte;
+    
+    function GetWaveform: TWaveform;
+    begin
+      Result := TWaveform(Flags and %00000111);
+    end;
+    
+    procedure SetWaveform(AWaveform: TWaveform);
+    begin
+      Flags := (Flags and %11111000) or (Byte(AWaveform) and %00000111);
+    end;
+
+    property Waveform: TWaveform read GetWaveform write SetWaveform;    
   end;
 
   PAudioChannels = ^TAudioChannels;
@@ -169,9 +187,12 @@ const
   
 procedure SIDReset; syscall _SysCall_SIDReset;
 
-procedure NoteOn (AChannel: Integer); syscall _SysCall_SIDNoteOn;
-procedure NoteOff(AChannel: Integer); syscall _SysCall_SIDNoteOff;
-  
+procedure NoteOn (AChannel: Integer; AReset: Boolean); syscall _SysCall_SIDNoteOn;
+procedure NoteOff(AChannel: Integer);                  syscall _SysCall_SIDNoteOff;
+
+procedure Sound(AFrequency, ATime: Single); syscall _SysCall_SIDBeep;
+procedure Beep;
+
 type
   PFrameBuffer = ^TFrameBuffer;
   TFrameBuffer = array[0..(FrameBufferWidth * FrameBufferHeight) - 1] of Byte;
@@ -206,7 +227,7 @@ type
   TScanlines = array[0..FrameBufferHeight - 1] of TScanline;
 
   PFont = ^TFont;
-  TFont = array[0..255, 0..7] of Byte;
+  TFont = array[0..255, 0..ConsoleCharHeight - 1] of Byte;
 
   PConsole = ^TConsole;
   TConsole = record
@@ -312,6 +333,9 @@ procedure Clg(AColour: Byte); syscall _SysCall_VDUClear;
 function  GetPixel(X, Y: Integer): Byte;    syscall _SysCall_VDUGetPixel;
 procedure SetPixel(X, Y: Integer; A: Byte); syscall _SysCall_VDUSetPixel;
 
+procedure DrawHLine(X, Y, L: Integer; C: Byte); syscall _SysCall_VDUHLine;
+procedure DrawVLine(X, Y, L: Integer; C: Byte); syscall _SysCall_VDUVLine;
+
 procedure DrawLine(X1, Y1, X2, Y2: Integer; C: Byte); syscall _SysCall_VDULine;
 
 procedure DrawRectangle(X, Y, W, H: Integer; C: Byte); syscall _SysCall_VDUDrawRectangle;
@@ -352,6 +376,12 @@ begin
   end;
 
   Result := Ch;
+end;
+
+procedure Beep;
+begin
+  // TODO: Check param types for float
+  Sound(400.0, 0.6);
 end;
 
 end.

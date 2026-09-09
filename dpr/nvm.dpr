@@ -37,6 +37,10 @@ program nvm;
     Stubfile elimnation on non windows targets
     Finish up the "gen" tool and GenUnits
 
+    tool for making raw sprite data from image files
+    tool for making raw font data from image files
+    tool for making raw audio data from wav files
+    ...or do we build these into the `embed` feature? (via a `const MyConst: PMyType in 'sprite|font|audio:filename.ext';)
 }
 
 {$APPTYPE CONSOLE}

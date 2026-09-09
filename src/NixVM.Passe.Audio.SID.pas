@@ -107,6 +107,7 @@ type
       Reset   = SID + 0;
       NoteOn  = SID + 1;
       Noteoff = SID + 2;
+      Beep    = SID + 3;
     end;
     {$ENDREGION}
 
@@ -122,6 +123,7 @@ type
 
     {$REGION 'Channel'}
     TChannel = record
+      Registers: PAudioRegisters;
       Channel:   TAudioChannels.PChannel;
       Phase:     Double;
       Frequency: Single;
@@ -170,12 +172,20 @@ type
     FCurrentDelay: Single;
     FCurrentMix:   Single;
 
+    FBeepPhase:     Single;
+    FBeepTime:      Single;
+    FBeepLength:    Single;
+    FBeepFrequency: Single;
+    FBeepVolume:    Single;
+    FBeepPlaying:   Boolean;
+
     class function AudioThreadProc(AParameter: Pointer): Integer; stdcall; static;
   protected
     procedure FillBuffer(AOutBuffer: PSmallInt; ASampleCount: Integer; ASampleRate: Integer);
 
     procedure ProcessEffects(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
     procedure ProcessMix    (ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
+    procedure ProcessBeep   (ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
   public
     constructor Create(AOwner: TPasseHarness);
     destructor  Destroy; override;
@@ -186,8 +196,11 @@ type
     procedure Stop;
     procedure Update;
 
-    procedure NoteOn (AChannel: Integer);
+    procedure NoteOn (AChannel: Integer; AReset: Boolean = True);
     procedure NoteOff(AChannel: Integer);
+
+    procedure BeepReset;
+    procedure Beep(AFrequency: Single = 400; ATime: Single = 0.6);
 
     property Owner: TPasseHarness read FOwner;
 
@@ -212,9 +225,15 @@ var
   OutPtr:    PSingle;
   SampleVal: Single;
   P:         Double;
+  Level:     Single;
 begin
+  Level := 0;
+
   if (not Playing) or (Channel.Volume <= 0) or (Channel.Frequency <= 0) then
+  begin
+    Stop;
     Exit;
+  end;
 
   TimeStep  := 1.0 / ASampleRate;
   OutPtr    := ABuffer;
@@ -275,7 +294,7 @@ begin
             EnvState := TEnvelopeState.Idle;
 
             Stop;
-            Break;
+            Exit;
           end;
         end
         else
@@ -284,7 +303,7 @@ begin
           EnvState := TEnvelopeState.Idle;
 
           Stop;
-          Break;
+          Exit;
         end;
     end;
 
@@ -316,7 +335,14 @@ begin
       SampleVal := 0.0;
     end;
 
-    OutPtr^ := OutPtr^ + (SampleVal * Volume * EnvValue);
+    SampleVal := SampleVal * Volume * EnvValue;
+
+    OutPtr^ := OutPtr^ + SampleVal;
+
+    SampleVal := Abs(SampleVal);
+
+    if SampleVal > Level then
+      Level := SampleVal;
 
     Phase := Phase + PhaseStep;
 
@@ -339,6 +365,8 @@ begin
 
     Inc(OutPtr);
   end;
+
+  Channel.OutLevel := Level;
 end;
 
 procedure TSID.TChannel.Reset;
@@ -373,6 +401,8 @@ end;
 procedure TSID.TChannel.Stop;
 begin
   Playing := False;
+
+  Channel.OutLevel := 0;
 
   EnvState := TEnvelopeState.Idle;
   EnvValue := 0.0;
@@ -426,8 +456,7 @@ end;
 
 procedure TSID.FillBuffer(AOutBuffer: PSmallInt; ASampleCount: Integer; ASampleRate: Integer);
 var
-  Sample: Single;
-  SamAbs: Single;
+  Level: Single;
 begin
   if Length(FBuffer) < ASampleCount then
     SetLength(FBuffer, ASampleCount);
@@ -435,34 +464,32 @@ begin
   FillChar(FBuffer[0], ASampleCount * SizeOf(Single), 0);
 
   ProcessEffects(@FBuffer[0], ASampleCount, ASampleRate);
+  ProcessBeep   (@FBuffer[0], ASampleCount, ASampleRate);
 
-  if FRegisters.Flags.SoftClipping then
+  Level := 0;
+
+  for var i := 0 to ASampleCount - 1 do
+    if Abs(FBuffer[i]) > Level then
+        Level := Abs(FBuffer[i]);
+
+  if Level > 1 then
+  begin
     for var i := 0 to ASampleCount - 1 do
     begin
-      Sample := FBuffer[i] * FRegisters.Volume;
-
-      SamAbs := Abs(Sample);
-      if SamAbs > 1.0 then
-        Sample := Sample / SamAbs
-      else
-        Sample := 1.5 * Sample - 0.5 * (Sample * Sample * Sample);
-
-      AOutBuffer^ := Round(Sample * 32767.0);
+      AOutBuffer^ := Round((FBuffer[i] * (1 / Level)) * 32767.0);
       Inc(AOutBuffer);
-    end
+    end;
+
+    Level := 1;
+  end
   else
     for var i := 0 to ASampleCount - 1 do
     begin
-      Sample := FBuffer[i] * FRegisters.Volume;
-
-      if Sample > 1.0 then
-        Sample := 1.0
-      else if Sample < -1.0 then
-        Sample := -1.0;
-
-      AOutBuffer^ := Round(Sample * 32767.0);
+      AOutBuffer^ := Round(FBuffer[i] * 32767.0);
       Inc(AOutBuffer);
     end;
+
+  FRegisters.OutLevel := Level;
 end;
 
 procedure TSID.ProcessEffects(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
@@ -571,6 +598,50 @@ begin
       FChannels[i].Process(ABuffer, ASampleCount, ASampleRate);
 end;
 
+procedure TSID.ProcessBeep(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
+var
+  PhaseStep: Double;
+  OutPtr:    PSingle;
+  SampleVal: Single;
+begin
+  if not FBeepPlaying then
+    Exit;
+
+  OutPtr := ABuffer;
+
+  PhaseStep := (FBeepFrequency * 2.0 * Pi) / ASampleRate;
+
+  for var i := 0 to ASampleCount - 1 do
+  begin
+    if FBeepTime > (FBeepLength * 1000) then
+      FBeepPlaying := False;
+
+    if not FBeepPlaying then
+      Break;
+
+    if FBeepPhase <  (2.0 * Pi * 0.5) then
+      SampleVal := FBeepVolume
+    else
+      SampleVal := -FBeepVolume;
+
+    OutPtr^ := OutPtr^ + SampleVal;
+
+    FBeepPhase := FBeepPhase + PhaseStep;
+    FBeepTime  := FBeepTime  + PhaseStep;
+
+    if (FBeepPhase >= (2.0 * Pi)) or (FBeepPhase < 0.0) then
+    begin
+      while FBeepPhase >= (2.0 * Pi) do
+        FBeepPhase := FBeepPhase - (2.0 * Pi);
+
+      while FBeepPhase < 0.0 do
+        FBeepPhase := FBeepPhase + (2.0 * Pi);
+    end;
+
+    Inc(OutPtr);
+  end;
+end;
+
 constructor TSID.Create(AOwner: TPasseHarness);
 var
   Enumerator: IMMDeviceEnumerator;
@@ -649,7 +720,8 @@ begin
   for var i := 0 to TAudioChannels.Count - 1 do
     with FChannels[i] do
     begin
-      Channel := @FAChannels^.Channels[i];
+      Registers := FRegisters;
+      Channel   := @FAChannels^.Channels[i];
 
       Phase     := 0.0;
       Frequency := Channel.Frequency;
@@ -659,6 +731,8 @@ begin
 
       Reset;
     end;
+
+  BeepReset;
 end;
 
 procedure TSID.Start;
@@ -726,14 +800,29 @@ begin
     end;
 end;
 
-procedure TSID.NoteOn(AChannel: Integer);
+procedure TSID.NoteOn(AChannel: Integer; AReset: Boolean);
 begin
-  FChannels[AChannel mod TAudioChannels.Count].Play;
+  FChannels[AChannel mod TAudioChannels.Count].Play(AReset);
 end;
 
 procedure TSID.NoteOff(AChannel: Integer);
 begin
   FChannels[AChannel mod TAudioChannels.Count].NoteOff;
+end;
+
+procedure TSID.BeepReset;
+begin
+  FBeepPhase   := 0;
+  FBeepPlaying := False;
+end;
+
+procedure TSID.Beep(AFrequency: Single; ATime: Single);
+begin
+  FBeepTime      := 0;
+  FBeepFrequency := AFrequency;
+  FBeepVolume    := 1 / (TAudioChannels.Count + 1);
+  FBeepLength    := ATime;
+  FBeepPlaying   := True;
 end;
 {$ENDREGION}
 
