@@ -204,6 +204,22 @@ begin
   end;
 end;
 
+function Floor(AVal: Single): Integer; inline;
+begin
+  Result := Trunc(AVal);
+
+  if (AVal < 0) and (Frac(AVal) <> 0) then
+    Dec(Result);
+end;
+
+function Ceil(AVal: Single): Integer; inline;
+begin
+  Result := Trunc(AVal);
+
+  if (AVal > 0) and (Frac(AVal) <> 0) then
+    Inc(Result);
+end;
+
 class function TPeepholeOptimiser.ModifiesStackOrControlFlow(const AItem: TIRItem): Boolean;
 begin
   if AItem.Kind <> TIRItem.TKind.Instruction then
@@ -277,6 +293,106 @@ begin
     if NextIdx >= 0 then
     begin
       var NextItem := AIR[NextIdx];
+
+      // Fold MOV Reg, Imm + Unary Transform (itof, ftoi, frnd, fsin, fcos, ftan, fatan, fsqrt, fexp, fln, fceil, fflr, ineg)
+      if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (Item.RegB = TRegisters.ID.Imm) and (Item.Imm.&Label = '') and
+         (NextItem.RegA = Item.RegA) and (NextItem.RegB = Item.RegA) and
+         (NextItem.OpCode in [TCPUInstruction.TOpCode.itof,  TCPUInstruction.TOpCode.ftoi,  TCPUInstruction.TOpCode.frnd,
+                              TCPUInstruction.TOpCode.fsin,  TCPUInstruction.TOpCode.fcos,  TCPUInstruction.TOpCode.ftan,
+                              TCPUInstruction.TOpCode.fatan, TCPUInstruction.TOpCode.fsqrt, TCPUInstruction.TOpCode.fexp,
+                              TCPUInstruction.TOpCode.fln,   TCPUInstruction.TOpCode.ineg,  TCPUInstruction.TOpCode.fceil,
+                              TCPUInstruction.TOpCode.fflr]) then
+      begin
+        var Handled := True;
+        var InFloat := PSingle(@Item.Imm.Value)^;
+        var OutFloat: Single;
+
+        case NextItem.OpCode of
+          TCPUInstruction.TOpCode.itof:
+          begin
+            OutFloat := Single(Integer(Item.Imm.Value));
+            Item.Imm.Value := PCardinal(@OutFloat)^;
+          end;
+
+          TCPUInstruction.TOpCode.ftoi:
+            Item.Imm.Value := Cardinal(Trunc(InFloat));
+
+          TCPUInstruction.TOpCode.frnd:
+            Item.Imm.Value := Cardinal(Round(InFloat));
+
+          TCPUInstruction.TOpCode.fceil:
+            Item.Imm.Value := Cardinal(Ceil(InFloat));
+
+          TCPUInstruction.TOpCode.fflr:
+            Item.Imm.Value := Cardinal(Floor(InFloat));
+
+          TCPUInstruction.TOpCode.fsin:
+          begin
+            OutFloat := System.Sin(InFloat);
+            Item.Imm.Value := PCardinal(@OutFloat)^;
+          end;
+
+          TCPUInstruction.TOpCode.fcos:
+          begin
+            OutFloat := System.Cos(InFloat);
+            Item.Imm.Value := PCardinal(@OutFloat)^;
+          end;
+
+          TCPUInstruction.TOpCode.ftan:
+          begin
+            OutFloat := System.Tangent(InFloat);
+            Item.Imm.Value := PCardinal(@OutFloat)^;
+          end;
+
+          TCPUInstruction.TOpCode.fatan:
+          begin
+            OutFloat := System.ArcTan(InFloat);
+            Item.Imm.Value := PCardinal(@OutFloat)^;
+          end;
+
+          TCPUInstruction.TOpCode.fsqrt:
+          begin
+            if InFloat >= 0 then
+            begin
+              OutFloat := System.Sqrt(InFloat);
+              Item.Imm.Value := PCardinal(@OutFloat)^;
+            end
+            else
+              Handled := False;
+          end;
+
+          TCPUInstruction.TOpCode.fexp:
+          begin
+            OutFloat := System.Exp(InFloat);
+            Item.Imm.Value := PCardinal(@OutFloat)^;
+          end;
+
+          TCPUInstruction.TOpCode.fln:
+          begin
+            if InFloat > 0 then
+            begin
+              OutFloat := System.Ln(InFloat);
+              Item.Imm.Value := PCardinal(@OutFloat)^;
+            end
+            else
+              Handled := False;
+          end;
+
+          TCPUInstruction.TOpCode.ineg:
+            Item.Imm.Value := Cardinal(-Integer(Item.Imm.Value));
+        else
+          Handled := False;
+        end;
+
+        if Handled then
+        begin
+          AIR.Delete(NextIdx);
+          AIR[i] := Item;
+
+          Result := True;
+          Continue;
+        end;
+      end;
 
       // <S> Fold MOV RegA, X + MOV RegB, RegA ==> MOV RegB, X (when RegA is dead downstream)
       if (Item.OpCode = TCPUInstruction.TOpCode.mov) and (NextItem.OpCode = TCPUInstruction.TOpCode.mov) and (NextItem.RegB = Item.RegA) and (NextItem.RegA <> Item.RegA) then

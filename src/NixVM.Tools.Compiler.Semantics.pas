@@ -804,38 +804,6 @@ begin
       FBuiltinTypes.Add(Format('Record_%p', [Pointer(Result)]), Result);
     end;
 
-//    TASTType.TKind.Record:
-//    begin
-//      Result := TType.CreateRecord('Record');
-//      var CurrentOffset: Cardinal := 0;
-//
-//      for var FieldNode in AAstType.RecordFields do
-//      begin
-//        if FieldNode is TASTVarDecl then
-//        begin
-//          var VarDecl := TASTVarDecl(FieldNode);
-//          var FieldType := ResolveType(VarDecl.VarType);
-//
-//          for var FName in VarDecl.Names do
-//          begin
-//            var RField: TType.TRecordField;
-//
-//            RField.Name   := FName;
-//            RField.&Type  := FieldType;
-//            RField.Offset := CurrentOffset;
-//
-//            Result.RecordFields.Add(RField);
-//
-//            var AlignedSize := (FieldType.Size + 3) and not Cardinal(3);
-//            Inc(CurrentOffset, AlignedSize);
-//          end;
-//        end;
-//      end;
-//
-//      Result.Size := CurrentOffset;
-//      FBuiltinTypes.Add(Format('Record_%p', [Pointer(Result)]), Result);
-//    end;
-
     TASTType.TKind.Set:
     begin
       var BaseType := ResolveType(AAstType.ElementType);
@@ -854,6 +822,22 @@ begin
   else
     Result := FBuiltinTypes['integer'];
   end;
+end;
+
+function Floor(AVal: Single): Integer; inline;
+begin
+  Result := Trunc(AVal);
+
+  if (AVal < 0) and (Frac(AVal) <> 0) then
+    Dec(Result);
+end;
+
+function Ceil(AVal: Single): Integer; inline;
+begin
+  Result := Trunc(AVal);
+
+  if (AVal > 0) and (Frac(AVal) <> 0) then
+    Inc(Result);
 end;
 
 function TSemanticAnalyzer.EvaluateConstValue(AExpr: TASTExpression; out AValue: TConstValue): Boolean;
@@ -1035,8 +1019,8 @@ begin
           else if CalleeLower = 'sqrt'  then begin if FVal >= 0 then AValue := TConstValue.MakeFloat(System.Sqrt(FVal)) else Exit(False); end
           else if CalleeLower = 'round' then AValue := TConstValue.MakeInt(Cardinal(System.Round(FVal)))
           else if CalleeLower = 'trunc' then AValue := TConstValue.MakeInt(Cardinal(System.Trunc(FVal)))
-          else if CalleeLower = 'ceil'  then AValue := TConstValue.MakeInt(Cardinal(System.Trunc(FVal))) // TODO: Ceil/Floor
-          else if CalleeLower = 'floor' then AValue := TConstValue.MakeInt(Cardinal(System.Trunc(FVal)));
+          else if CalleeLower = 'ceil'  then AValue := TConstValue.MakeInt(Cardinal(Ceil(FVal))) // TODO: Ceil/Floor
+          else if CalleeLower = 'floor' then AValue := TConstValue.MakeInt(Cardinal(Floor(FVal)));
 
           Exit(True);
         end;

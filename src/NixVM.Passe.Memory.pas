@@ -29,7 +29,8 @@ uses
   NixVM.Core.System,
 
   NixVM.Passe.Video,
-  NixVM.Passe.Input;
+  NixVM.Passe.Input,
+  NixVM.Passe.Audio;
 
 type
   {$REGION 'System'}
@@ -43,7 +44,10 @@ type
     MouseAddress           = KeyboardBufferAddress + SizeOf(TKeyboardBuffer);
     GamepadsAddress        = MouseAddress          + SizeOf(TMouse);
 
-    VideoRegistersAddress = GamepadsAddress       + SizeOf(TGamepads);
+    AudioRegistersAddress = GamepadsAddress + SizeOf(TGamepads);
+    AudioChannelsAddress  = AudioRegistersAddress + SizeOf(TAudioRegisters);
+
+    VideoRegistersAddress = AudioChannelsAddress  + SizeOf(TAudioChannels);
     PaletteAddress        = VideoRegistersAddress + SizeOf(TVideoRegisters);
     ScanlinesAddress      = PaletteAddress        + SizeOf(TPalette);
     FontAddress           = ScanlinesAddress      + SizeOf(TScanlines);
@@ -56,6 +60,9 @@ type
     KeyboardBuffer: TKeyboardBuffer;
     Mouse:          TMouse;
     Gamepads:       TGamepads;
+
+    AudioRegisters: TAudioRegisters;
+    AudioChannels:  TAudioChannels;
 
     VideoRegisters: TVideoRegisters;
     Palette:        TPalette;
@@ -77,6 +84,7 @@ procedure TPasseMemory.Reset;
 begin
   // Video memory reset handled by VDU
   // Input memory reset handled by HID
+  // Audio memory reset handled by SID
 end;
 {$ENDREGION}
 

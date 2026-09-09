@@ -3316,6 +3316,7 @@ begin
     if ArrayAcc.ArrayExpr is TASTIdentifier then
     begin
       Sym := TSymbol(TASTIdentifier(ArrayAcc.ArrayExpr).Symbol);
+
       if Sym = nil then
         Sym := FCurrentScope.Resolve(TASTIdentifier(ArrayAcc.ArrayExpr).Name);
     end;
@@ -3327,55 +3328,90 @@ begin
     else if (ArrayAcc.ArrayExpr.ResolvedType <> nil) and (ArrayAcc.ArrayExpr.ResolvedType.TypeName <> '') then
     begin
       var SymLookup := FAnalyzer.GlobalScope.Resolve(ArrayAcc.ArrayExpr.ResolvedType.TypeName);
+
       if (SymLookup <> nil) and (SymLookup.SymbolType <> nil) then
         CurType := SymLookup.SymbolType;
     end;
 
-    // Dynamic arrays and pointers store a heap address in the variable
     var IsPointerBase := False;
     if (CurType <> nil) and (CurType.Kind in [TType.TKind.Pointer, TType.TKind.DynamicArray]) then
       IsPointerBase := True
+
     else if (ArrayAcc.ArrayExpr.ResolvedType <> nil) and (ArrayAcc.ArrayExpr.ResolvedType.Kind in [TASTType.TKind.Pointer, TASTType.TKind.DynamicArray]) then
       IsPointerBase := True;
 
-    // Fast path for 1-dimensional constant index on static local/global value arrays
-    if (not IsPointerBase) and (ArrayAcc.IndexExprs.Count = 1) and (ArrayAcc.IndexExprs[0] is TASTLiteral) and (Sym <> nil) then
+    if (ArrayAcc.IndexExprs.Count = 1) and (ArrayAcc.IndexExprs[0] is TASTLiteral) then
     begin
       var ConstIdx := Integer(TASTLiteral(ArrayAcc.IndexExprs[0]).ValueInt);
-      var ByteOffset := (ConstIdx - ArrayAcc.LowBound) * Integer(ArrayAcc.ElementSize);
+      var DimStride: Cardinal := ArrayAcc.ElementSize;
 
-      if Sym.Storage = TSymbol.TStorage.Local then
+      if (CurType <> nil) and (CurType.Kind in [TType.TKind.Pointer, TType.TKind.DynamicArray]) and (CurType.ElementType <> nil) then
+        CurType := CurType.ElementType;
+
+      if (CurType <> nil) and (CurType.Kind = TType.TKind.Array) and (CurType.ElementType <> nil) then
+        DimStride := CurType.ElementType.Size;
+
+      if DimStride = 0 then
+        DimStride := ArrayAcc.ElementSize;
+
+      if DimStride = 0 then
+        DimStride := 4;
+
+      var ByteOffset := (ConstIdx - ArrayAcc.LowBound) * Integer(DimStride);
+
+      if (Sym <> nil) and (Sym.Kind = TSymbol.TKind.Constant) and (not Sym.IsEmbed) then
       begin
-        var TotalOfs := Sym.StackOffset + ByteOffset;
-        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, ADestReg, TRegisters.ID.BP, Cardinal(TotalOfs));
+        FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, Cardinal(Integer(Sym.ConstVal.ValueInt) + ByteOffset));
+
         Exit;
-      end
-      else if Sym.Storage = TSymbol.TStorage.Global then
+      end;
+
+      if (Sym <> nil) and (Sym.Storage = TSymbol.TStorage.Global) and (not IsPointerBase) then
       begin
         var Idx := FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.mov, ADestReg, TLabelString(Sym.GlobalLabel));
+
         if ByteOffset <> 0 then
         begin
           var Item := FIR.Items[Idx];
           Item.Imm.Delta := ByteOffset;
           FIR.Items[Idx] := Item;
         end;
+
+        Exit;
+      end;
+
+      if (Sym <> nil) and (Sym.Storage = TSymbol.TStorage.Local) and (not IsPointerBase) then
+      begin
+        var TotalOfs := Sym.StackOffset + ByteOffset;
+
+        FIR.AddInstrR1R2Imm(TCPUInstruction.TOpCode.lea, ADestReg, TRegisters.ID.BP, Cardinal(TotalOfs));
+
+        Exit;
+      end;
+
+      if IsPointerBase then
+      begin
+        GenExpression(ArrayAcc.ArrayExpr, ADestReg);
+
+        if ByteOffset <> 0 then
+          FIR.AddInstrR1Imm(TCPUInstruction.TOpCode.add, ADestReg, Cardinal(ByteOffset));
+
         Exit;
       end;
     end;
 
-    // Load heap pointer with GenExpression vs compute stack address with GenAddressOf
     if IsPointerBase then
       GenExpression(ArrayAcc.ArrayExpr, ADestReg)
     else
       GenAddressOf(ArrayAcc.ArrayExpr, ADestReg);
 
-    // Unwrap pointer / dynamic array to element type
     if (CurType <> nil) and (CurType.Kind in [TType.TKind.Pointer, TType.TKind.DynamicArray]) and (CurType.ElementType <> nil) then
       CurType := CurType.ElementType;
 
     for var i := 0 to ArrayAcc.IndexExprs.Count - 1 do
     begin
       var DimReg: TRegisters.ID;
+
       if ADestReg <> TRegisters.ID.R6 then
         DimReg := TRegisters.ID.R6
       else
@@ -3389,6 +3425,7 @@ begin
       if (CurType <> nil) and (CurType.Kind = TType.TKind.Array) then
       begin
         DimLow := CurType.SubrangeLow;
+
         if CurType.ElementType <> nil then
           DimStride := CurType.ElementType.Size
         else

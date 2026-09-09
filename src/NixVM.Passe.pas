@@ -58,6 +58,8 @@ uses
   NixVM.Passe.Memory,
   NixVM.Passe.Input,
   NixVM.Passe.Input.HID,
+  NixVM.Passe.Audio,
+  NixVM.Passe.Audio.SID,
   NixVM.Passe.Video,
   NixVM.Passe.Video.VDU,
   NixVM.Passe.Renderer;
@@ -72,6 +74,7 @@ type
     FScale:        Single;
 
     FHID: THID;
+    FSID: TSID;
     FVDU: TVDU;
 
     FRenderer: TRenderer;
@@ -116,6 +119,7 @@ type
     property Scale: Single read FScale write SetScale;
 
     property HID: THID read FHID;
+    property SID: TSID read FSID;
     property VDU: TVDU read FVDU;
   end;
   {$ENDREGION}
@@ -205,6 +209,9 @@ begin
   Writeln('  _Addr_Atlas          = $', IntToHex(TPasseMemory.SpritesAddress), ';');
   Writeln('  _Addr_Sprites        = $', IntToHex(TPasseMemory.SpritesAddress + (SizeOf(TSprites.TAtlasEntry) * TSprites.AtlasCount)), ';');
 
+  Writeln('  _Addr_AudioRegisters = $', IntToHex(TPasseMemory.AudioRegistersAddress), ';');
+  Writeln('  _Addr_AudioChannels  = $', IntToHex(TPasseMemory.AudioChannelsAddress), ';');
+
   Writeln('D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $' + IntToHex(Memory.UserAddress, 0) + ' -oem ' + IntToStr(SizeOf(TPasseMemory)));
 
   if Assigned(Passe) then
@@ -218,6 +225,7 @@ begin
 
   FHID := THID.Create(Self);
   FVDU := TVDU.Create(Self);
+  FSID := TSID.Create(Self);
 
   FRenderer := TRenderer.Create(Self);
 
@@ -230,6 +238,7 @@ begin
 
   FRenderer.Free;
 
+  FSID.Free;
   FHID.Free;
   FVDU.Free;
 
@@ -250,14 +259,19 @@ procedure TPasse.Started;
 begin
   Memory.System.Reset;
 
+  FSID.Reset;
   FVDU.Reset;
   FHID.Reset;
+
+  FSID.Start;
 
   inherited;
 end;
 
 procedure TPasse.Stopped;
 begin
+  FSID.Stop;
+
   inherited;
 end;
 
@@ -266,6 +280,8 @@ begin
   inherited;
 
   FHID.PollMouse;
+
+  FSID.Update;
 
   if not Memory.System.VideoRegisters.Flags.HardwareBuffered then
      FRenderer.Render;
@@ -365,6 +381,10 @@ begin
       TVDU.TSysCalls.Print:  FVDU.Print(Memory.ReadString(R0));
       TVDU.TSysCalls.Locate: FVDU.Locate(R0, R1);
       TVDU.TSysCalls.Colour: FVDU.Colour(R0, R1, (R2 <> 0));
+
+      TSID.TSysCalls.Reset:   FSID.Reset;
+      TSID.TSysCalls.NoteOn:  FSID.NoteOn (R0);
+      TSID.TSysCalls.NoteOff: FSID.NoteOff(R0);
     else
       Result:= False;
     end;

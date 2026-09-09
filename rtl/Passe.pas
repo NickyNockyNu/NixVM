@@ -10,11 +10,69 @@ const
   _Addr_KeyboardBuffer = $00000628;
   _Addr_Mouse          = $0000072A;
   _Addr_Gamepads       = $00000736;
-  _Addr_VideoRegisters = $00000794;
-  _Addr_Stickers       = $00002040;
-  _Addr_Atlas          = $00002240;
-  _Addr_Sprites        = $00002A40;
   
+  _Addr_AudioRegisters = $00000794;
+  _Addr_AudioChannels  = $000007AD;
+
+  _Addr_VideoRegisters = $00000831;
+  _Addr_Stickers       = $000020DD;
+  _Addr_Atlas          = $000022DD;
+  _Addr_Sprites        = $00002ADD;
+  
+  _VDU = $A0;
+
+  _SysCall_VDUReset = _VDU + 0;
+  _SysCall_VDUClear = _VDU + 1;
+
+  _SysCall_VDUGetPixel = _VDU + 2;
+  _SysCall_VDUSetPixel = _VDU + 3;
+
+  _SysCall_VDUHLine = _VDU + 4;
+  _SysCall_VDUVLine = _VDU + 5;
+
+  _SysCall_VDULine = _VDU + 6;
+
+  _SysCall_VDUDrawRectangle = _VDU + 7;
+  _SysCall_VDUFillRectangle = _VDU + 8;
+
+  _SysCall_VDUDrawCircle = _VDU + 9;
+  _SysCall_VDUFillCircle = _VDU + 10;
+
+  _SysCall_VDUDrawEllipse = _VDU + 11;
+  _SysCall_VDUFillEllipse = _VDU + 12;
+
+  _SysCall_VDUDrawTriangle = _VDU + 13;
+  _SysCall_VDUFillTriangle = _VDU + 14;
+
+  _CON = $C0;
+
+  _SysCall_CONCls    = _CON + 0;
+  _SysCall_CONWrite  = _CON + 1;
+  _SysCall_CONPrint  = _CON + 2;
+  _SysCall_CONLocate = _CON + 3;
+  _SysCall_CONColour = _CON + 4;
+
+  _SID = $D0;
+  
+  _SysCall_SIDReset   = _SID + 0;
+  _SysCall_SIDNoteOn  = _SID + 1;
+  _SysCall_SIDNoteOff = _SID + 2;
+
+  AudioChannelCount = 4;
+
+  FrameBufferWidth  = 320;
+  FrameBufferHeight = 180;
+
+  ConsoleCharHeight = 8;
+
+  ConsoleWidth  = FrameBufferWidth  div 8;
+  ConsoleHeight = FrameBufferHeight div ConsoleCharHeight;
+
+  StickerCount = 64;
+  
+  AtlasCount  = 128;
+  SpriteCount = 32;
+
 type
   TKey = record
     State: Byte;
@@ -70,21 +128,50 @@ type
 
 const
   Mouse: PMouse = _Addr_Mouse;
-
-const
-  FrameBufferWidth  = 320;
-  FrameBufferHeight = 180;
-
-  ConsoleCharHeight = 8;
-
-  ConsoleWidth  = FrameBufferWidth  div 8;
-  ConsoleHeight = FrameBufferHeight div ConsoleCharHeight;
-
-  StickerCount = 64;
   
-  AtlasCount  = 128;
-  SpriteCount = 32;
+type
+  PAudioRegisters = ^TAudioRegisters;
+  TAudioRegisters = record
+    Volume: Single;
+    
+    CutoffFreq: Single;
+    DelayTime:  Single;
+    Feedback:   Single;
+    DelayMix:   Single;
+    DelayGlide: Single;
+    
+    Flags: Byte;
+  end;
+  
+const
+  AudioRegisters: PAudioRegisters = _Addr_AudioRegisters;
 
+type
+  TAudioChannel = record
+    Frequency:  Single;
+    Volume:     Single;
+    PulseWidth: Single;
+    GlideSpeed: Single;
+    
+    Attack:  Single;
+    Decay:   Single;
+    Sustain: Single;
+    Release: Single;
+    
+    Flags: Byte;
+  end;
+
+  PAudioChannels = ^TAudioChannels;
+  TAudioChannels = array[0..AudioChannelCount - 1] of TAudioChannel;
+  
+const
+  AudioChannels: PAudioChannels = _Addr_AudioChannels;
+  
+procedure SIDReset; syscall _SysCall_SIDReset;
+
+procedure NoteOn (AChannel: Integer); syscall _SysCall_SIDNoteOn;
+procedure NoteOff(AChannel: Integer); syscall _SysCall_SIDNoteOff;
+  
 type
   PFrameBuffer = ^TFrameBuffer;
   TFrameBuffer = array[0..(FrameBufferWidth * FrameBufferHeight) - 1] of Byte;
@@ -217,32 +304,6 @@ type
 
 const
   VideoRegisters: PVideoRegisters = _Addr_VideoRegisters;
-
-const
-  _VDU = $A0;
-
-  _SysCall_VDUReset = _VDU + 0;
-  _SysCall_VDUClear = _VDU + 1;
-
-  _SysCall_VDUGetPixel = _VDU + 2;
-  _SysCall_VDUSetPixel = _VDU + 3;
-
-  _SysCall_VDUHLine = _VDU + 4;
-  _SysCall_VDUVLine = _VDU + 5;
-
-  _SysCall_VDULine = _VDU + 6;
-
-  _SysCall_VDUDrawRectangle = _VDU + 7;
-  _SysCall_VDUFillRectangle = _VDU + 8;
-
-  _SysCall_VDUDrawCircle = _VDU + 9;
-  _SysCall_VDUFillCircle = _VDU + 10;
-
-  _SysCall_VDUDrawEllipse = _VDU + 11;
-  _SysCall_VDUFillEllipse = _VDU + 12;
-
-  _SysCall_VDUDrawTriangle = _VDU + 13;
-  _SysCall_VDUFillTriangle = _VDU + 14;
     
 procedure VDUReset; syscall _SysCall_VDUReset;
 
@@ -264,14 +325,6 @@ procedure FillEllipse(CX, CY, RX, RY: Integer; C: Byte); syscall _SysCall_VDUFil
 
 procedure DrawTriangle(X1, Y1, X2, Y2, X3, Y3: Integer; C: Byte); syscall _SysCall_VDUDrawTriangle;
 procedure FillTriangle(X1, Y1, X2, Y2, X3, Y3: Integer; C: Byte); syscall _SysCall_VDUFillTriangle;
-
-const
-  _CON = $C0;
-  _SysCall_CONCls    = _CON + 0;
-  _SysCall_CONWrite  = _CON + 1;
-  _SysCall_CONPrint  = _CON + 2;
-  _SysCall_CONLocate = _CON + 3;
-  _SysCall_CONColour = _CON + 4;
 
 procedure Cls; syscall _SysCall_CONCls;
 
