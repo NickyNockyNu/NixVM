@@ -126,11 +126,11 @@ type
       Registers: PAudioRegisters;
       Channel:   TAudioChannels.PChannel;
       Phase:     Double;
-      Frequency: Single;
-      Volume:    Single;
-      NoiseVal:  Single;
+      Frequency: Double;
+      Volume:    Double;
+      NoiseVal:  Double;
       EnvState:  TEnvelopeState;
-      EnvValue:  Single;
+      EnvValue:  Double;
       Playing:   Boolean;
 
       procedure Process(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
@@ -192,7 +192,7 @@ type
 
     procedure Reset;
 
-    procedure Start;
+    function  Start(AWantErrors: Boolean = True): Boolean;
     procedure Stop;
     procedure Update;
 
@@ -211,6 +211,9 @@ type
     property Channels:  PAudioChannels  read FAChannels;
   end;
   {$ENDREGION}
+
+const
+  PI2 = PI * 2;
 
 implementation
 
@@ -235,13 +238,13 @@ begin
     Exit;
   end;
 
-  TimeStep  := 1.0 / ASampleRate;
+  TimeStep  := 1 / ASampleRate;
   OutPtr    := ABuffer;
 
   for var i := 0 to ASampleCount - 1 do
   begin
     Frequency := Frequency + (Channel.Frequency - Frequency) * Channel.GlideSpeed;
-    PhaseStep := (Frequency * 2.0 * Pi) / ASampleRate;
+    PhaseStep := (Frequency * PI2) / ASampleRate;
 
     Volume := Volume + (Channel.Volume - Volume) * Channel.GlideSpeed;
 
@@ -251,22 +254,22 @@ begin
         begin
           EnvValue := EnvValue + (TimeStep / Channel.Attack);
 
-          if EnvValue >= 1.0 then
+          if EnvValue >= 1 then
           begin
-            EnvValue := 1.0;
+            EnvValue := 1;
             EnvState := TEnvelopeState.Decay;
           end;
         end
         else
         begin
-          EnvValue := 1.0;
+          EnvValue := 1;
           EnvState := TEnvelopeState.Decay;
         end;
 
       TEnvelopeState.Decay:
         if Channel.Decay > 0 then
         begin
-          EnvValue := EnvValue - (TimeStep / Channel.Decay) * (1.0 - Channel.Sustain);
+          EnvValue := EnvValue - (TimeStep / Channel.Decay) * (1 - Channel.Sustain);
 
           if EnvValue <= Channel.Sustain then
           begin
@@ -288,9 +291,9 @@ begin
         begin
           EnvValue := EnvValue - (TimeStep / Channel.Release);
 
-          if EnvValue <= 0.0 then
+          if EnvValue <= 0 then
           begin
-            EnvValue := 0.0;
+            EnvValue := 0;
             EnvState := TEnvelopeState.Idle;
 
             Stop;
@@ -299,7 +302,7 @@ begin
         end
         else
         begin
-          EnvValue := 0.0;
+          EnvValue := 0;
           EnvState := TEnvelopeState.Idle;
 
           Stop;
@@ -312,22 +315,22 @@ begin
         SampleVal := Sin(Phase);
 
       TAudioChannels.TWaveform.Square:
-        if Phase <  (2.0 * Pi * Channel.PulseWidth) then
-          SampleVal := 1.0
+        if Phase < (PI2 * Channel.PulseWidth) then
+          SampleVal := 1
         else
-          SampleVal := -1.0;
+          SampleVal := -1;
 
       TAudioChannels.TWaveform.Sawtooth:
-        SampleVal := (Phase / Pi) - 1.0;
+        SampleVal := (Phase / PI) - 1;
 
       TAudioChannels.TWaveform.Triangle:
       begin
-        P := Phase / (2.0 * Pi);
-        SampleVal := 1.0 - (4.0 * Abs(P - 0.5));
+        P := Phase / PI2;
+        SampleVal := 1 - (4 * Abs(P - 0.5));
       end;
 
       TAudioChannels.TWaveform.Noise:
-        if Phase < (2.0 * Pi * Channel.PulseWidth) then
+        if Phase < (PI2 * Channel.PulseWidth) then
           SampleVal := NoiseVal
         else
           SampleVal := -NoiseVal;
@@ -346,20 +349,20 @@ begin
 
     Phase := Phase + PhaseStep;
 
-    if (Phase >= (2.0 * Pi)) or (Phase < 0.0) then
+    if (Phase >= PI2) or (Phase < 0) then
     begin
-      NoiseVal := (Random - 0.5) * 2.0;
+      NoiseVal := (Random - 0.5) * 2;
 
-      while Phase >= (2.0 * Pi) do
+      while Phase >= PI2 do
       begin
-        Phase    := Phase - (2.0 * Pi);
-        NoiseVal := (Random - 0.5) * 2.0;
+        Phase    := Phase - PI2;
+        NoiseVal := (Random - 0.5) * 2;
       end;
 
-      while Phase < 0.0 do
+      while Phase < 0 do
       begin
-        Phase := Phase + (2.0 * Pi);
-        NoiseVal := (Random - 0.5) * 2.0;
+        Phase    := Phase + PI2;
+        NoiseVal := (Random - 0.5) * 2;
       end;
     end;
 
@@ -373,8 +376,8 @@ procedure TSID.TChannel.Reset;
 begin
   Stop;
 
-  Phase    := 0.0;
-  EnvValue := 0.0;
+  ResetPhase;
+  EnvValue := 0;
 end;
 
 procedure TSID.TChannel.Play(AReset: Boolean = True);
@@ -383,9 +386,6 @@ begin
   begin
     if EnvValue < 0.005 then
     begin
-      ResetPhase;
-
-      EnvValue  := 0.0;
       Frequency := Channel.Frequency;
       Volume    := Channel.Volume;
     end;
@@ -405,7 +405,7 @@ begin
   Channel.OutLevel := 0;
 
   EnvState := TEnvelopeState.Idle;
-  EnvValue := 0.0;
+  EnvValue := 0;
 end;
 
 procedure TSID.TChannel.NoteOff;
@@ -417,14 +417,14 @@ end;
 procedure TSID.TChannel.ResetPhase;
 begin
   case Channel.Flags.Waveform of
-    TAudioChannels.TWaveform.Sine:     Phase := 0.0;
-    TAudioChannels.TWaveform.Square:   Phase := 0.0;
-    TAudioChannels.TWaveform.Sawtooth: Phase := Pi;
-    TAudioChannels.TWaveform.Triangle: Phase := Pi / 2.0;
+    TAudioChannels.TWaveform.Sine:     Phase := 0;
+    TAudioChannels.TWaveform.Square:   Phase := 0;
+    TAudioChannels.TWaveform.Sawtooth: Phase := PI;
+    TAudioChannels.TWaveform.Triangle: Phase := PI / 2;
     TAudioChannels.TWaveform.Noise:
     begin
-      Phase    := 0.0;
-      NoiseVal := (Random - 0.5) * 2.0;
+      Phase    := 0;
+      NoiseVal := (Random - 0.5) * 2;
     end;
   end;
 end;
@@ -457,6 +457,8 @@ end;
 procedure TSID.FillBuffer(AOutBuffer: PSmallInt; ASampleCount: Integer; ASampleRate: Integer);
 var
   Level: Single;
+  ASamp: Single;
+  Gain:  Single;
 begin
   if Length(FBuffer) < ASampleCount then
     SetLength(FBuffer, ASampleCount);
@@ -469,14 +471,20 @@ begin
   Level := 0;
 
   for var i := 0 to ASampleCount - 1 do
-    if Abs(FBuffer[i]) > Level then
-        Level := Abs(FBuffer[i]);
+  begin
+    ASamp := Abs(FBuffer[i]);
+
+    if ASamp > Level then
+      Level := ASamp;
+  end;
 
   if Level > 1 then
   begin
+    Gain := 1 / Level;
+
     for var i := 0 to ASampleCount - 1 do
     begin
-      AOutBuffer^ := Round((FBuffer[i] * (1 / Level)) * 32767.0);
+      AOutBuffer^ := Round(32767 * (FBuffer[i] * Gain));
       Inc(AOutBuffer);
     end;
 
@@ -485,7 +493,7 @@ begin
   else
     for var i := 0 to ASampleCount - 1 do
     begin
-      AOutBuffer^ := Round(FBuffer[i] * 32767.0);
+      AOutBuffer^ := Round(32767 * FBuffer[i]);
       Inc(AOutBuffer);
     end;
 
@@ -505,9 +513,10 @@ begin
 
   if FRegisters.Flags.EffectsEnabled then
   begin
-    Alpha := (2.0 * Pi * FRegisters.CutoffFreq) / ASampleRate;
-    if Alpha > 1.0 then
-      Alpha := 1.0;
+    Alpha := (PI2 * FRegisters.CutoffFreq) / ASampleRate;
+
+    if Alpha > 1 then
+      Alpha := 1;
 
     OutPtr := ABuffer;
 
@@ -519,7 +528,7 @@ begin
     end;
   end;
 
-  //if FRegisters.Flags.DelayEnabled then
+  if FRegisters.Flags.DelayEnabled then
   begin
     if Length(FDelayBuffer) <> (ASampleRate * 2) then
     begin
@@ -530,7 +539,7 @@ begin
     if FRegisters.Flags.DelayEnabled then
       TargetMix := FRegisters.DelayMix
     else
-      TargetMix := 0.0;
+      TargetMix := 0;
 
     TargetDelay := FRegisters.DelayTime * ASampleRate;
 
@@ -540,7 +549,7 @@ begin
     if TargetDelay >= Length(FDelayBuffer) - 2 then
       TargetDelay := Length(FDelayBuffer) - 2;
 
-    if FCurrentDelay < 0.0 then
+    if FCurrentDelay < 0 then
       FCurrentDelay := TargetDelay;
 
     OutPtr := ABuffer;
@@ -566,14 +575,15 @@ begin
         var Index1: Integer := Trunc(ReadPos);
         var Index2: Integer := Index1 + 1;
 
-        if Index2 >= Length(FDelayBuffer) then Index2 := 0;
+        if Index2 >= Length(FDelayBuffer) then
+          Index2 := 0;
 
         var Frac: Single := ReadPos - Index1;
 
         DelayedSample := FDelayBuffer[Index1] + Frac * (FDelayBuffer[Index2] - FDelayBuffer[Index1]);
 
         if Abs(DelayedSample) < 1.0E-6 then
-          DelayedSample := 0.0;
+          DelayedSample := 0;
 
         FDelayBuffer[FDelayIndex] := CurrentSample + (DelayedSample * FRegisters.Feedback);
         OutPtr^ := CurrentSample + (DelayedSample * FCurrentMix);
@@ -609,7 +619,7 @@ begin
 
   OutPtr := ABuffer;
 
-  PhaseStep := (FBeepFrequency * 2.0 * Pi) / ASampleRate;
+  PhaseStep := (FBeepFrequency * PI2) / ASampleRate;
 
   for var i := 0 to ASampleCount - 1 do
   begin
@@ -619,7 +629,7 @@ begin
     if not FBeepPlaying then
       Break;
 
-    if FBeepPhase <  (2.0 * Pi * 0.5) then
+    if FBeepPhase < PI then
       SampleVal := FBeepVolume
     else
       SampleVal := -FBeepVolume;
@@ -629,13 +639,13 @@ begin
     FBeepPhase := FBeepPhase + PhaseStep;
     FBeepTime  := FBeepTime  + PhaseStep;
 
-    if (FBeepPhase >= (2.0 * Pi)) or (FBeepPhase < 0.0) then
+    if (FBeepPhase >= PI2) or (FBeepPhase < 0) then
     begin
-      while FBeepPhase >= (2.0 * Pi) do
-        FBeepPhase := FBeepPhase - (2.0 * Pi);
+      while FBeepPhase >= PI2 do
+        FBeepPhase := FBeepPhase - PI2;
 
-      while FBeepPhase < 0.0 do
-        FBeepPhase := FBeepPhase + (2.0 * Pi);
+      while FBeepPhase < 0 do
+        FBeepPhase := FBeepPhase + PI2;
     end;
 
     Inc(OutPtr);
@@ -661,16 +671,26 @@ begin
 
   CoInitialize(nil);
 
-  if Failed(CoCreateInstance(CLSID_MMDeviceEnumerator, nil, CLSCTX_ALL, IID_IMMDeviceEnumerator, Enumerator)) then
+ if Failed(CoCreateInstance(CLSID_MMDeviceEnumerator, nil, CLSCTX_ALL, IID_IMMDeviceEnumerator, Enumerator)) then
+  begin
     FOwner.Error('Failed to create MMDeviceEnumerator');
+    Exit;
+  end;
 
   if Failed(Enumerator.GetDefaultAudioEndpoint(0, 0, Device)) then
+  begin
     FOwner.Error('Failed to get default audio endpoint');
+    Exit;
+  end;
 
   if Failed(Device.Activate(IID_IAudioClient, CLSCTX_ALL, nil, @FAudioClient)) then
+  begin
     FOwner.Error('Failed to activate IAudioClient');
+    Exit;
+  end;
 
   FillChar(WaveFormat, SizeOf(WaveFormat), 0);
+
   with WaveFormat do
   begin
     wFormatTag      := WAVE_FORMAT_PCM;
@@ -682,7 +702,10 @@ begin
   end;
 
   if Failed(FAudioClient.Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK or AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, 0, 0, @WaveFormat, nil)) then
+  begin
     FOwner.Error('WASAPI Initialize failed');
+    Exit;
+  end;
 
   FAudioClient.SetEventHandle(FEvent);
 
@@ -696,7 +719,11 @@ begin
   if FTargetFrames > FBufferFrames then
     FTargetFrames := FBufferFrames;
 
-  FAudioClient.GetService(IID_IAudioRenderClient, @FRenderClient);
+  if Failed(FAudioClient.GetService(IID_IAudioRenderClient, @FRenderClient)) then
+  begin
+    FOwner.Error('Failed to get audio render client');
+    Exit;
+  end;
 end;
 
 destructor TSID.Destroy;
@@ -717,17 +744,21 @@ begin
   FRegisters.Reset;
   FAChannels.Reset;
 
+  FPrevSample   :=  0;
+  FCurrentDelay := -1;
+  FCurrentMix   :=  0;
+
   for var i := 0 to TAudioChannels.Count - 1 do
     with FChannels[i] do
     begin
       Registers := FRegisters;
       Channel   := @FAChannels^.Channels[i];
 
-      Phase     := 0.0;
+      Phase     := 0;
       Frequency := Channel.Frequency;
 
       EnvState := TEnvelopeState.Idle;
-      EnvValue := 0.0;
+      EnvValue := 0;
 
       Reset;
     end;
@@ -735,22 +766,41 @@ begin
   BeepReset;
 end;
 
-procedure TSID.Start;
+function TSID.Start(AWantErrors: Boolean): Boolean;
 begin
-  if FThreadHandle = 0 then
+  if FThreadHandle <> 0 then
+    Exit(True);
+
+  Result := False;
+
+  Reset;
+
+  if Failed(FAudioClient.Start) then
   begin
-    Reset;
+    if AWantErrors then
+      FOwner.Error('Failed to start audio client');
 
-    IsMultiThread := True;
-    FTerminated   := False;
-
-    FThreadHandle := CreateThread(nil, 0, @AudioThreadProc, Self, 0, FThreadID);
-
-    if FThreadHandle <> 0 then
-      SetThreadPriority(FThreadHandle, THREAD_PRIORITY_TIME_CRITICAL);
+    Exit;
   end;
 
-  FAudioClient.Start;
+  IsMultiThread := True;
+  FTerminated   := False;
+
+  FThreadHandle := CreateThread(nil, 0, @AudioThreadProc, Self, 0, FThreadID);
+
+  if FThreadHandle = 0 then
+  begin
+    FAudioClient.Stop;
+
+    if AWantErrors then
+      FOwner.Error('Failed to create audio thread');
+
+    Exit;
+  end;
+
+  SetThreadPriority(FThreadHandle, THREAD_PRIORITY_TIME_CRITICAL);
+
+  Result := True;
 end;
 
 procedure TSID.Stop;
@@ -770,7 +820,8 @@ begin
     FThreadHandle := 0;
   end;
 
-  FAudioClient.Stop;
+  if Assigned(FAudioClient) then
+    FAudioClient.Stop;
 end;
 
 procedure TSID.Update;

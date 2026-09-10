@@ -11,7 +11,9 @@ uses
   NixVM.Harness.Passe in '..\src\NixVM.Harness.Passe.pas',
   NixVM.Passe.Video.VDU in '..\src\NixVM.Passe.Video.VDU.pas',
   NixVM.Passe.Input in '..\src\NixVM.Passe.Input.pas',
-  NixVM.Passe.Input.HID in '..\src\NixVM.Passe.Input.HID.pas';
+  NixVM.Passe.Input.HID in '..\src\NixVM.Passe.Input.HID.pas',
+  NixVM.Passe.Audio in '..\src\NixVM.Passe.Audio.pas',
+  NixVM.Passe.Audio.SID in '..\src\NixVM.Passe.Audio.SID.pas';
 
 begin
   TPasse.Run;

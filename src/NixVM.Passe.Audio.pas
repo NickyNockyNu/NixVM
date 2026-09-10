@@ -35,14 +35,12 @@ type
 
     TFlagsHelper = record helper for TFlags
     const
-      MaskSoftClipping   = %00000001;
-      MaskEffectsEnabled = %00000010;
-      MaskDelayEnabled   = %00000100;
+      MaskEffectsEnabled = %00000001;
+      MaskDelayEnabled   = %00000010;
     private
       function  GetFlag(AMask: Integer): Boolean;          inline;
       procedure SetFlag(AMask: Integer; AEnable: Boolean); inline;
     public
-      property SoftClipping:   Boolean index MaskSoftClipping   read GetFlag write SetFlag;
       property EffectsEnabled: Boolean index MaskEffectsEnabled read GetFlag write SetFlag;
       property DelayEnabled:   Boolean index MaskDelayEnabled   read GetFlag write SetFlag;
     end;
@@ -60,6 +58,7 @@ type
     Flags:  TFlags;
 
     // TODO: Pad
+    //Padding: array[0..2] of Byte;
 
     procedure Reset;
   end;
@@ -116,6 +115,7 @@ type
       Flags: TFlags;
 
       // TODO: Pad
+      //Padding: array[0..2] of Byte;
     end;
     {$ENDREGION}
   public
@@ -147,9 +147,12 @@ procedure TAudioRegisters.Reset;
 begin
   FillChar(Self, SizeOf(Self), 0);
 
-  Volume := 1.0;
-
-  Flags.SoftClipping := True;
+  Volume        := 1.0;
+  CutoffFreq    := 1500.0;
+  DelayTime     := 0.15;
+  Feedback      := 0.4;
+  DelayMix      := 0.3;
+  DelayGlide    := 0.0001;
 end;
 {$ENDREGION}
 

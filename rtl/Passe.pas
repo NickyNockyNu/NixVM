@@ -181,7 +181,7 @@ type
 
   PAudioChannels = ^TAudioChannels;
   TAudioChannels = array[0..AudioChannelCount - 1] of TAudioChannel;
-  
+
 const
   AudioChannels: PAudioChannels = _Addr_AudioChannels;
   

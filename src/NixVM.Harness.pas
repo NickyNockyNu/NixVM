@@ -244,7 +244,6 @@ var
   RefreshRate: Cardinal;
   ExecuteTime: Double;
 begin
-
   RefreshRate := FMemory.CoreSystem.Registers.RefreshRate;
 
   if RefreshRate = 0 then

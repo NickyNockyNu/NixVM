@@ -703,6 +703,19 @@ begin
             Inc(ArgIdx);
           end;
         end;
+
+        'b':
+        begin
+          if ArgIdx < System.Length(AArgs) then
+          begin
+            if AArgs[ArgIdx] = 0 then
+              Result := Result + 'False'
+            else
+              Result := Result + 'True';
+
+            Inc(ArgIdx);
+          end;
+        end
       else
         Result := Result + '%' + Spec;
       end;

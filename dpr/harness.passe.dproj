@@ -63,7 +63,7 @@
         <Manifest_File>D:\Passe2\dpr\(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
         <Icon_MainIcon>harness.console_Icon.ico</Icon_MainIcon>
-        <PostBuildEvent><![CDATA[D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $10F40 -oem 68120
+        <PostBuildEvent><![CDATA[D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $10FF4 -oem 68297
 $(PostBuildEvent)]]></PostBuildEvent>
     </PropertyGroup>
     <ItemGroup>
@@ -78,6 +78,8 @@ $(PostBuildEvent)]]></PostBuildEvent>
         <DCCReference Include="..\src\NixVM.Passe.Video.VDU.pas"/>
         <DCCReference Include="..\src\NixVM.Passe.Input.pas"/>
         <DCCReference Include="..\src\NixVM.Passe.Input.HID.pas"/>
+        <DCCReference Include="..\src\NixVM.Passe.Audio.pas"/>
+        <DCCReference Include="..\src\NixVM.Passe.Audio.SID.pas"/>
         <None Include="..\src\NixVM.Passe.Font.inc"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>

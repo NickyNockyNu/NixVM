@@ -293,9 +293,9 @@ procedure TPasse.Started;
 begin
   Memory.System.Reset;
 
-  FSID.Reset;
   FVDU.Reset;
   FHID.Reset;
+  FSID.Reset;
 
   FSID.Start;
 
@@ -314,8 +314,6 @@ begin
   inherited;
 
   FHID.PollMouse;
-
-  FSID.Update;
 
   if not Memory.System.VideoRegisters.Flags.HardwareBuffered then
      FRenderer.Render;
