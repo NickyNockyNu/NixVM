@@ -123,14 +123,21 @@ type
 
     {$REGION 'Channel'}
     TChannel = record
-      Registers: PAudioRegisters;
-      Channel:   TAudioChannels.PChannel;
-      Phase:     Double;
-      Frequency: Double;
-      Volume:    Double;
-      NoiseVal:  Double;
-      EnvState:  TEnvelopeState;
-      EnvValue:  Double;
+      Registers:   PAudioRegisters;
+      Channel:     TAudioChannels.PChannel;
+      Phase:       Double;
+      Frequency:   Double;
+      Volume:      Double;
+      NoiseVal:    Double;
+      EnvState:    TEnvelopeState;
+      EnvValue:    Double;
+      ModPhase:    Double;
+      ModRatio:    Double;
+      ModDepth:    Double;
+      ModPrev:     Double;
+      ModEnvState: TEnvelopeState;
+      ModEnvValue: Double;
+
       Playing:   Boolean;
 
       procedure Process(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
@@ -223,12 +230,36 @@ uses
 {$REGION 'Channel'}
 procedure TSID.TChannel.Process(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
 var
-  PhaseStep: Double;
-  TimeStep:  Double;
-  OutPtr:    PSingle;
-  SampleVal: Single;
-  P:         Double;
-  Level:     Single;
+  PhaseStep:     Double;
+  ModPhaseStep:  Double;
+  ModValue:      Double;
+  ModPhaseValue: Double;
+  ModPhaseEff:   Double;
+  TimeStep:      Double;
+  OutPtr:        PSingle;
+  SampleVal:     Single;
+  Level:         Single;
+  NormPhase:     Double;
+  NormTime:      Double;
+  Val:           Double;
+  Attack:        Double;
+  Release:       Double;
+
+  function PolyBLEP(t, dt: Double): Double; inline;
+  begin
+    if t < dt then
+    begin
+      t      := t / dt;
+      Result := t + t - t * t - 1;
+    end
+    else if t > (1 - dt) then
+    begin
+      t      := (t - 1) / dt;
+      Result := t * t + t + t + 1;
+    end
+    else
+      Result := 0;
+  end;
 begin
   Level := 0;
 
@@ -238,33 +269,38 @@ begin
     Exit;
   end;
 
-  TimeStep  := 1 / ASampleRate;
-  OutPtr    := ABuffer;
+  TimeStep := 1 / ASampleRate;
+  OutPtr   := ABuffer;
 
   for var i := 0 to ASampleCount - 1 do
   begin
     Frequency := Frequency + (Channel.Frequency - Frequency) * Channel.GlideSpeed;
-    PhaseStep := (Frequency * PI2) / ASampleRate;
+    Volume    := Volume    + (Channel.Volume    - Volume)    * Channel.GlideSpeed;
 
-    Volume := Volume + (Channel.Volume - Volume) * Channel.GlideSpeed;
+    ModRatio := ModRatio + (Channel.ModRatio - ModRatio) * Channel.GlideSpeed;
+    ModDepth := ModDepth + (Channel.ModDepth - ModDepth) * Channel.GlideSpeed;
+
+    PhaseStep    := (Frequency * PI2) / ASampleRate;
+    ModPhaseStep := (Frequency * ModRatio * PI2) / ASampleRate;
+
+    {$REGION 'Envelope (carrier)'}
+    Attack  := Channel.Attack;
+    Release := Channel.Release;
+
+    if Attack  < 0.001 then Attack  := 0.001;
+    if Release < 0.001 then Release := 0.001;
 
     case EnvState of
       TEnvelopeState.Attack:
-        if Channel.Attack > 0 then
-        begin
-          EnvValue := EnvValue + (TimeStep / Channel.Attack);
+      begin
+        EnvValue := EnvValue + (TimeStep / Attack);
 
-          if EnvValue >= 1 then
-          begin
-            EnvValue := 1;
-            EnvState := TEnvelopeState.Decay;
-          end;
-        end
-        else
+        if EnvValue >= 1 then
         begin
           EnvValue := 1;
           EnvState := TEnvelopeState.Decay;
         end;
+      end;
 
       TEnvelopeState.Decay:
         if Channel.Decay > 0 then
@@ -287,20 +323,10 @@ begin
         EnvValue := Channel.Sustain;
 
       TEnvelopeState.Release:
-        if Channel.Release > 0 then
-        begin
-          EnvValue := EnvValue - (TimeStep / Channel.Release);
+      begin
+        EnvValue := EnvValue - (TimeStep / Release);
 
-          if EnvValue <= 0 then
-          begin
-            EnvValue := 0;
-            EnvState := TEnvelopeState.Idle;
-
-            Stop;
-            Exit;
-          end;
-        end
-        else
+        if EnvValue <= 0 then
         begin
           EnvValue := 0;
           EnvState := TEnvelopeState.Idle;
@@ -308,34 +334,161 @@ begin
           Stop;
           Exit;
         end;
+      end
     end;
+    {$ENDREGION}
 
-    case Channel.Flags.Waveform of
-      TAudioChannels.TWaveform.Sine:
-        SampleVal := Sin(Phase);
+    {$REGION 'Envelope (modulator)'}
+    Attack  := Channel.ModAttack;
+    Release := Channel.ModRelease;
 
-      TAudioChannels.TWaveform.Square:
-        if Phase < (PI2 * Channel.PulseWidth) then
-          SampleVal := 1
-        else
-          SampleVal := -1;
+    if Attack  < 0.001 then Attack  := 0.001;
+    if Release < 0.001 then Release := 0.001;
 
-      TAudioChannels.TWaveform.Sawtooth:
-        SampleVal := (Phase / PI) - 1;
-
-      TAudioChannels.TWaveform.Triangle:
+    case ModEnvState of
+      TEnvelopeState.Attack:
       begin
-        P := Phase / PI2;
-        SampleVal := 1 - (4 * Abs(P - 0.5));
+        ModEnvValue := ModEnvValue + (TimeStep / Attack);
+
+        if ModEnvValue >= 1 then
+        begin
+          ModEnvValue := 1;
+          ModEnvState := TEnvelopeState.Decay;
+        end;
       end;
 
-      TAudioChannels.TWaveform.Noise:
-        if Phase < (PI2 * Channel.PulseWidth) then
-          SampleVal := NoiseVal
+      TEnvelopeState.Decay:
+        if Channel.ModDecay > 0 then
+        begin
+          ModEnvValue := ModEnvValue - (TimeStep / Channel.ModDecay) * (1 - Channel.ModSustain);
+
+          if ModEnvValue <= Channel.ModSustain then
+          begin
+            ModEnvValue := Channel.ModSustain;
+            ModEnvState := TEnvelopeState.Sustain;
+          end;
+        end
         else
-          SampleVal := -NoiseVal;
+        begin
+          ModEnvValue := Channel.ModSustain;
+          ModEnvState := TEnvelopeState.Sustain;
+        end;
+
+      TEnvelopeState.Sustain:
+        ModEnvValue := Channel.ModSustain;
+
+      TEnvelopeState.Release:
+      begin
+        ModEnvValue := ModEnvValue - (TimeStep / Release);
+
+        if ModEnvValue <= 0 then
+        begin
+          ModEnvValue := 0;
+          ModEnvState := TEnvelopeState.Idle;
+        end;
+      end;
+    end;
+    {$ENDREGION}
+
+    {$REGION 'Modulator'}
+    if ModDepth > 0.001 then
+    begin
+      ModPhaseEff := ModPhase + (ModPrev * Channel.ModFeedback);
+
+      case Channel.Flags.ModWaveform of
+        TAudioChannels.TWaveform.Sine:
+          ModValue := Sin(ModPhaseEff);
+
+        TAudioChannels.TWaveform.Triangle:
+        begin
+          Val := ModPhaseEff / PI2;
+          Val := Val - Trunc(Val);
+
+          if Val < 0 then
+            Val := Val + 1;
+
+          ModValue := 1 - (4 * Abs(Val - 0.5));
+        end;
+
+        TAudioChannels.TWaveform.Square:
+          ModValue := 0.78 * (Sin(ModPhaseEff) + (0.333 * Sin(ModPhaseEff * 3)) + (0.2 * Sin(ModPhaseEff * 5)));
+
+        TAudioChannels.TWaveform.Sawtooth:
+          ModValue := 0.6 * (Sin(ModPhaseEff) - (0.5 * Sin(ModPhaseEff * 2)) + (0.333 * Sin(ModPhaseEff * 3)) - (0.25 * Sin(ModPhaseEff * 4)));
+
+        TAudioChannels.TWaveform.Noise:
+          ModValue := NoiseVal;
+      else
+        ModValue := 0;
+      end;
+
+      ModPrev := ModValue;
+
+      ModPhaseValue := Phase + (ModValue * ModDepth * ModEnvValue);
+
+      case Channel.Flags.Waveform of
+        TAudioChannels.TWaveform.Sine:
+          SampleVal := Sin(ModPhaseValue);
+
+        TAudioChannels.TWaveform.Triangle:
+        begin
+          Val := ModPhaseValue / PI2;
+
+          Val := Val - Trunc(Val);
+
+          if Val < 0 then
+            Val := Val + 1;
+
+          SampleVal := 1 - (4 * Abs(Val - 0.5));
+        end;
+      else
+        SampleVal := Sin(ModPhaseValue);
+      end;
+    end
     else
-      SampleVal := 0.0;
+    {$ENDREGION}
+    begin
+      NormPhase := Phase / PI2;
+      NormTime  := Frequency / ASampleRate;
+
+      case Channel.Flags.Waveform of
+        TAudioChannels.TWaveform.Sine:
+          SampleVal := Sin(Phase);
+
+        TAudioChannels.TWaveform.Square:
+        begin
+          if NormPhase < Channel.PulseWidth then
+            SampleVal := 1
+          else
+            SampleVal := -1;
+
+          SampleVal := SampleVal + PolyBLEP(NormPhase, NormTime);
+
+          Val := NormPhase - Channel.PulseWidth;
+
+          if Val < 0 then
+            Val := Val + 1;
+
+          SampleVal := SampleVal - PolyBLEP(Val, NormTime);
+        end;
+
+        TAudioChannels.TWaveform.Sawtooth:
+        begin
+          SampleVal := (2 * NormPhase) - 1;
+          SampleVal := SampleVal - PolyBLEP(NormPhase, NormTime);
+        end;
+
+        TAudioChannels.TWaveform.Triangle:
+          SampleVal := 1 - (4 * Abs(NormPhase - 0.5));
+
+        TAudioChannels.TWaveform.Noise:
+          if NormPhase < Channel.PulseWidth then
+            SampleVal := NoiseVal
+          else
+            SampleVal := -NoiseVal;
+      else
+        SampleVal := 0;
+      end;
     end;
 
     SampleVal := SampleVal * Volume * EnvValue;
@@ -347,29 +500,33 @@ begin
     if SampleVal > Level then
       Level := SampleVal;
 
-    Phase := Phase + PhaseStep;
+    Phase    := Phase    + PhaseStep;
+    ModPhase := ModPhase + ModPhaseStep;
 
     if (Phase >= PI2) or (Phase < 0) then
     begin
       NoiseVal := (Random - 0.5) * 2;
 
       while Phase >= PI2 do
-      begin
-        Phase    := Phase - PI2;
-        NoiseVal := (Random - 0.5) * 2;
-      end;
+        Phase := Phase - PI2;
 
       while Phase < 0 do
-      begin
-        Phase    := Phase + PI2;
-        NoiseVal := (Random - 0.5) * 2;
-      end;
+        Phase := Phase + PI2;
+    end;
+
+    if (ModPhase >= PI2) or (ModPhase < 0) then
+    begin
+      while ModPhase >= PI2 do
+        ModPhase := ModPhase - PI2;
+
+      while ModPhase < 0 do
+        ModPhase := ModPhase + PI2;
     end;
 
     Inc(OutPtr);
   end;
 
-  Channel.OutLevel := Level;
+  Channel.OutLevel := Round($FF * Level);
 end;
 
 procedure TSID.TChannel.Reset;
@@ -377,6 +534,8 @@ begin
   Stop;
 
   ResetPhase;
+
+  ModPrev  := 0;
   EnvValue := 0;
 end;
 
@@ -388,12 +547,16 @@ begin
     begin
       Frequency := Channel.Frequency;
       Volume    := Channel.Volume;
+
+      ModRatio  := Channel.ModRatio;
+      ModDepth  := Channel.ModDepth;
     end;
 
     Reset;
   end;
 
-  EnvState := TEnvelopeState.Attack;
+  EnvState    := TEnvelopeState.Attack;
+  ModEnvState := TEnvelopeState.Attack;
 
   Playing := True;
 end;
@@ -406,12 +569,18 @@ begin
 
   EnvState := TEnvelopeState.Idle;
   EnvValue := 0;
+
+  ModEnvState := TEnvelopeState.Idle;
+  ModEnvValue := 0;
 end;
 
 procedure TSID.TChannel.NoteOff;
 begin
   if EnvState <> TEnvelopeState.Idle then
     EnvState := TEnvelopeState.Release;
+
+  if ModEnvState <> TEnvelopeState.Idle then
+    ModEnvState := TEnvelopeState.Release;
 end;
 
 procedure TSID.TChannel.ResetPhase;
@@ -426,6 +595,14 @@ begin
       Phase    := 0;
       NoiseVal := (Random - 0.5) * 2;
     end;
+  end;
+
+  case Channel.Flags.ModWaveform of
+    TAudioChannels.TWaveform.Sine:     ModPhase := 0;
+    TAudioChannels.TWaveform.Square:   ModPhase := 0;
+    TAudioChannels.TWaveform.Sawtooth: ModPhase := PI;
+    TAudioChannels.TWaveform.Triangle: ModPhase := PI / 2;
+    TAudioChannels.TWaveform.Noise:    ModPhase := 0;
   end;
 end;
 {$ENDREGION}
@@ -497,7 +674,7 @@ begin
       Inc(AOutBuffer);
     end;
 
-  FRegisters.OutLevel := Level;
+  FRegisters.OutLevel := Round($FF * Level);
 end;
 
 procedure TSID.ProcessEffects(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);

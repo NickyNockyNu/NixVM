@@ -237,13 +237,15 @@ begin
   Writeln('  _Addr_KeyboardBuffer = $', IntToHex(TPasseMemory.KeyboardBufferAddress), ';');
   Writeln('  _Addr_Mouse          = $', IntToHex(TPasseMemory.MouseAddress), ';');
   Writeln('  _Addr_Gamepads       = $', IntToHex(TPasseMemory.GamepadsAddress), ';');
+  Writeln;
+  Writeln('  _Addr_AudioRegisters = $', IntToHex(TPasseMemory.AudioRegistersAddress), ';');
+  Writeln('  _Addr_AudioChannels  = $', IntToHex(TPasseMemory.AudioChannelsAddress), ';');
+  Writeln;
   Writeln('  _Addr_VideoRegisters = $', IntToHex(TPasseMemory.VideoRegistersAddress), ';');
   Writeln('  _Addr_Stickers       = $', IntToHex(TPasseMemory.StickersAddress), ';');
   Writeln('  _Addr_Atlas          = $', IntToHex(TPasseMemory.SpritesAddress), ';');
   Writeln('  _Addr_Sprites        = $', IntToHex(TPasseMemory.SpritesAddress + (SizeOf(TSprites.TAtlasEntry) * TSprites.AtlasCount)), ';');
 
-  Writeln('  _Addr_AudioRegisters = $', IntToHex(TPasseMemory.AudioRegistersAddress), ';');
-  Writeln('  _Addr_AudioChannels  = $', IntToHex(TPasseMemory.AudioChannelsAddress), ';');
 
   Writeln('D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $' + IntToHex(Memory.UserAddress, 0) + ' -oem ' + IntToStr(SizeOf(TPasseMemory)));
 {$ENDIF}

@@ -12,12 +12,12 @@ const
   _Addr_Gamepads       = $00000736;
 
   _Addr_AudioRegisters = $00000794;
-  _Addr_AudioChannels  = $000007B1;
+  _Addr_AudioChannels  = $000007B4;
 
-  _Addr_VideoRegisters = $00000845;
-  _Addr_Stickers       = $000020F1;
-  _Addr_Atlas          = $000022F1;
-  _Addr_Sprites        = $00002AF1;
+  _Addr_VideoRegisters = $000008B4;
+  _Addr_Stickers       = $00002160;
+  _Addr_Atlas          = $00002360;
+  _Addr_Sprites        = $00002B60;
   
   _VDU = $A0;
 
@@ -133,9 +133,7 @@ const
 type
   PAudioRegisters = ^TAudioRegisters;
   TAudioRegisters = record
-    Volume:   Single;
-    OutLevel: Single;
-    
+    Volume:     Single;
     CutoffFreq: Single;
     DelayTime:  Single;
     Feedback:   Single;
@@ -143,6 +141,10 @@ type
     DelayGlide: Single;
     
     Flags: Byte;
+    
+    OutLevel: Byte;
+    
+    Padding: array[0..5] of Byte;
   end;
   
 const
@@ -152,31 +154,53 @@ type
   TWaveform = (wfSine, wfSquare, wfTriangle, wfSawtooth, wfNoise);
 
   TAudioChannel = record
-    Frequency:  Single;
-    Volume:     Single;
-    PulseWidth: Single;
-    GlideSpeed: Single;
+    Frequency:   Single;
+    Volume:      Single;
+    PulseWidth:  Single;
+    GlideSpeed:  Single;
     
     Attack:  Single;
     Decay:   Single;
     Sustain: Single;
     Release: Single;
-    
-    OutLevel: Single;
 
+    ModRatio:    Single;
+    ModDepth:    Single;
+    ModFeedback: Single;
+    
+    ModAttack:  Single;
+    ModDecay:   Single;
+    ModSustain: Single;
+    ModRelease: Single;
+    
     Flags: Byte;
     
+    OutLevel: Byte;
+    
+    Padding: Word;
+
     function GetWaveform: TWaveform;
     begin
-      Result := TWaveform(Flags and %00000111);
+      Result := TWaveform(Flags and %111);
     end;
     
     procedure SetWaveform(AWaveform: TWaveform);
     begin
-      Flags := (Flags and %11111000) or (Byte(AWaveform) and %00000111);
+      Flags := (Flags and %11111000) or (Byte(AWaveform) and %111);
     end;
 
-    property Waveform: TWaveform read GetWaveform write SetWaveform;    
+    function GetModWaveform: TWaveform;
+    begin
+      Result := TWaveform((Flags and %00111000) shr 3);
+    end;
+    
+    procedure SetModWaveform(AWaveform: TWaveform);
+    begin
+      Flags := (Flags and %11000111) or ((Byte(AWaveform) and %111) shl 3);
+    end;
+
+    property Waveform:    TWaveform read GetWaveform    write SetWaveform;    
+    property ModWaveform: TWaveform read GetModWaveform write SetModWaveform;    
   end;
 
   PAudioChannels = ^TAudioChannels;

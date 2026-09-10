@@ -46,9 +46,7 @@ type
     end;
     {$ENDREGION}
   public
-    Volume:   Single;
-    OutLevel: Single;
-
+    Volume:     Single;
     CutoffFreq: Single;
     DelayTime:  Single;
     Feedback:   Single;
@@ -57,8 +55,9 @@ type
 
     Flags:  TFlags;
 
-    // TODO: Pad
-    //Padding: array[0..2] of Byte;
+    OutLevel: Byte;
+
+    Padding: array[0..5] of Byte;
 
     procedure Reset;
   end;
@@ -95,27 +94,39 @@ type
 
         function  GetWaveform: TWaveform;            inline;
         procedure SetWaveform(AWaveform: TWaveform); inline;
+
+        function  GetModWaveform: TWaveform;            inline;
+        procedure SetModWaveform(AWaveform: TWaveform); inline;
       public
-        property Waveform: TWaveform read GetWaveform write SetWaveform;
+        property Waveform:    TWaveform read GetWaveform    write SetWaveform;
+        property ModWaveform: TWaveform read GetModWaveform write SetModWaveform;
       end;
       {$ENDREGION}
     public
-      Frequency:  Single;
-      Volume:     Single;
-      PulseWidth: Single;
-      GlideSpeed: Single;
+      Frequency:   Single;
+      Volume:      Single;
+      PulseWidth:  Single;
+      GlideSpeed:  Single;
 
       Attack:  Single;
       Decay:   Single;
       Sustain: Single;
       Release: Single;
 
-      OutLevel: Single;
+      ModRatio:    Single;
+      ModDepth:    Single;
+      ModFeedback: Single;
+
+      ModAttack:  Single;
+      ModDecay:   Single;
+      ModSustain: Single;
+      ModRelease: Single;
 
       Flags: TFlags;
 
-      // TODO: Pad
-      //Padding: array[0..2] of Byte;
+      OutLevel: Byte;
+
+      Padding: Word;
     end;
     {$ENDREGION}
   public
@@ -181,6 +192,16 @@ procedure TAudioChannels.TChannel.TFlagsHelper.SetWaveform(AWaveform: TWaveform)
 begin
   Self := (Self and %11111000) or (Byte(AWaveform) and %111);
 end;
+
+function TAudioChannels.TChannel.TFlagsHelper.GetModWaveform: TWaveform;
+begin
+  Result := TWaveform((Self and %00111000) shr 3);
+end;
+
+procedure TAudioChannels.TChannel.TFlagsHelper.SetModWaveform(AWaveform: TWaveform);
+begin
+  Self := (Self and %11000111) or ((Byte(AWaveform) and %111) shl 3);
+end;
 {$ENDREGION}
 
 procedure TAudioChannels.Reset;
@@ -193,6 +214,8 @@ begin
       Frequency  := 440.0;
       Volume     := 1 / (Count + 1);
       PulseWidth := 0.5;
+      ModRatio   := 0;
+      ModDepth   := 0;
       GlideSpeed := 0.005;
 
       Attack  := 0.01;
