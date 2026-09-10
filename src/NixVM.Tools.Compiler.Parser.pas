@@ -124,6 +124,9 @@ type
 implementation
 
 uses
+  NixVM.Tools.Embed.Bitmap,
+  NixVM.Tools.Embed.Wav,
+
   NixVM.Core.Strings;
   //NixVM.Tools.Assembler;
 
@@ -1721,6 +1724,9 @@ end;
 
 {$REGION 'Declarations'}
 procedure TParser.ParseConstSection(ADecls: TObjectList<TASTDeclaration>);
+var
+  IsImg: Boolean;
+  IsWav: Boolean;
 begin
   Expect(TLexer.TToken.TKind.Const);
 
@@ -1742,7 +1748,22 @@ begin
       if not Expect(TLexer.TToken.TKind.StringLiteral, 'Expected quoted filename after "in"') then
         Continue;
 
-      var RelPath := FileTok.ValueStr;
+      var RelPath  := FileTok.ValueStr;
+      var Protocol := Lowercase(Copy(RelPath, 1, 4));
+
+      IsImg := False;
+      IsWav := False;
+
+      if (Protocol = 'img:') or (Protocol = 'wav:') then
+      begin
+        RelPath := Copy(RelPath, 5, Length(RelPath));
+
+        if Protocol = 'img:' then
+          IsImg := True
+        else
+          IsWav := True;
+      end;
+
       var FullPath := RelPath;
 
       if (FLexer.FileName <> '') and not TPath.IsPathRooted(RelPath) then
@@ -1758,21 +1779,45 @@ begin
 
       var FileBytes: TBytes := nil;
 
-      try
-        FileBytes := TFile.ReadAllBytes(FullPath);
-      except
-        on E: Exception do
+      if IsImg then
+      begin
+        if not TImage.LoadEmbed(FullPath, FileBytes, FErrors, @TImage.DefaultPalette) then
         begin
-          Error(Format('Failed to read embedded file "%s": %s', [FullPath, E.Message]), FileTok);
+          Error(Format('Embedded image asset decode failed: "%s"', [FullPath]), FileTok);
           Match(TLexer.TToken.TKind.Semicolon);
 
           Continue;
         end;
-      end;
+      end
+      else if IsWav then
+      begin
+        if not TWav.LoadEmbed(FullPath, FileBytes, FErrors) then
+        begin
+          Error(Format('Embedded wav asset decode failed: "%s"', [FullPath]), FileTok);
+          Match(TLexer.TToken.TKind.Semicolon);
+
+          Continue;
+        end;
+      end
+      else
+        try
+          FileBytes := TFile.ReadAllBytes(FullPath);
+        except
+          on E: Exception do
+          begin
+            Error(Format('Failed to read embedded file "%s": %s', [FullPath, E.Message]), FileTok);
+            Match(TLexer.TToken.TKind.Semicolon);
+
+            Continue;
+          end;
+        end;
 
       Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after embedded asset declaration');
 
       var ConstDecl := TASTConstDecl.Create(ConstName, nil, Default(TConstValue), ConstType, StartTok.Line, StartTok.Col);
+
+      if IsImg or IsWav then
+        RelPath := Protocol  + RelPath;
 
       ConstDecl.IsEmbed    := True;
       ConstDecl.EmbedFile  := RelPath;

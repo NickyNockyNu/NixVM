@@ -47,39 +47,37 @@ program nvm;
 {$RTTI EXPLICIT METHODS([]) PROPERTIES([]) FIELDS([])}
 
 uses
-{$IF DEFINED(MSWINDOWS)}
+  {$IF DEFINED(MSWINDOWS)}
   Winapi.Windows,
-  Winapi.ShellAPI,
-{$ELSE IF DEFINED(POSIX)}
+  {$ELSE}
   Posix.Stdlib,
-{$ENDIF}
+  {$ENDIF }
   System.SysUtils,
   System.Classes,
   System.IOUtils,
-
   NixVM.Core.Registers,
   NixVM.Core.Instructions,
   NixVM.Core.Strings,
   NixVM.Core.Memory,
   NixVM.Core.System,
   NixVM.Core.ROM,
-
   NixVM.Harness,
-
   NixVM.Tools.GenUnits,
   NixVM.Tools.Params,
   NixVM.Tools.IR,
   NixVM.Tools.Assembler,
   NixVM.Tools.Disasm,
-{$IF DEFINED(MSWINDOWS)}
+  {$IF DEFINED(MSWINDOWS)}
   NixVM.Tools.BuildPE,
-{$ENDIF}
+  {$ENDIF }
   NixVM.Tools.Compiler,
   NixVM.Tools.Compiler.Lexer,
   NixVM.Tools.Compiler.AST,
   NixVM.Tools.Compiler.Parser,
   NixVM.Tools.Compiler.Semantics,
-  NixVM.Tools.Compiler.CodeGen;
+  NixVM.Tools.Compiler.CodeGen,
+  NixVM.Tools.Embed.Bitmap in '..\src\NixVM.Tools.Embed.Bitmap.pas',
+  NixVM.Tools.Embed.Wav in '..\src\NixVM.Tools.Embed.Wav.pas';
 
 type
   TConsoleMemory = record

@@ -42,10 +42,11 @@ unit NixVM.Passe;
 
     Debug layer
 
-    Audio PCM channel
-    Audio Beep channel
+    Compiler asset information
 
-    AudioRegisters.Level = Current audio level
+    Embed font and palette protocols
+
+    PCM channel "playing" flag and/or a way to track the play position (Writing to these values will require a syscall)
 
     Sprite raster operations
       normal
@@ -233,13 +234,16 @@ end;
 procedure TPasse.Initialize;
 begin
 {$IF DEFINED(BUILD_HELPER)}
+  WRiteln(SizeOf(TPCMChannels.TChannel));
+
   Writeln('  _Addr_KeyStates      = $', IntToHex(TPasseMemory.KeyStatesAddress), ';');
   Writeln('  _Addr_KeyboardBuffer = $', IntToHex(TPasseMemory.KeyboardBufferAddress), ';');
   Writeln('  _Addr_Mouse          = $', IntToHex(TPasseMemory.MouseAddress), ';');
   Writeln('  _Addr_Gamepads       = $', IntToHex(TPasseMemory.GamepadsAddress), ';');
   Writeln;
   Writeln('  _Addr_AudioRegisters = $', IntToHex(TPasseMemory.AudioRegistersAddress), ';');
-  Writeln('  _Addr_AudioChannels  = $', IntToHex(TPasseMemory.AudioChannelsAddress), ';');
+  Writeln('  _Addr_SynthChannels  = $', IntToHex(TPasseMemory.SynthChannelsAddress), ';');
+  Writeln('  _Addr_PCMChannels    = $', IntToHex(TPasseMemory.PCMChannelsAddress), ';');
   Writeln;
   Writeln('  _Addr_VideoRegisters = $', IntToHex(TPasseMemory.VideoRegistersAddress), ';');
   Writeln('  _Addr_Stickers       = $', IntToHex(TPasseMemory.StickersAddress), ';');
@@ -417,8 +421,13 @@ begin
       TVDU.TSysCalls.Colour: FVDU.Colour(R0, R1, (R2 <> 0));
 
       TSID.TSysCalls.Reset:   FSID.Reset;
+
       TSID.TSysCalls.NoteOn:  FSID.NoteOn (R0, (R1 <> 0));
       TSID.TSysCalls.NoteOff: FSID.NoteOff(R0);
+
+      TSID.TSysCalls.Play:    FSID.PCMPlay(R0, (R1 <> 0));
+      TSID.TSysCalls.Stop:    FSID.PCMStop(R0);
+
       TSID.TSysCalls.Beep:    FSID.Beep(PSingle(@R0)^, PSingle(@R1)^);
     else
       Result:= False;

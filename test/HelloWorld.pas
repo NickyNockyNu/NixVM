@@ -16,7 +16,6 @@ var
 begin
   Msg := Format('%s, %s!', Hello, World);
   Println(Msg);
-  Println(Msg);
   Halt(123);
 end;
 

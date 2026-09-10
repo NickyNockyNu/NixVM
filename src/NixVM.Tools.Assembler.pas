@@ -115,6 +115,9 @@ type
 implementation
 
 uses
+  NixVM.Tools.Embed.Bitmap,
+  NixVM.Tools.Embed.Wav,
+
   NixVM.Core.Strings;
 
 {$REGION 'Assembler'}
@@ -1332,6 +1335,21 @@ begin
         end;
 
         var RelFileName := Tok.ValueStr;
+        var Protocol := Lowercase(Copy(RelFileName, 1, 4));
+
+        var IsImg := False;
+        var IsWav := False;
+
+        if (Protocol = 'img:') or (Protocol = 'wav:') then
+        begin
+          RelFileName := Copy(RelFileName, 5, Length(RelFileName));
+
+          if Protocol = 'img:' then
+            IsImg := True
+          else
+            IsWav := True;
+        end;
+
         var FullFilePath := RelFileName;
 
         if (Length(ABasePath) > 0) and not TPath.IsPathRooted(RelFileName) then
@@ -1343,23 +1361,44 @@ begin
           Continue;
         end;
 
-        try
-          var FileStream := TFileStream.Create(FullFilePath, fmOpenRead or fmShareDenyNone);
-          try
-            var FileBytes: TBytes;
-            SetLength(FileBytes, FileStream.Size);
+        var FileBytes: TBytes;
 
-            if FileStream.Size > 0 then
-              FileStream.ReadBuffer(FileBytes[0], FileStream.Size);
-
-            IR.AddEmbed(RelFileName, FileBytes);
-          finally
-            FileStream.Free;
+        if IsImg then
+        begin
+          if not TImage.LoadEmbed(FullFilePath, FileBytes, nil, @TImage.DefaultPalette) then
+          begin
+            Error(Format('Embedded image asset decode failed: "%s"', [FullFilePath]), Tok);
+            Continue;
           end;
-        except
-          on E: Exception do
-            Error(Format('Error reading binary file "%s": %s', [FullFilePath, E.Message]), Tok);
-        end;
+        end
+        else if IsWav then
+        begin
+          if not TWav.LoadEmbed(FullFilePath, FileBytes, nil) then
+          begin
+            Error(Format('Embedded wav asset decode failed: "%s"', [FullFilePath]), Tok);
+            Continue;
+          end;
+        end
+        else
+          try
+            var FileStream := TFileStream.Create(FullFilePath, fmOpenRead or fmShareDenyNone);
+            try
+              SetLength(FileBytes, FileStream.Size);
+
+              if FileStream.Size > 0 then
+                FileStream.ReadBuffer(FileBytes[0], FileStream.Size);
+            finally
+              FileStream.Free;
+            end;
+          except
+            on E: Exception do
+              Error(Format('Error reading binary file "%s": %s', [FullFilePath, E.Message]), Tok);
+          end;
+
+        if IsImg or IsWav then
+          RelFileName := Protocol + RelFileName;
+
+        IR.AddEmbed(RelFileName, FileBytes);
 
         LineHasItem := True;
         Continue;

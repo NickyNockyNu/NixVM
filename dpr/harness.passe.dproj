@@ -63,7 +63,7 @@
         <Manifest_File>D:\Passe2\dpr\(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
         <Icon_MainIcon>harness.console_Icon.ico</Icon_MainIcon>
-        <PostBuildEvent><![CDATA[D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $10FF4 -oem 68297
+        <PostBuildEvent><![CDATA[D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $11100 -oem 68568
 $(PostBuildEvent)]]></PostBuildEvent>
     </PropertyGroup>
     <ItemGroup>

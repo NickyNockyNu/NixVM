@@ -57,15 +57,15 @@ type
 
     OutLevel: Byte;
 
-    Padding: array[0..5] of Byte;
+    Padding: packed array[0..5] of Byte;
 
     procedure Reset;
   end;
   {$ENDREGION}
 
-  {$REGION 'Audio channels'}
-  PAudioChannels = ^TAudioChannels;
-  TAudioChannels = packed record
+  {$REGION 'Synth channels'}
+  PSynthChannels = ^TSynthChannels;
+  TSynthChannels = packed record
   const
     Count = 4;
 
@@ -136,9 +136,55 @@ type
   end;
   {$ENDREGION}
 
+  {$REGION 'PCM channels'}
+  PPCMChannels = ^TPCMChannels;
+  TPCMChannels = packed record
+  const
+    Count = 4;
+  type
+    PChannel = ^TChannel;
+    TChannel = packed record
+    type
+      {$REGION 'Flags'}
+      TFlags = type Byte;
+
+      TFlagsHelper = record helper for TFlags
+      const
+        MaskLoop      = %00000001;
+        MaskDeclicker = %00000010;
+      private
+        function  GetFlag(AMask: Integer): Boolean;          inline;
+        procedure SetFlag(AMask: Integer; AEnable: Boolean); inline;
+      public
+        property Loop:      Boolean index MaskLoop      read GetFlag write SetFlag;
+        property Declicker: Boolean index MaskDeclicker read GetFlag write SetFlag;
+      end;
+      {$ENDREGION}
+    public
+      Address:    Cardinal;
+      Length:     Cardinal;
+      SampleRate: Cardinal;
+
+      Volume: Single;
+      Pitch:  Single;
+
+      Flags: TFlags;
+
+      OutLevel: Byte;
+
+      Padding: packed array[0..9] of Byte;
+    end;
+  public
+    Channels: packed array[0..Count] of TChannel;
+
+    procedure Reset;
+  end;
+  {$ENDREGION}
+
 implementation
 
 {$REGION 'Audio registers'}
+
 {$REGION 'Flags'}
 function TAudioRegisters.TFlagsHelper.GetFlag(AMask: Integer): Boolean;
 begin
@@ -167,15 +213,15 @@ begin
 end;
 {$ENDREGION}
 
-{$REGION 'Audio channels'}
+{$REGION 'Synth channels'}
 
 {$REGION 'Flags'}
-function TAudioChannels.TChannel.TFlagsHelper.GetFlag(AMask: Integer): Boolean;
+function TSynthChannels.TChannel.TFlagsHelper.GetFlag(AMask: Integer): Boolean;
 begin
   Result := (Self and AMask) <> 0
 end;
 
-procedure TAudioChannels.TChannel.TFlagsHelper.SetFlag(AMask: Integer; AEnable: Boolean);
+procedure TSynthChannels.TChannel.TFlagsHelper.SetFlag(AMask: Integer; AEnable: Boolean);
 begin
   if AEnable then
     Self := Self or AMask
@@ -183,28 +229,28 @@ begin
     Self := Self and not AMask;
 end;
 
-function TAudioChannels.TChannel.TFlagsHelper.GetWaveform: TWaveform;
+function TSynthChannels.TChannel.TFlagsHelper.GetWaveform: TWaveform;
 begin
   Result := TWaveform(Self and %00000111);
 end;
 
-procedure TAudioChannels.TChannel.TFlagsHelper.SetWaveform(AWaveform: TWaveform);
+procedure TSynthChannels.TChannel.TFlagsHelper.SetWaveform(AWaveform: TWaveform);
 begin
   Self := (Self and %11111000) or (Byte(AWaveform) and %111);
 end;
 
-function TAudioChannels.TChannel.TFlagsHelper.GetModWaveform: TWaveform;
+function TSynthChannels.TChannel.TFlagsHelper.GetModWaveform: TWaveform;
 begin
   Result := TWaveform((Self and %00111000) shr 3);
 end;
 
-procedure TAudioChannels.TChannel.TFlagsHelper.SetModWaveform(AWaveform: TWaveform);
+procedure TSynthChannels.TChannel.TFlagsHelper.SetModWaveform(AWaveform: TWaveform);
 begin
   Self := (Self and %11000111) or ((Byte(AWaveform) and %111) shl 3);
 end;
 {$ENDREGION}
 
-procedure TAudioChannels.Reset;
+procedure TSynthChannels.Reset;
 begin
   FillChar(Self, SizeOf(Self), 0);
 
@@ -225,6 +271,29 @@ begin
 
       Flags.Waveform := TWaveform.Sine;
     end;
+end;
+{$ENDREGION}
+
+{$REGION 'PCM channels'}
+
+{$REGION 'Flags'}
+function TPCMChannels.TChannel.TFlagsHelper.GetFlag(AMask: Integer): Boolean;
+begin
+  Result := (Self and AMask) <> 0
+end;
+
+procedure TPCMChannels.TChannel.TFlagsHelper.SetFlag(AMask: Integer; AEnable: Boolean);
+begin
+  if AEnable then
+    Self := Self or AMask
+  else
+    Self := Self and not AMask;
+end;
+{$ENDREGION}
+
+procedure TPCMChannels.Reset;
+begin
+  FillChar(Self, SizeOF(Self), 0);
 end;
 {$ENDREGION}
 

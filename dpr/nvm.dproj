@@ -69,6 +69,8 @@ $(PostBuildEvent)]]></PostBuildEvent>
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
+        <DCCReference Include="..\src\NixVM.Tools.Embed.Bitmap.pas"/>
+        <DCCReference Include="..\src\NixVM.Tools.Embed.Wav.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

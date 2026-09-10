@@ -45,9 +45,10 @@ type
     GamepadsAddress        = MouseAddress          + SizeOf(TMouse);
 
     AudioRegistersAddress = GamepadsAddress + SizeOf(TGamepads);
-    AudioChannelsAddress  = AudioRegistersAddress + SizeOf(TAudioRegisters);
+    SynthChannelsAddress  = AudioRegistersAddress + SizeOf(TAudioRegisters);
+    PCMChannelsAddress    = SynthChannelsAddress  + SizeOf(TSynthChannels);
 
-    VideoRegistersAddress = AudioChannelsAddress  + SizeOf(TAudioChannels);
+    VideoRegistersAddress = PCMChannelsAddress    + SizeOf(TPCMChannels);
     PaletteAddress        = VideoRegistersAddress + SizeOf(TVideoRegisters);
     ScanlinesAddress      = PaletteAddress        + SizeOf(TPalette);
     FontAddress           = ScanlinesAddress      + SizeOf(TScanlines);
@@ -62,7 +63,8 @@ type
     Gamepads:       TGamepads;
 
     AudioRegisters: TAudioRegisters;
-    AudioChannels:  TAudioChannels;
+    SynthChannels:  TSynthChannels;
+    PCMChannels:    TPCMChannels;
 
     VideoRegisters: TVideoRegisters;
     Palette:        TPalette;

@@ -12,12 +12,13 @@ const
   _Addr_Gamepads       = $00000736;
 
   _Addr_AudioRegisters = $00000794;
-  _Addr_AudioChannels  = $000007B4;
+  _Addr_SynthChannels  = $000007B4;
+  _Addr_PCMChannels    = $000008B4;
 
-  _Addr_VideoRegisters = $000008B4;
-  _Addr_Stickers       = $00002160;
-  _Addr_Atlas          = $00002360;
-  _Addr_Sprites        = $00002B60;
+  _Addr_VideoRegisters = $00000954;
+  _Addr_Stickers       = $00002200;
+  _Addr_Atlas          = $00002400;
+  _Addr_Sprites        = $00002C00;
   
   _VDU = $A0;
 
@@ -57,9 +58,12 @@ const
   _SysCall_SIDReset   = _SID + 0;
   _SysCall_SIDNoteOn  = _SID + 1;
   _SysCall_SIDNoteOff = _SID + 2;
-  _SysCall_SIDBeep    = _SID + 3;
+  _SysCall_SIDPlay    = _SID + 3;
+  _SysCall_SIDStop    = _SID + 4;
+  _SysCall_SIDBeep    = _SID + 5;
 
-  AudioChannelCount = 4;
+  SynthChannelCount = 4;
+  PCMChannelCount   = 4;
 
   FrameBufferWidth  = 320;
   FrameBufferHeight = 180;
@@ -153,7 +157,7 @@ const
 type
   TWaveform = (wfSine, wfSquare, wfTriangle, wfSawtooth, wfNoise);
 
-  TAudioChannel = record
+  TSynthChannel = record
     Frequency:   Single;
     Volume:      Single;
     PulseWidth:  Single;
@@ -203,16 +207,42 @@ type
     property ModWaveform: TWaveform read GetModWaveform write SetModWaveform;    
   end;
 
-  PAudioChannels = ^TAudioChannels;
-  TAudioChannels = array[0..AudioChannelCount - 1] of TAudioChannel;
+  PSynthChannels = ^TSynthChannels;
+  TSynthChannels = array[0..SynthChannelCount - 1] of TSynthChannel;
 
 const
-  AudioChannels: PAudioChannels = _Addr_AudioChannels;
+  SynthChannels: PSynthChannels = _Addr_SynthChannels;
+
+type
+  PPCMChannel = ^TPCMChannel;
+  TPCMChannel = record
+    Address:    Pointer;
+    Length:     Cardinal;
+    SampleRate: Cardinal;
+    
+    Volume: Single;
+    Pitch:  Single;
+    
+    Flags: Byte;
+    
+    OutLevel: Byte;
+    
+    Padding: array[0..9] of Byte;
+  end;
   
+  PPCMChannels = ^TPCMChannels;
+  TPCMChannels = array[0..PCMChannelCount - 1] of TPCMChannel;
+  
+const
+  PCMChannels: PPCMChannels = _Addr_PCMChannels;
+
 procedure SIDReset; syscall _SysCall_SIDReset;
 
 procedure NoteOn (AChannel: Integer; AReset: Boolean); syscall _SysCall_SIDNoteOn;
 procedure NoteOff(AChannel: Integer);                  syscall _SysCall_SIDNoteOff;
+
+procedure PlaySound(AChannel: Integer; AReset: Boolean); syscall _SysCall_SIDPlay;
+procedure StopSound(AChannel: Integer);                  syscall _SysCall_SIDStop;
 
 procedure Sound(AFrequency, ATime: Single); syscall _SysCall_SIDBeep;
 procedure Beep;
