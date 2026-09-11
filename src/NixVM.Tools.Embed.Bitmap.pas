@@ -89,7 +89,7 @@ type
   public
     class var DefaultPalette: TPalette;
 
-    class function LoadEmbed(const AFileName: String; out AData: TBytes; AErrors: TStrings = nil; APalette: PPalette = nil): Boolean;
+    class function LoadEmbed(const AFileName: String; out AData: TBytes; AVerbose: Boolean = False; AErrors: TStrings = nil; APalette: PPalette = nil): Boolean;
 
     class function  LoadGDIPlus(AErrors: TStrings = nil): Boolean;
     class procedure UnloadGDIPlus;
@@ -118,7 +118,7 @@ begin
   UnloadGDIPlus;
 end;
 
-class function TImage.LoadEmbed(const AFileName: String; out AData: TBytes; AErrors: TStrings = nil; APalette: PPalette = nil): Boolean;
+class function TImage.LoadEmbed(const AFileName: String; out AData: TBytes; AVerbose: Boolean; AErrors: TStrings; APalette: PPalette): Boolean;
 var
   Image:   TImage;
   BmpData: TBitmapData;
@@ -191,6 +191,11 @@ begin
     finally
       Image.UnlockBits(BmpData);
     end;
+
+    if AVerbose then
+      Writeln('[asset:img] "', ExtractFileName(AFileName), '" ', Image.Width, 'x', Image.Height, ', 8bpp, indexed (', Length(AData), ' bytes)');
+
+
   finally
     Image.Free;
   end;

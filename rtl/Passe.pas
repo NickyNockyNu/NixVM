@@ -15,10 +15,10 @@ const
   _Addr_SynthChannels  = $000007B4;
   _Addr_PCMChannels    = $000008B4;
 
-  _Addr_VideoRegisters = $00000954;
-  _Addr_Stickers       = $00002200;
-  _Addr_Atlas          = $00002400;
-  _Addr_Sprites        = $00002C00;
+  _Addr_VideoRegisters = $00000934;
+  _Addr_Stickers       = $000021E0;
+  _Addr_Atlas          = $000023E0;
+  _Addr_Sprites        = $00002BE0;
   
   _VDU = $A0;
 
@@ -146,9 +146,11 @@ type
     
     Flags: Byte;
     
-    OutLevel: Byte;
+    OutLevel:  Byte;
+    OutLevelL: Byte;
+    OutLevelR: Byte;
     
-    Padding: array[0..5] of Byte;
+    Padding: array[0..3] of Byte;
   end;
   
 const
@@ -158,8 +160,10 @@ type
   TWaveform = (wfSine, wfSquare, wfTriangle, wfSawtooth, wfNoise);
 
   TSynthChannel = record
+    Volume: Byte;
+    Pan:    ShortInt;
+
     Frequency:   Single;
-    Volume:      Single;
     PulseWidth:  Single;
     GlideSpeed:  Single;
     
@@ -181,7 +185,7 @@ type
     
     OutLevel: Byte;
     
-    Padding: Word;
+    Padding: array[0..3] of Byte;
 
     function GetWaveform: TWaveform;
     begin
@@ -220,14 +224,17 @@ type
     Length:     Cardinal;
     SampleRate: Cardinal;
     
-    Volume: Single;
-    Pitch:  Single;
+    Volume: Byte;
+    Pan:    ShortInt;
+    
+    Position: Cardinal;
+    Pitch:    Single;
     
     Flags: Byte;
     
     OutLevel: Byte;
     
-    Padding: array[0..9] of Byte;
+    Padding: array[0..7] of Byte;
   end;
   
   PPCMChannels = ^TPCMChannels;

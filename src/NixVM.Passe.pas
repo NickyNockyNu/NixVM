@@ -27,6 +27,7 @@ unit NixVM.Passe;
     May as well profile that (Yields per second - Yields:Frame ratio)
     We could probably even try to implement some kind of smart CPU batch size based on
     instruction count between yields - or at least have some interesting profiling stats
+    Skipped frames counter (Frames rendered between yields)
 
     if Yield=Poll then do we switch keyboard reading methods to read from the message queue?
 
@@ -45,8 +46,11 @@ unit NixVM.Passe;
     Compiler asset information
 
     Embed font and palette protocols
+    Multi-platform the embed protocols (Use TBitmap?)
 
     PCM channel "playing" flag and/or a way to track the play position (Writing to these values will require a syscall)
+
+    Stereo audio? Do we make the move?
 
     Sprite raster operations
       normal
@@ -61,7 +65,6 @@ unit NixVM.Passe;
       DrawSpriteEx(atlasid, x, y, scalex, scaley, pivetx, pivety, angle, rasterop)
 
     Console
-      A way of supporting all characters in print (probably an escape code)
       Scroll(x, y)
 }
 
@@ -234,7 +237,7 @@ end;
 procedure TPasse.Initialize;
 begin
 {$IF DEFINED(BUILD_HELPER)}
-  WRiteln(SizeOf(TPCMChannels.TChannel));
+  WRiteln(SizeOf(TPCMChannels.TChannel), ' ', Sizeof(TSynthChannels.TChannel));
 
   Writeln('  _Addr_KeyStates      = $', IntToHex(TPasseMemory.KeyStatesAddress), ';');
   Writeln('  _Addr_KeyboardBuffer = $', IntToHex(TPasseMemory.KeyboardBufferAddress), ';');

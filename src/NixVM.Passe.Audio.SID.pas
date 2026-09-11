@@ -160,10 +160,11 @@ type
       Registers:   PAudioRegisters;
       Channel:     TPCMChannels.PChannel;
       Position:    Double;
+      SyncedPos:   Cardinal;
       Playing:     Boolean;
       FadeVol:     Single;
       FadeState:   Integer;
-      Samples:     PSingle;
+      Samples:     PSmallInt;
 
       procedure Process(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
 
@@ -196,11 +197,13 @@ type
 
     FBuffer: array of Single;
 
-    FPrevSample:   Single;
-    FDelayBuffer:  array of Single;
-    FDelayIndex:   Integer;
-    FCurrentDelay: Single;
-    FCurrentMix:   Single;
+    FPrevSampleL:  Single;
+    FPrevSampleR:   Single;
+    FDelayBufferL:  array of Single;
+    FDelayBufferR:  array of Single;
+    FDelayIndex:    Integer;
+    FCurrentDelay:  Single;
+    FCurrentMix:    Single;
 
     FBeepPhase:     Single;
     FBeepTime:      Single;
@@ -272,6 +275,9 @@ var
   Val:           Double;
   Attack:        Double;
   Release:       Double;
+  PanF:          Single;
+  LeftGain:      Single;
+  RightGain:     Single;
 
   function PolyBLEP(t, dt: Double): Double; inline;
   begin
@@ -291,19 +297,36 @@ var
 begin
   Level := 0;
 
-  if (not Playing) or (Channel.Volume <= 0) or (Channel.Frequency <= 0) then
+  if (not Playing) or (Channel.Volume = 0) or (Channel.Frequency <= 0) then
   begin
     Stop;
     Exit;
   end;
+
+  PanF := Channel.Pan / 100;
+
+  if PanF < -1 then
+    PanF := -1
+  else if PanF > 1 then
+    PanF := 1;
+
+  LeftGain  := 1 - PanF;
+
+  if LeftGain > 1 then
+    LeftGain := 1;
+
+  RightGain := 1 + PanF;
+
+  if RightGain > 1 then
+    RightGain := 1;
 
   TimeStep := 1 / ASampleRate;
   OutPtr   := ABuffer;
 
   for var i := 0 to ASampleCount - 1 do
   begin
-    Frequency := Frequency + (Channel.Frequency - Frequency) * Channel.GlideSpeed;
-    Volume    := Volume    + (Channel.Volume    - Volume)    * Channel.GlideSpeed;
+    Frequency := Frequency + (Channel.Frequency      - Frequency) * Channel.GlideSpeed;
+    Volume    := Volume    + ((Channel.Volume / $FF) - Volume)    * Channel.GlideSpeed;
 
     ModRatio := ModRatio + (Channel.ModRatio - ModRatio) * Channel.GlideSpeed;
     ModDepth := ModDepth + (Channel.ModDepth - ModDepth) * Channel.GlideSpeed;
@@ -521,7 +544,8 @@ begin
 
     SampleVal := SampleVal * Volume * EnvValue;
 
-    OutPtr^ := OutPtr^ + SampleVal;
+    OutPtr^ := OutPtr^ + (SampleVal * LeftGain);  Inc(OutPtr);
+    OutPtr^ := OutPtr^ + (SampleVal * RightGain); Inc(OutPtr);
 
     SampleVal := Abs(SampleVal);
 
@@ -550,8 +574,6 @@ begin
       while ModPhase < 0 do
         ModPhase := ModPhase + PI2;
     end;
-
-    Inc(OutPtr);
   end;
 
   Channel.OutLevel := Round($FF * Level);
@@ -644,11 +666,39 @@ var
   FadeStep:  Single;
   SampleVal: Single;
   Level:     Single;
+  PanF:      Single;
+  LeftGain:  Single;
+  RightGain: Single;
 begin
   Level := 0;
 
+  if Channel.Position <> SyncedPos then
+  begin
+    Position := Channel.Position;
+
+    if Position >= Channel.Length then
+      Position := Channel.Length - 1;
+  end;
+
   if not Playing or (Channel.Pitch = 0) then
     Exit;
+
+  PanF := Channel.Pan / 100;
+
+  if PanF < -1 then
+    PanF := -1
+  else if PanF > 1 then
+    PanF := 1;
+
+  LeftGain  := 1 - PanF;
+
+  if LeftGain > 1 then
+    LeftGain := 1;
+
+  RightGain := 1 + PanF;
+
+  if RightGain > 1 then
+    RightGain := 1;
 
   Step     := (Channel.SampleRate / ASampleRate) * Channel.Pitch;
   OutPtr   := ABuffer;
@@ -703,16 +753,19 @@ begin
       end;
     end;
 
-    SampleVal :=  Samples[Index] * Channel.Volume * FadeVol;
+    SampleVal := (Samples[Index] / 32768) * (Channel.Volume / $FF) * FadeVol;
 
     if SampleVal > Level then
       Level := SampleVal;
 
-    OutPtr^ := OutPtr^ + SampleVal;
+    OutPtr^ := OutPtr^ + (SampleVal * LeftGain);  Inc(OutPtr);
+    OutPtr^ := OutPtr^ + (SampleVal * RightGain); Inc(OutPtr);
 
     Position := Position + Step;
-    Inc(OutPtr);
   end;
+
+  Channel.Position := Trunc(Position);
+  SyncedPos        := Channel.Position;
 
   Channel^.OutLevel := Round($FF * Level);
 end;
@@ -784,50 +837,62 @@ end;
 
 procedure TSID.FillBuffer(AOutBuffer: PSmallInt; ASampleCount: Integer; ASampleRate: Integer);
 var
-  Level: Single;
-  ASamp: Single;
-  Gain:  Single;
+  LevelL: Single;
+  LevelR: Single;
+  LevelM: Single;
+  ASamp:  Single;
+  Gain:   Single;
+  InPtr:  PSingle;
 begin
-  if Length(FBuffer) < ASampleCount then
-    SetLength(FBuffer, ASampleCount);
+  if Length(FBuffer) < (ASampleCount * 2) then
+    SetLength(FBuffer, ASampleCount * 2);
 
-  FillChar(FBuffer[0], ASampleCount * SizeOf(Single), 0);
+  FillChar(FBuffer[0],  (ASampleCount * 2) * SizeOf(Single), 0);
 
   ProcessSynth  (@FBuffer[0], ASampleCount, ASampleRate);
   ProcessPCM    (@FBuffer[0], ASampleCount, ASampleRate);
   ProcessEffects(@FBuffer[0], ASampleCount, ASampleRate);
   ProcessBeep   (@FBuffer[0], ASampleCount, ASampleRate);
 
-  Level := 0;
+  LevelL := 0;
+  LevelR := 0;
+  LevelM := 0;
+
+  InPtr := @FBuffer[0];
 
   for var i := 0 to ASampleCount - 1 do
   begin
-    ASamp := Abs(FBuffer[i]);
+    ASamp := Abs(InPtr^); Inc(InPtr);
+    if ASamp > LevelL then LevelL := ASamp;
+    if ASamp > LevelM then LevelM := ASamp;
 
-    if ASamp > Level then
-      Level := ASamp;
+    ASamp := Abs(InPtr^); Inc(InPtr);
+    if ASamp > LevelR then LevelR := ASamp;
+    if ASamp > LevelM then LevelM := ASamp;
   end;
 
-  if Level > 1 then
+  if LevelM > 1 then
   begin
-    Gain := 1 / Level;
+    Gain := 1 / LevelM;
 
-    for var i := 0 to ASampleCount - 1 do
+    for var i := 0 to (ASampleCount * 2) - 1 do
     begin
       AOutBuffer^ := Round(32767 * (FBuffer[i] * Gain));
       Inc(AOutBuffer);
     end;
 
-    Level := 1;
+    LevelM := 1;
   end
   else
-    for var i := 0 to ASampleCount - 1 do
+    for var i := 0 to (ASampleCount * 2) - 1 do
     begin
       AOutBuffer^ := Round(32767 * FBuffer[i]);
       Inc(AOutBuffer);
     end;
 
-  FRegisters.OutLevel := Round($FF * Level);
+  FRegisters.OutLevel  := Round($FF * LevelM);
+  FRegisters.OutLevelL := Round($FF * LevelL);
+  FRegisters.OutLevelR := Round($FF * LevelR);
 end;
 
 procedure TSID.ProcessSynth(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
@@ -864,24 +929,33 @@ begin
     Alpha := (PI2 * FRegisters.CutoffFreq) / ASampleRate;
 
     if Alpha > 1 then
-      Alpha := 1;
+      Alpha := 1
+    else if Alpha < 0 then
+      Alpha := 0;
 
     OutPtr := ABuffer;
 
     for var i := 0 to ASampleCount - 1 do
     begin
-      FPrevSample := FPrevSample + Alpha * (OutPtr^ - FPrevSample);
-      OutPtr^ := FPrevSample;
+      FPrevSampleL := FPrevSampleL + Alpha * (OutPtr^ - FPrevSampleL);
+      OutPtr^ := FPrevSampleL;
+      Inc(OutPtr);
+
+      FPrevSampleR := FPrevSampleR + Alpha * (OutPtr^ - FPrevSampleR);
+      OutPtr^ := FPrevSampleR;
       Inc(OutPtr);
     end;
   end;
 
   if FRegisters.Flags.DelayEnabled then
   begin
-    if Length(FDelayBuffer) <> (ASampleRate * 2) then
+    if Length(FDelayBufferL) <> (ASampleRate * 2) then
     begin
-      SetLength(FDelayBuffer, ASampleRate * 2);
-      FillChar(FDelayBuffer[0], Length(FDelayBuffer) * SizeOf(Single), 0);
+      SetLength(FDelayBufferL, ASampleRate * 2);
+      FillChar(FDelayBufferL[0], Length(FDelayBufferL) * SizeOf(Single), 0);
+
+      SetLength(FDelayBufferR, ASampleRate * 2);
+      FillChar(FDelayBufferR[0], Length(FDelayBufferR) * SizeOf(Single), 0);
     end;
 
     if FRegisters.Flags.DelayEnabled then
@@ -894,18 +968,16 @@ begin
     if TargetDelay < 1 then
       TargetDelay := 1;
 
-    if TargetDelay >= Length(FDelayBuffer) - 2 then
-      TargetDelay := Length(FDelayBuffer) - 2;
+    if TargetDelay >= Length(FDelayBufferL) - 2 then
+      TargetDelay := Length(FDelayBufferL) - 2;
 
     if FCurrentDelay < 0 then
       FCurrentDelay := TargetDelay;
 
     OutPtr := ABuffer;
 
-    for var i := 0 to ASampleCount - 1 do
+for var i := 0 to ASampleCount - 1 do
     begin
-      CurrentSample := OutPtr^;
-
       FCurrentMix := FCurrentMix + (TargetMix - FCurrentMix) * 0.005;
 
       if FCurrentMix > 0.0001 then
@@ -915,36 +987,56 @@ begin
         var ReadPos: Single := FDelayIndex - FCurrentDelay;
 
         while ReadPos < 0 do
-          ReadPos := ReadPos + Length(FDelayBuffer);
+          ReadPos := ReadPos + Length(FDelayBufferL);
 
-        while ReadPos >= Length(FDelayBuffer) do
-          ReadPos := ReadPos - Length(FDelayBuffer);
+        while ReadPos >= Length(FDelayBufferL) do
+          ReadPos := ReadPos - Length(FDelayBufferL);
 
         var Index1: Integer := Trunc(ReadPos);
         var Index2: Integer := Index1 + 1;
-
-        if Index2 >= Length(FDelayBuffer) then
+        if Index2 >= Length(FDelayBufferL) then
           Index2 := 0;
 
         var Frac: Single := ReadPos - Index1;
 
-        DelayedSample := FDelayBuffer[Index1] + Frac * (FDelayBuffer[Index2] - FDelayBuffer[Index1]);
+        {$REGION 'Delay left'}
+        CurrentSample := OutPtr^;
+        DelayedSample := FDelayBufferL[Index1] + Frac * (FDelayBufferL[Index2] - FDelayBufferL[Index1]);
 
         if Abs(DelayedSample) < 1.0E-6 then
           DelayedSample := 0;
 
-        FDelayBuffer[FDelayIndex] := CurrentSample + (DelayedSample * FRegisters.Feedback);
+        FDelayBufferL[FDelayIndex] := CurrentSample + (DelayedSample * FRegisters.Feedback);
         OutPtr^ := CurrentSample + (DelayedSample * FCurrentMix);
+
+        Inc(OutPtr);
+        {$ENDREGION}
+
+        {$REGION 'Delay right'}
+        CurrentSample := OutPtr^;
+        DelayedSample := FDelayBufferR[Index1] + Frac * (FDelayBufferR[Index2] - FDelayBufferR[Index1]);
+
+        if Abs(DelayedSample) < 1.0E-6 then
+          DelayedSample := 0;
+
+        FDelayBufferR[FDelayIndex] := CurrentSample + (DelayedSample * FRegisters.Feedback);
+        OutPtr^ := CurrentSample + (DelayedSample * FCurrentMix);
+
+        Inc(OutPtr);
+        {$ENDREGION}
       end
       else
-        FDelayBuffer[FDelayIndex] := 0;
+      begin
+        FDelayBufferL[FDelayIndex] := 0;
+        FDelayBufferR[FDelayIndex] := 0;
+
+        Inc(OutPtr, 2);
+      end;
 
       Inc(FDelayIndex);
 
-      if FDelayIndex >= Length(FDelayBuffer) then
+      if FDelayIndex >= Length(FDelayBufferL) then
         FDelayIndex := 0;
-
-      Inc(OutPtr);
     end;
   end;
 end;
@@ -975,7 +1067,8 @@ begin
     else
       SampleVal := -FBeepVolume;
 
-    OutPtr^ := OutPtr^ + SampleVal;
+    OutPtr^ := OutPtr^ + SampleVal; Inc(OutPtr);
+    OutPtr^ := OutPtr^ + SampleVal; Inc(OutPtr);
 
     FBeepPhase := FBeepPhase + PhaseStep;
     FBeepTime  := FBeepTime  + PhaseStep;
@@ -988,8 +1081,6 @@ begin
       while FBeepPhase < 0 do
         FBeepPhase := FBeepPhase + PI2;
     end;
-
-    Inc(OutPtr);
   end;
 end;
 
@@ -1036,7 +1127,7 @@ begin
   with WaveFormat do
   begin
     wFormatTag      := WAVE_FORMAT_PCM;
-    nChannels       := 1;
+    nChannels       := 2;
     nSamplesPerSec  := SampleRate;
     wBitsPerSample  := 16;
     nBlockAlign     := (nChannels * wBitsPerSample) div 8;
@@ -1086,7 +1177,8 @@ begin
   FRegisters.Reset;
   FSChannels.Reset;
 
-  FPrevSample   :=  0;
+  FPrevSampleL  :=  0;
+  FPrevSampleR  :=  0;
   FCurrentDelay := -1;
   FCurrentMix   :=  0;
 

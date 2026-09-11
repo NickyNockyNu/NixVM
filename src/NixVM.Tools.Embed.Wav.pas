@@ -56,14 +56,12 @@ type
 
   TWav = class
   public
-    class function LoadEmbed(const AFileName: String; out AData: TBytes; AErrors: TStrings = nil): Boolean;
-
-
+    class function LoadEmbed(const AFileName: String; out AData: TBytes; AVerbose: Boolean = False; AErrors: TStrings = nil): Boolean;
   end;
 
 implementation
 
-class function TWav.LoadEmbed(const AFileName: String; out AData: TBytes; AErrors: TStrings): Boolean;
+class function TWav.LoadEmbed(const AFileName: String; out AData: TBytes; AVerbose: Boolean; AErrors: TStrings): Boolean;
 var
   FileHandle: THandle;
   BytesRead:  Cardinal;
@@ -76,7 +74,7 @@ var
   DataSize: Cardinal;
 
   SampleCount: Integer;
-  Samples:     PSingle;
+  Samples:     PSmallInt;
 begin
   Result := False;
 
@@ -141,7 +139,7 @@ begin
         if Format.NumChannels = 2 then
           SampleCount := SampleCount div 2;
 
-        SetLength(AData, SampleCount * SizeOf(Single));
+        SetLength(AData, SampleCount * 2);
         Samples := @AData[0];
 
         var P16: PSmallInt := PSmallInt(RawData);
@@ -150,14 +148,15 @@ begin
         begin
           if Format.NumChannels = 1 then
           begin
-            Samples[i] := P16^ / 32767.0;
+            Samples[i] := P16^;
             Inc(P16);
           end
           else
           begin
-            var Left:  Single := P16^ / 32767.0; Inc(P16);
-            var Right: Single := P16^ / 32767.0; Inc(P16);
-            Samples[i] := (Left + Right) * 0.5;
+            var Left  := P16^; Inc(P16);
+            var Right := P16^; Inc(P16);
+
+            Samples[i] := SmallInt(Integer(Left + Right) div 2);
           end;
         end;
       end
@@ -168,7 +167,7 @@ begin
         if Format.NumChannels = 2 then
           SampleCount := SampleCount div 2;
 
-        SetLength(AData, SampleCount * SizeOf(Single));
+        SetLength(AData, SampleCount * SizeOf(SmallInt));
         Samples := @AData[0];
 
         var P8: PByte := RawData;
@@ -177,14 +176,15 @@ begin
         begin
           if Format.NumChannels = 1 then
           begin
-            Samples[i] := (P8^ - 128) / 128.0;
+            Samples[i] := SmallInt((Integer(P8^) - 128) shl 8);
             Inc(P8);
           end
           else
           begin
-            var Left:  Single := (P8^ - 128) / 128.0; Inc(P8);
-            var Right: Single := (P8^ - 128) / 128.0; Inc(P8);
-            Samples[i] := (Left + Right) * 0.5;
+            var Left:  SmallInt := SmallInt((Integer(P8^) - 128) shl 8); Inc(P8);
+            var Right: SmallInt := SmallInt((Integer(P8^) - 128) shl 8); Inc(P8);
+
+            Samples[i] := SmallInt(Integer(Left + Right) div 2);
           end;
         end;
       end
@@ -202,7 +202,8 @@ begin
     CloseHandle(FileHandle);
   end;
 
-  Writeln('Sample Rate:', Format.SampleRate, ' Length:', SampleCount);
+  if AVerbose then
+    Writeln('[asset:wav] "', ExtractFileName(AFileName), '" ', Format.SampleRate, 'Hz, 16-bit, mono, ', SampleCount, ' samples (', Length(AData), ' bytes)');
 
   Result := True;
 end;

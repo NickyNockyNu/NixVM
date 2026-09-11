@@ -80,6 +80,8 @@ type
     FIconFile:    String;
     FDescription: String;
     FCopyright:   String;
+
+    FVerbose: Boolean;
   public
     ROMHeader: TROMHeader;
 
@@ -93,8 +95,8 @@ type
     function Link(AStream: TStream;        AWithHeader: Boolean = True): Boolean; overload;
     function Link(const AFileName: String; AWithHeader: Boolean = True): Boolean; overload;
 
-    class function Parse(const ASource: String; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; const AFileName: String = ''; const ABasePath: String = ''; AIncludeStack: TStrings = nil; ASharedErrors: TStringList = nil; AROMHeader: PROMHeader = nil): TIRList;
-    class function ParseFile(const AFileName: String; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; AROMHeader: PROMHeader = nil): TIRList; static;
+    class function Parse(const ASource: String; AVerbose: Boolean; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; const AFileName: String = ''; const ABasePath: String = ''; AIncludeStack: TStrings = nil; ASharedErrors: TStringList = nil; AROMHeader: PROMHeader = nil): TIRList;
+    class function ParseFile(const AFileName: String; AVerbose: Boolean; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; AROMHeader: PROMHeader = nil): TIRList; static;
 
     property IR:     TIRList  read FIR;
     property Errors: TStrings read FErrors;
@@ -109,6 +111,8 @@ type
     property IconFile:    String read FIconFile    write FIconFile;
     property Description: String read FDescription write FDescription;
     property Copyright:   String read FCopyright   write FCopyright;
+
+    property Verbose: Boolean read FVerbose write FVerbose;
   end;
   {$ENDREGION}
 
@@ -145,7 +149,7 @@ begin
   if Assigned(FIR) then
     FIR.Free;
 
-  FIR := Parse(ASource, FErrors, FIconFile, FDescription, FCopyright, '', FBasePath, nil, nil, @ROMHeader);
+  FIR := Parse(ASource, FVerbose, FErrors, FIconFile, FDescription, FCopyright, '', FBasePath, nil, nil, @ROMHeader);
 
   FSizeBeforeOpt := FIR.Size;
 
@@ -252,7 +256,7 @@ begin
 end;
 
 {$REGION 'Parse'}
-class function TAssembler.Parse(const ASource: String; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; const AFileName: String; const ABasePath: String; AIncludeStack: TStrings; ASharedErrors: TStringList; AROMHeader: PROMHeader): TIRList;
+class function TAssembler.Parse(const ASource: String; AVerbose: Boolean; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; const AFileName: String; const ABasePath: String; AIncludeStack: TStrings; ASharedErrors: TStringList; AROMHeader: PROMHeader): TIRList;
 var
   IR:            TIRList;
   Constants:     TDictionary<String, Cardinal>;
@@ -1365,7 +1369,7 @@ begin
 
         if IsImg then
         begin
-          if not TImage.LoadEmbed(FullFilePath, FileBytes, nil, @TImage.DefaultPalette) then
+          if not TImage.LoadEmbed(FullFilePath, FileBytes, AVerbose, nil, @TImage.DefaultPalette) then
           begin
             Error(Format('Embedded image asset decode failed: "%s"', [FullFilePath]), Tok);
             Continue;
@@ -1373,7 +1377,7 @@ begin
         end
         else if IsWav then
         begin
-          if not TWav.LoadEmbed(FullFilePath, FileBytes, nil) then
+          if not TWav.LoadEmbed(FullFilePath, FileBytes, AVerbose, nil) then
           begin
             Error(Format('Embedded wav asset decode failed: "%s"', [FullFilePath]), Tok);
             Continue;
@@ -1453,7 +1457,7 @@ begin
             var SubSource := TFile.ReadAllText(FullFilePath);
             var DummyErrors: TStrings := nil;
 
-            var SubIR := Parse(SubSource, DummyErrors, AIconFile, ADescription, ACopyright, FullFilePath, ExtractFilePath(FullFilePath), IncStack, Errors, AROMHeader);
+            var SubIR := Parse(SubSource, AVerbose, DummyErrors, AIconFile, ADescription, ACopyright, FullFilePath, ExtractFilePath(FullFilePath), IncStack, Errors, AROMHeader);
             try
               for var j := 0 to SubIR.Count - 1 do
                 IR.Add(SubIR[j]);
@@ -1795,7 +1799,7 @@ begin
 end;
 {$ENDREGION}
 
-class function TAssembler.ParseFile(const AFileName: String; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; AROMHeader: PROMHeader): TIRList;
+class function TAssembler.ParseFile(const AFileName: String; AVerbose: Boolean; out AErrors: TStrings; out AIconFile: String; out ADescription: String; out ACopyright: String; AROMHeader: PROMHeader): TIRList;
 var
   SourceText: String;
 begin
@@ -1808,7 +1812,7 @@ begin
   end;
 
   SourceText := TFile.ReadAllText(AFileName);
-  Result     := Parse(SourceText, AErrors, AIconFile, ADescription, ACopyright, AFileName, ExtractFilePath(AFileName), nil, nil, AROMHeader);
+  Result     := Parse(SourceText, AVerbose, AErrors, AIconFile, ADescription, ACopyright, AFileName, ExtractFilePath(AFileName), nil, nil, AROMHeader);
 end;
 {$ENDREGION}
 

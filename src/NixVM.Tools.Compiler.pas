@@ -71,6 +71,8 @@ type
     FAutoIncludeSystem: Boolean;
     FAutoIncludeTarget: Boolean;
 
+    FVerbose: Boolean;
+
     function  LoadUnitRecursive(const AUnitName: String): TASTUnit;
     function  ResolveUnitSource(const AUnitName: String; out ASource, AFilePath: String): Boolean;
   public
@@ -108,6 +110,8 @@ type
 
     property AutoIncludeSystem: Boolean read FAutoIncludeSystem write FAutoIncludeSystem;
     property AutoIncludeTarget: Boolean read FAutoIncludeTarget write FAutoIncludeTarget;
+
+    property Verbose: Boolean read FVerbose write FVerbose;
   end;
   {$ENDREGION}
 
@@ -165,6 +169,8 @@ begin
   try
     var Parser := TParser.Create(Source, FilePath, FErrors);
     try
+      Parser.Verbose := FVerbose;
+
       var UnitAST := Parser.ParseUnit;
 
       if (FErrors.Count > 0) or (UnitAST = nil) then
@@ -252,7 +258,9 @@ begin
   FCompileOrder.Clear;
   FLoadingStack.Clear;
 
-  Parser  := TParser.Create(ASource, AName, FErrors);
+  Parser         := TParser.Create(ASource, AName, FErrors);
+  Parser.Verbose := FVerbose;
+
   ProgAST := Parser.ParseProgram;
 
   try

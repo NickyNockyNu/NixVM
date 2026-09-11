@@ -55,9 +55,11 @@ type
 
     Flags:  TFlags;
 
-    OutLevel: Byte;
+    OutLevel:  Byte;
+    OutLevelL: Byte;
+    OutLevelR: Byte;
 
-    Padding: packed array[0..5] of Byte;
+    Padding: packed array[0..3] of Byte;
 
     procedure Reset;
   end;
@@ -68,7 +70,6 @@ type
   TSynthChannels = packed record
   const
     Count = 4;
-
   type
     {$REGION 'Waveform'}
     TWaveform = (
@@ -103,8 +104,10 @@ type
       end;
       {$ENDREGION}
     public
+      Volume: Byte;
+      Pan:    ShortInt;
+
       Frequency:   Single;
-      Volume:      Single;
       PulseWidth:  Single;
       GlideSpeed:  Single;
 
@@ -126,7 +129,7 @@ type
 
       OutLevel: Byte;
 
-      Padding: Word;
+      Padding: packed array[0..3] of Byte;
     end;
     {$ENDREGION}
   public
@@ -165,17 +168,20 @@ type
       Length:     Cardinal;
       SampleRate: Cardinal;
 
-      Volume: Single;
-      Pitch:  Single;
+      Volume: Byte;
+      Pan:    ShortInt;
+
+      Position: Cardinal;
+      Pitch:    Single;
 
       Flags: TFlags;
 
       OutLevel: Byte;
 
-      Padding: packed array[0..9] of Byte;
+      Padding: packed array[0..7] of Byte;
     end;
   public
-    Channels: packed array[0..Count] of TChannel;
+    Channels: packed array[0..Count - 1] of TChannel;
 
     procedure Reset;
   end;
@@ -257,8 +263,9 @@ begin
   for var i := 0 to Count - 1 do
     with Channels[i] do
     begin
+      Volume     := 32;
+      Pan        := 0;
       Frequency  := 440.0;
-      Volume     := 1 / (Count + 1);
       PulseWidth := 0.5;
       ModRatio   := 0;
       ModDepth   := 0;
@@ -294,6 +301,12 @@ end;
 procedure TPCMChannels.Reset;
 begin
   FillChar(Self, SizeOF(Self), 0);
+
+  for var i := 0 to Count - 1 do
+    with Channels[i] do
+    begin
+      Volume := 64;
+    end;
 end;
 {$ENDREGION}
 

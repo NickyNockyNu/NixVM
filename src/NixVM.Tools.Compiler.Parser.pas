@@ -52,6 +52,7 @@ type
     FIconFile:    String;
     FDescription: String;
     FCopyright:   String;
+    FVerbose:     Boolean;
 
     procedure NextToken;
     function  PeekToken: TLexer.TToken;
@@ -118,6 +119,8 @@ type
 
     property Lexer:  TLexer   read FLexer;
     property Errors: TStrings read FErrors;
+
+    property Verbose: Boolean read FVerbose write FVerbose;
   end;
   {$ENDREGION}
 
@@ -765,6 +768,13 @@ begin
 
     else if Check(TLexer.TToken.TKind.Function) then
       Result.Declarations.Add(ParseRoutine(True))
+
+    else if Check(TLexer.TToken.TKind.End) then
+    begin
+      NextToken;
+      Expect(TLexer.TToken.TKind.Dot, 'Expected "." after final end of program');
+      Exit;
+    end
 
     else
     begin
@@ -1781,7 +1791,7 @@ begin
 
       if IsImg then
       begin
-        if not TImage.LoadEmbed(FullPath, FileBytes, FErrors, @TImage.DefaultPalette) then
+        if not TImage.LoadEmbed(FullPath, FileBytes, FVerbose, FErrors, @TImage.DefaultPalette) then
         begin
           Error(Format('Embedded image asset decode failed: "%s"', [FullPath]), FileTok);
           Match(TLexer.TToken.TKind.Semicolon);
@@ -1791,7 +1801,7 @@ begin
       end
       else if IsWav then
       begin
-        if not TWav.LoadEmbed(FullPath, FileBytes, FErrors) then
+        if not TWav.LoadEmbed(FullPath, FileBytes, FVerbose, FErrors) then
         begin
           Error(Format('Embedded wav asset decode failed: "%s"', [FullPath]), FileTok);
           Match(TLexer.TToken.TKind.Semicolon);

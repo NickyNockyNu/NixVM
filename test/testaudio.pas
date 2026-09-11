@@ -5,12 +5,9 @@ program testaudio targets passe;
 
 const
   Screen: PFrameBuffer in 'img:passe.png';
-  
-  Ring: Pointer in 'wav:ring01.wav';
+  Ring:   Pointer      in 'wav:ring01.wav';
 
 begin
-  Print('\a');
-  
   VideoRegisters^.DisplayBuffer := Screen;
   VideoRegisters^.DrawBuffer    := Screen;
   
@@ -42,7 +39,7 @@ begin
     Length     := 124556;
     SampleRate := 22050;
     
-    Volume := 4.0;
+    Volume := 255;
     Pitch  := 1.0;
     
     Flags := %10;
@@ -62,7 +59,13 @@ begin
     begin
       DrawHLine(10, 164 + (i * 2), 64, 28);
       DrawHLine(10, 164 + (i * 2), PCMChannels[i].OutLevel div 4, 10);
-    end;    
+    end;
+    
+    DrawHLine(0, 0, FrameBufferWidth, 28);
+    DrawHLine(0, 0, Round(FrameBufferWidth * (PCMChannels[0].Position / PCMChannels[0].Length)), 10);
+  
+    if Keys[13].WasPressed then
+      PCMChannels[0].Position := PCMChannels[0].Length div 2;
   
     if Keys[32].WasPressed then
       PlaySound(0, True);
@@ -78,10 +81,12 @@ begin
     if Keys[1].IsDown then
     begin
       SynthChannels[0].Frequency := 100 + (Mouse^.X * 2);
-      SynthChannels[0].Volume := (Mouse^.Y / FrameBufferHeight) + 0.000001;
+      SynthChannels[0].Volume := Round(255 * (Mouse^.Y / FrameBufferHeight));
     end;
     
     PCMChannels[0].Pitch := ((Mouse^.X * 4) / FrameBufferWidth) - 2;
+
+    PCMChannels[0].Pan := Mouse^.Y - 90;
 
     Yield;
   until False;

@@ -286,6 +286,7 @@ begin
     ProcessFiles('nvm', 'pas');
 
   Compiler := TCompiler.Create;
+  Compiler.Verbose := Verbose;
 
   Compiler.Optimise := TParams.GetOpt('-z', Compiler.Optimise);
 
@@ -294,12 +295,12 @@ begin
 
   try
     if Verbose then
-      Write('Compiling ', InputFile + ' ... ');
+      Writeln('Compiling ', InputFile + ' ... ');
 
     if not Compiler.CompileFile(InputFile) then
     begin
       if Verbose then
-        Writeln('[failed]');
+        Writeln('Compile failed.');
 
       for var Err in Compiler.Errors do
         Writeln(Err);
@@ -308,7 +309,7 @@ begin
     end;
 
     if Verbose then
-      Writeln('[ok]');
+      Writeln('Compile completed.');
 
     if Length(Compiler.ROMHeader.Harness.Name) > 0 then
       Target := TParams.GetOpt('-t', Compiler.ROMHeader.Harness.Name)
@@ -579,16 +580,17 @@ begin
     ProcessFiles('nvm', 'asm');
 
   &Assembler := TAssembler.Create;
+  &Assembler.Verbose := Verbose;
   &Assembler.Optimise := TParams.GetOpt('-z', &Assembler.Optimise);
 
   try
     if Verbose then
-      Write('Assembling ', InputFile, ' ... ');
+      Writeln('Assembling ', InputFile, ' ... ');
 
     if not &Assembler.AssembleFile(InputFile) then
     begin
       if Verbose then
-        Writeln('[failed]');
+        Writeln('Assembling failed.');
 
       for var Err in &Assembler.Errors do
         Writeln(Err);
@@ -597,7 +599,7 @@ begin
     end;
 
     if Verbose then
-      Writeln('[ok]');
+      Writeln('Assembling completed.');
 
     if Length(&Assembler.ROMHeader.Harness.Name) > 0 then
       Target := TParams.GetOpt('-t', &Assembler.ROMHeader.Harness.Name)
