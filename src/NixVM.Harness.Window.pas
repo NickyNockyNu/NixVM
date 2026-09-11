@@ -32,6 +32,7 @@ interface
 uses
   Winapi.Windows,
   Winapi.Messages,
+  Winapi.MultiMon,
 
   NixVM.Harness,
   NixVM.Harness.PE,
@@ -42,6 +43,8 @@ type
   TCustomWindowHarness<TSystemMemory: record> = class(TCustomPEHarness<TSystemMemory>)
   private
     FHandle: HWND;
+
+    FRestore: TWindowPlacement;
 
     FShowFPS: Boolean;
     FShowIPS: Boolean;
@@ -75,8 +78,10 @@ type
 
     procedure EverySecond; override;
   protected
-    procedure WMClose  (var AMessage: TWMClose);   message WM_CLOSE;
-    procedure WMDestroy(var AMessage: TWMDestroy); message WM_DESTROY;
+    procedure WMClose     (var AMessage: TWMClose);      message WM_CLOSE;
+    procedure WMDestroy   (var AMessage: TWMDestroy);    message WM_DESTROY;
+    procedure WMKeyDown   (var AMessage: TWMKeyDown);    message WM_KEYDOWN;
+    procedure WMSysKeyDown(var AMessage: TWMSysKeyDown); message WM_SYSKEYDOWN;
   public
     class procedure CError(const AMessage: String; AErrorCode: Integer = 0); override;
           procedure  Error(const AMessage: String; AErrorCode: Integer = 0); override;
@@ -84,6 +89,8 @@ type
     procedure ProcessMessages(AWait: Boolean = False);
     procedure HandleMessage (var AMessage: TMessage); virtual;
     procedure DefaultHandler(var AMessage);           override;
+
+    procedure ToggleFullscreen;
 
     property Handle: HWND read FHandle;
 
@@ -107,6 +114,7 @@ implementation
 
 uses
   NixVM.Core.ROM,
+  NixVM.Core.System,
   NixVM.Core.Strings;
 
 {$REGION 'CustomWindowHarness'}
@@ -289,6 +297,33 @@ begin
   PostQuitMessage(0);
 end;
 
+procedure TCustomWindowHarness<TSystemMemory>.WMKeyDown(var AMessage: TWMKeyDown);
+begin
+  case AMessage.CharCode of
+    VK_F12:
+    begin
+      if (GetAsyncKeyState(VK_CONTROL) and $8000) <> 0 then
+      begin
+        CPU.Interrupt(TInterrupts.ID.SysRq, 0);
+        AMessage.Result := 1;
+      end
+      else
+        inherited;
+    end;
+  else
+    inherited;
+  end;
+end;
+
+procedure TCustomWindowHarness<TSystemMemory>.WMSysKeyDown(var AMessage: TWMSysKeyDown);
+begin
+  case AMessage.CharCode of
+    VK_F10: ToggleFullscreen;
+  else
+    inherited;
+  end;
+end;
+
 class procedure TCustomWindowHarness<TSystemMemory>.CError(const AMessage: String; AErrorCode: Integer = 0);
 begin
   MessageBox(0, PChar(AMessage), 'Error', MB_OK or MB_ICONERROR or MB_SYSTEMMODAL);
@@ -340,6 +375,32 @@ begin
     Result := DefWindowProc(FHandle, Msg, WParam, LParam);
 end;
 
+procedure TCustomWindowHarness<TSystemMemory>.ToggleFullscreen;
+var
+  Style:   NativeInt;
+  MonInfo: TMonitorInfo;
+begin
+  Style := GetWindowLongPtr(FHandle, GWL_STYLE);
+
+  if (Style and WS_OVERLAPPEDWINDOW) <> 0 then
+  begin
+    MonInfo.cbSize := SizeOf(MonInfo);
+
+    if GetWindowPlacement(FHandle, FRestore) and GetMonitorInfo(MonitorFromWindow(FHandle, MONITOR_DEFAULTTOPRIMARY), @MonInfo) then
+    begin
+      SetWindowLongPtr(FHandle, GWL_STYLE, Style and not WS_OVERLAPPEDWINDOW);
+
+      with MonInfo.rcMonitor do
+        SetWindowPos(FHandle, HWND_TOP, Left, Top, Right - Left, Bottom - Top, SWP_NOOWNERZORDER or SWP_FRAMECHANGED or SWP_NOREDRAW or SWP_DEFERERASE or SWP_NOCOPYBITS);
+    end;
+  end
+  else
+  begin
+    SetWindowLongPtr  (FHandle, GWL_STYLE, Style or WS_OVERLAPPEDWINDOW);
+    SetWindowPlacement(FHandle, FRestore);
+    SetWindowPos      (FHandle, 0, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or SWP_NOOWNERZORDER or SWP_FRAMECHANGED or SWP_NOREDRAW or SWP_DEFERERASE or SWP_NOCOPYBITS);
+  end;
+end;
 {$ENDREGION}
 
 end.

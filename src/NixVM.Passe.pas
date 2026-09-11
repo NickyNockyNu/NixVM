@@ -35,8 +35,6 @@ unit NixVM.Passe;
 
     Panic screen
 
-    SysRq key
-
     Screen capture
 
     Console capture (Ctrl+C -> to clipboard) (and/or add this to the system menu)
@@ -135,6 +133,7 @@ type
     procedure WMChar            (var AMessage: TWMChar);             message WM_CHAR;
     procedure WMMouseWheel      (var AMessage: TWMMouseWheel);       message WM_MOUSEWHEEL;
     procedure WMKeyDown         (var AMessage: TWMKeyDown);          message WM_KEYDOWN;
+    procedure WMEraseBkgnd      (var AMessage: TWMEraseBkgnd);       message WM_ERASEBKGND;
   public
     class procedure CError(const AMessage: String; AErrorCode: Integer = 0); override;
 
@@ -477,14 +476,19 @@ begin
   case AMessage.CharCode of
     VK_F12:
     begin
-      if (GetAsyncKeyState(VK_CONTROL) and $8000) <> 0 then
-        CPU.Interrupt(TInterrupts.ID.SysRq, 0)
-      else
+      inherited;
+
+      if AMessage.Result = 0 then
         FRenderer.Debug := (FRenderer.Debug + 1) mod 5;
     end;
   else
     inherited;
   end;
+end;
+
+procedure TPasse.WMEraseBkgnd(var AMessage: TWMEraseBkgnd);
+begin
+  AMessage.Result := 1;
 end;
 
 class procedure TPasse.CError(const AMessage: String; AErrorCode: Integer);

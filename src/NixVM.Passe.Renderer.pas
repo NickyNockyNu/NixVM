@@ -1207,10 +1207,8 @@ begin
   dx := sx;
 
   DrawTitle (dx, dy, DBGHEAP);
-  //DrawSize(dx, dy, 1234560000);
   DrawSize  (dx, dy, FOwner.Memory.Heap.Size - FOwner.Memory.Heap.GetAvailable);
   DrawNumStr(dx, dy, '/');
-  //DrawSize(dx, dy, 1234560000);
   DrawSize  (dx, dy, FOwner.Memory.Heap.Size);
 
   Inc(dy, 7);
