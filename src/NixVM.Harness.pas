@@ -88,6 +88,7 @@ type
     procedure EverySecond; virtual;
 
     function HandleSysCall(ASysCall: TSysCalls.ID): Boolean; virtual;
+    function HandleSysRq:                           Boolean; virtual;
 
     procedure HandlePanic; virtual;
     procedure HandleYield; virtual;
@@ -99,6 +100,8 @@ type
 
     class procedure CError(const AMessage: String; AErrorCode: Integer = 1); virtual;
           procedure  Error(const AMessage: String; AErrorCode: Integer = 1); virtual;
+
+    procedure Reset; virtual;
 
     procedure Start;
     procedure Stop;
@@ -397,6 +400,13 @@ begin
     end;
 end;
 
+function TCustomHarness<TSystemMemory>.HandleSysRq: Boolean;
+begin
+  Reset;
+  //DebugBreak;
+  Result := True;
+end;
+
 procedure TCustomHarness<TSystemMemory>.HandlePanic;
 begin
   FCPU.Halt;
@@ -427,7 +437,7 @@ begin
   AssignFile(F, AROMFile);
 
   try
-    {$I-}Reset(F, 1);{$I+}
+    {$I-}System.Reset(F, 1);{$I+}
 
     if IOResult <> 0 then
     begin
@@ -514,9 +524,10 @@ begin
   FMemory := TMemory<TSystemMemory>.Create(0, 0, 0);
   FCPU    := TCPU.Create(FMemory);
 
-  FCPU.SysCallHandler := HandleSysCall;
-  FCPU.OnPanic        := HandlePanic;
-  FCPU.OnYield        := HandleYield;
+  FCPU.OnSysCall := HandleSysCall;
+  FCPU.OnPanic   := HandlePanic;
+  FCPU.OnYield   := HandleYield;
+  FCPU.OnSysRq   := HandleSysRq;
 
   FCPUBatchSize := 16 * 1024;
 
@@ -559,16 +570,21 @@ begin
   end;
 end;
 
+procedure TCustomHarness<TSystemMemory>.Reset;
+begin
+  FMemory.Reset;
+  FCPU.Reset;
+
+  InitEnvironment;
+end;
+
 procedure TCustomHarness<TSystemMemory>.Start;
 begin
   if FRunning then
     Exit;
 
   try
-    FMemory.Reset;
-    FCPU.Reset;
-
-    InitEnvironment;
+    Reset;
 
     FRunning := True;
 

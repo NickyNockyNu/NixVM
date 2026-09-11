@@ -39,18 +39,14 @@ unit NixVM.Passe;
 
     Screen capture
 
-    Console capture (Ctrl+C -> to clipboard)
+    Console capture (Ctrl+C -> to clipboard) (and/or add this to the system menu)
 
     Debug layer
-
-    Compiler asset information
 
     Embed font and palette protocols
     Multi-platform the embed protocols (Use TBitmap?)
 
-    PCM channel "playing" flag and/or a way to track the play position (Writing to these values will require a syscall)
-
-    Stereo audio? Do we make the move?
+    PCM channel "playing" flag
 
     Sprite raster operations
       normal
@@ -138,8 +134,11 @@ type
     procedure WMSize            (var AMessage: TWMSize);             message WM_SIZE;
     procedure WMChar            (var AMessage: TWMChar);             message WM_CHAR;
     procedure WMMouseWheel      (var AMessage: TWMMouseWheel);       message WM_MOUSEWHEEL;
+    procedure WMKeyDown         (var AMessage: TWMKeyDown);          message WM_KEYDOWN;
   public
     class procedure CError(const AMessage: String; AErrorCode: Integer = 0); override;
+
+    procedure Reset; override;
 
     procedure HandleMessage(var AMessage: TMessage); override;
 
@@ -265,6 +264,9 @@ begin
   Passe := Self;
 
   inherited;
+
+  ShowFPS := False;
+  ShowIPS := False;
 
   FHID := THID.Create(Self);
   FVDU := TVDU.Create(Self);
@@ -470,12 +472,36 @@ begin
     FHID.HandleScroll(AMessage.WheelDelta div WHEEL_DELTA);
 end;
 
+procedure TPasse.WMKeyDown(var AMessage: TWMKeyDown);
+begin
+  case AMessage.CharCode of
+    VK_F12:
+    begin
+      if (GetAsyncKeyState(VK_CONTROL) and $8000) <> 0 then
+        CPU.Interrupt(TInterrupts.ID.SysRq, 0)
+      else
+        FRenderer.Debug := (FRenderer.Debug + 1) mod 5;
+    end;
+  else
+    inherited;
+  end;
+end;
+
 class procedure TPasse.CError(const AMessage: String; AErrorCode: Integer);
 begin
   if Assigned(Passe) then
     Passe.Error(AMessage, AErrorCode)
   else
     inherited;
+end;
+
+procedure TPasse.Reset;
+begin
+  inherited;
+
+  FHID.Reset;
+  FSID.Reset;
+  FVDU.Reset;
 end;
 
 function TPasse.HandleScanlineIRQ: Boolean;

@@ -1176,6 +1176,7 @@ procedure TSID.Reset;
 begin
   FRegisters.Reset;
   FSChannels.Reset;
+  FWChannels.Reset;
 
   FPrevSampleL  :=  0;
   FPrevSampleR  :=  0;
@@ -1188,11 +1189,15 @@ begin
       Registers := FRegisters;
       Channel   := @FSChannels^.Channels[i];
 
+      Reset;
+
       Phase     := 0;
       Frequency := Channel.Frequency;
 
       EnvState := TEnvelopeState.Idle;
       EnvValue := 0;
+
+      Playing := False;
 
       Reset;
     end;
@@ -1203,7 +1208,11 @@ begin
       Registers := FRegisters;
       Channel   := @FWChannels^.Channels[i];
 
+      Reset;
+
       Position := 0;
+
+      Playing := False;
 
       Reset;
     end;

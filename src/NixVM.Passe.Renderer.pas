@@ -68,6 +68,8 @@ type
     FStickers:  PStickers;
     FSprites:   PSprites;
 
+    FDebug: Byte;
+
     procedure SortSprites;
     procedure BuildStickerCache;
   public
@@ -83,6 +85,7 @@ type
     procedure RenderConsole;
     procedure RenderSprites (APriority: Boolean);
     procedure RenderStickers(APriority: Boolean);
+    procedure RenderDebug;
 
     property Owner: TPasseHarness read FOwner;
 
@@ -90,12 +93,16 @@ type
     property RenderContext: HGLRC read FRenderContext;
 
     property Texture: GLuint  read FTexture;
+
+    property Debug: Byte read FDebug write FDebug;
   end;
   {$ENDREGION}
 
 implementation
 
 uses
+  NixVM.Core.Strings,
+
   NixVM.Passe;
 
 {$REGION 'Renderer'}
@@ -301,6 +308,9 @@ begin
 
   if FRegisters.Flags.StickersEnabled then
     RenderStickers(True);
+
+  if FDebug <> 0 then
+    RenderDebug;
 
   glBindTexture(GL_TEXTURE_2D, FTexture);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, TFrameBuffer.Width, TFrameBuffer.Height, GL_RGBA, GL_UNSIGNED_BYTE, @FBuffer);
@@ -538,7 +548,6 @@ begin
     end;
   end;
 end;
-
 
 procedure TRenderer.RenderSprites(APriority: Boolean);
   function MinI(A, B: Integer): Integer; inline;
@@ -877,6 +886,340 @@ begin
         end;
       end;
     end;
+end;
+
+{$REGION 'Debug bitmap consts'}
+type
+  TDebugHeader = array[0..4]  of Cardinal;
+  TDebugDigit  = array[0..4]  of Byte;
+  TDebugDigits = array[0..13] of TDebugDigit;
+  TDebugSizes  = array[0..2]  of TDebugHeader;
+
+const
+  DBGHEAP: TDebugHeader = (
+   %10101110111011100,
+   %10101000101010101,
+   %11101100111011100,
+   %10101000101010001,
+   %10101110101010000
+  );
+
+  DBGSTACK: TDebugHeader = (
+   %111011101110011010100,
+   %100001001010100011001,
+   %111001001110100011000,
+   %001001001010100010101,
+   %111001001010011010100
+  );
+
+  DBGFPS: TDebugHeader = (
+   %1110111011100,
+   %1000101010001,
+   %1100111011100,
+   %1000100000101,
+   %1000100011100
+  );
+
+  DBGMIPS: TDebugHeader = (
+   %10001010111011100,
+   %11011010101010001,
+   %10101010111011100,
+   %10001010100000101,
+   %10001010100011100
+  );
+
+  DBGDIGITS: TDebugDigits = (
+   (
+     %111,
+     %101,
+     %101,
+     %101,
+     %111
+   ), (
+     %010,
+     %110,
+     %010,
+     %010,
+     %111
+   ), (
+     %111,
+     %001,
+     %111,
+     %100,
+     %111
+   ), (
+     %111,
+     %001,
+     %011,
+     %001,
+     %111
+   ), (
+     %101,
+     %101,
+     %111,
+     %001,
+     %001
+   ), (
+     %111,
+     %100,
+     %111,
+     %001,
+     %111
+   ), (
+     %010,
+     %100,
+     %111,
+     %101,
+     %111
+   ), (
+     %111,
+     %001,
+     %010,
+     %010,
+     %010
+   ), (
+     %111,
+     %101,
+     %111,
+     %101,
+     %111
+   ), (
+     %111,
+     %101,
+     %111,
+     %001,
+     %001
+   ), (
+     %000,
+     %000,
+     %000,
+     %000,
+     %100
+   ), (
+     %000,
+     %000,
+     %000,
+     %010,
+     %100
+   ), (
+     %001,
+     %001,
+     %010,
+     %100,
+     %100
+   ), (
+     %000,
+     %000,
+     %111,
+     %000,
+     %000
+   )
+  );
+
+  DBGSIZES: TDebugSizes = (
+//    (
+//      %1100101011101110111,
+//      %1010101001001000100,
+//      %1100010001001100111,
+//      %1010010001001000001,
+//      %1100010001001110111
+//    ), (
+    (
+      %110,
+      %101,
+      %110,
+      %101,
+      %110
+    ), (
+      %1010110,
+      %1100101,
+      %1100110,
+      %1010101,
+      %1010110
+    ), (
+      %100010110,
+      %110110101,
+      %101010110,
+      %100010101,
+      %100010110
+    )
+  );
+{$ENDREGION}
+
+procedure TRenderer.RenderDebug;
+  procedure DrawTitle(var X: Integer; Y: Integer; const ATitle: TDebugHeader; ALength: Byte = 20);
+  var
+    Addr: PCardinal;
+    Bit:  Boolean;
+  begin
+    for var dy := 0 to 4 do
+    begin
+      Addr := @FBuffer[((Y + dy) * TFrameBuffer.Width) + X];
+
+      for var dx := 0 to ALength do
+      begin
+        Bit := ((ATitle[dy] shr (ALength - dx)) and %1) = 1;
+
+        if Bit then
+          Addr^ := Addr^ xor $FFFFFF;
+
+        Inc(Addr);
+      end;
+    end;
+
+    Inc(X, ALength + 3);
+  end;
+
+  procedure DrawDigit(var X: Integer; Y: Integer; ANum: Byte);
+  var
+    Addr:   PCardinal;
+    Bit:    Boolean;
+    YOfs:   Integer;
+  begin
+    if ANum = 11 then
+      YOFs := 1
+    else
+      YOfs := 0;
+
+    for var dy := 0 to 4 do
+    begin
+      Addr := @FBuffer[((Y + YOfs + dy) * TFrameBuffer.Width) + X];
+
+      for var dx := 0 to 2 do
+      begin
+        Bit := ((DBGDIGITS[ANum][dy] shr (2 - dx)) and %1) = 1;
+
+        if Bit then
+          Addr^ := Addr^ xor $FFFFFF;
+
+        Inc(Addr);
+      end;
+    end;
+
+    case ANum of
+      10: Inc(X, 2);
+      11: Inc(X, 3);
+      12: Inc(X, 5);
+    else
+      Inc(X, 4);
+    end;
+  end;
+
+  procedure DrawNumStr(var X: Integer; Y: Integer; const ANumStr: String);
+  const
+    Digits = '0123456789.,/-';
+  begin
+    for var c in ANumStr do
+    begin
+      var i := Pos(c, Digits);
+
+      if i > 0 then
+        DrawDigit(X, Y, i - 1);
+    end;
+  end;
+
+  procedure DrawSize(var X: Integer; Y: Integer; ASize: Cardinal);
+  var
+    RSize: Double;
+    SIdx:  Integer;
+    Len:   Integer;
+  begin
+    SIdx  := 0;
+    RSize := ASize;
+
+    while RSize > 900 do
+    begin
+      RSize := RSize / 1024;
+
+      Inc(SIdx);
+
+      if SIdx = 2 then
+        Break;
+    end;
+
+    DrawNumStr(X, Y, FloatToStr(RSize, 2, True));
+
+    case SIdx of
+      0: Len := 3;
+      1: Len := 7;
+      2: Len := 9;
+    else
+      Len := 31;
+    end;
+
+    DrawTitle(X, Y, DBGSIZES[SIdx], Len);
+  end;
+var
+  sx, sy: Integer;
+  dx, dy: Integer;
+begin
+  case FDebug of
+    1:
+    begin
+      sx := 4;
+      sy := 4;
+    end;
+
+    2:
+    begin
+      sx := 215;
+      sy := 4;
+    end;
+
+    3:
+    begin
+      sx := 215;
+      sy := 150;
+    end;
+
+    4:
+    begin
+      sx := 4;
+      sy := 150;
+    end;
+  else
+    Exit;
+  end;
+
+  dx := sx;
+  dy := sy;
+
+  DrawTitle (dx, dy, DBGFPS);
+  DrawNumStr(dx, dy, IntToStr(FOwner.FPS));
+
+  Inc(dy, 7);
+  dx := sx;
+
+  if FOwner.MIPS <= 0.01 then
+  begin
+    Inc(dx, 10);
+
+    DrawTitle (dx, dy, DBGMIPS, 10);
+    DrawNumStr(dx, dy, IntToStr(FOwner.IPS));
+  end
+  else
+  begin
+    DrawTitle (dx, dy, DBGMIPS);
+    DrawNumStr(dx, dy, FloatToStr(FOwner.MIPS, 2, True));
+  end;
+
+  Inc(dy, 7);
+  dx := sx;
+
+  DrawTitle (dx, dy, DBGHEAP);
+  //DrawSize(dx, dy, 1234560000);
+  DrawSize  (dx, dy, FOwner.Memory.Heap.Size - FOwner.Memory.Heap.GetAvailable);
+  DrawNumStr(dx, dy, '/');
+  //DrawSize(dx, dy, 1234560000);
+  DrawSize  (dx, dy, FOwner.Memory.Heap.Size);
+
+  Inc(dy, 7);
+  dx := sx;
+
+  DrawTitle (dx, dy, DBGSTACK);
+  DrawSize  (dx, dy, FOwner.Memory.Size - FOwner.CPU.Registers.SP);
+  DrawNumStr(dx, dy, '/');
+  DrawSize  (dx, dy, FOwner.Memory.Stack.Size);
 end;
 {$ENDREGION}
 

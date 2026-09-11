@@ -37,8 +37,9 @@ type
   {$REGION 'CPU'}
   TCPU = class
   type
-    TOnPanic = procedure of object;
-    TOnYield = procedure of object;
+    TOnPanic = procedure         of object;
+    TOnYield = procedure         of object;
+    TOnSysRq = function: Boolean of object;
   private
     FMemory: TMemory;
 
@@ -50,10 +51,10 @@ type
 
     FCurrentCPUInstruction: TCPUInstruction;
 
-    FSysCallHandler: TSysCalls.THandler;
-
-    FOnPanic: TOnPanic;
-    FOnYield: TOnYield;
+    FOnSysCall: TSysCalls.THandler;
+    FOnPanic:   TOnPanic;
+    FOnYield:   TOnYield;
+    FOnSysRq:   TOnSysRq;
 
     FRNGState: UInt64;
 
@@ -94,10 +95,10 @@ type
     property YieldState: Boolean read FYield;
     property PanicState: Boolean read FPanic;
 
-    property SysCallHandler: TSysCalls.THandler read FSysCallHandler write FSysCallHandler;
-
-    property OnPanic: TOnPanic read FOnPanic write FOnPanic;
-    property OnYield: TOnYield read FOnYield write FOnYield;
+    property OnSysCall: TSysCalls.THandler read FOnSysCall write FOnSysCall;
+    property OnPanic:   TOnPanic           read FOnPanic   write FOnPanic;
+    property OnYield:   TOnYield           read FOnYield   write FOnYield;
+    property OnSysRq:   TOnSysRq           read FOnSysRq   write FOnSysRq;
 
     property StepCount: Integer read FStepCount write FStepCount;
   public
@@ -554,8 +555,8 @@ begin
 
     if not FMemory.IsAddressExecutable(TargetPC) then
     begin
-      if Assigned(FSysCallHandler) then
-        Exit(FSysCallHandler(ASysCallID))
+      if Assigned(FOnSysCall) then
+        Exit(FOnSysCall(ASysCallID))
       else
         Exit(False);
     end;
@@ -569,8 +570,8 @@ begin
     if AMaxInstructions > 0 then
       Execute(AMaxInstructions, TCPUInstruction.TOpCode.RET);
   end
-  else if Assigned(FSysCallHandler) then
-    Result := FSysCallHandler(ASysCallID)
+  else if Assigned(FOnSysCall) then
+    Result := FOnSysCall(ASysCallID)
   else
     Result := False;
 end;
@@ -592,7 +593,13 @@ begin
   TargetPC := FMemory.CoreSystem.Interrupts.Vectors[AInterruptID];
 
   if not FMemory.IsAddressExecutable(TargetPC) then
+  begin
+    if AInterruptID = TInterrupts.ID.SysRq then
+      if Assigned(FOnSysRq) then
+        Exit(FOnSysRq);
+
     Exit;
+  end;
 
   Push(Registers.Flags);
   Push(Registers.PC);
