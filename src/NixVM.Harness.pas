@@ -64,6 +64,7 @@ type
     FCPUBatchCount: Cardinal;
 
     FROMFile: String;
+    FRAMFile: String;
 
     function GetElapsed: Double;   inline;
     function GetFPS:     Cardinal; inline;
@@ -109,6 +110,9 @@ type
     procedure DebugBreak;                            virtual;
     procedure DebugPrint(const AString: AnsiString); virtual;
 
+    procedure LoadNVRAM; virtual;
+    procedure SaveNVRAM; virtual;
+
     property Memory: TMemory<TSystemMemory> read FMemory;
     property CPU:    TCPU                   read FCPU;
 
@@ -126,6 +130,7 @@ type
     property CPUBatchCount: Cardinal read FCPUBatchCount;
 
     property ROMFile: String read FROMFile;
+    property RAMFile: String read FRAMFile write FRAMFile;
   public
     class function GenTargetInc: String;
 
@@ -483,7 +488,7 @@ begin
       if Header.UserSize = 0 then
         Header.UserSize := FileSize(F) - SizeOf(TROMHeader);
 
-      FMemory.Resize(Header.UserSize, Header.HeapSize, Header.StackSize);
+      FMemory.Resize(Header.UserSize, Header.StaticSize, Header.HeapSize, Header.StackSize);
       FMemory.Reset;
 
       if Header.UserSize > 0 then
@@ -501,12 +506,12 @@ begin
       FROMFile := AROMFile;
       Result   := True;
 
-      InitEnvironment(@Header);
-
       if Length(Header.ROM.Name) = 0 then
         FMemory.Heap.LocalPath := ExtractFilePath(FROMFile) + ExtractFileName(FROMFile, True) + '.'
       else
         FMemory.Heap.LocalPath := ExtractFilePath(FROMFile) + Header.ROM.Name + '.';
+
+      InitEnvironment(@Header);
 
       FCPU.Reset;
     finally
@@ -521,7 +526,7 @@ constructor TCustomHarness<TSystemMemory>.Create(const AROMFile: String = '');
 begin
   inherited Create;
 
-  FMemory := TMemory<TSystemMemory>.Create(0, 0, 0);
+  FMemory := TMemory<TSystemMemory>.Create(0, 0, 0, 0);
   FCPU    := TCPU.Create(FMemory);
 
   FCPU.OnSysCall := HandleSysCall;
@@ -576,6 +581,8 @@ begin
   FCPU.Reset;
 
   InitEnvironment;
+
+  LoadNVRAM;
 end;
 
 procedure TCustomHarness<TSystemMemory>.Start;
@@ -607,6 +614,8 @@ begin
 
   FRunning := False;
 
+  SaveNVRAM;
+
   Stopped;
 end;
 
@@ -635,6 +644,75 @@ procedure TCustomHarness<TSystemMemory>.DebugPrint(const AString: AnsiString);
 begin
   if IsConsole then
     Write(AString);
+end;
+
+procedure TCustomHarness<TSystemMemory>.LoadNVRAM;
+var
+  NVData: PByte;
+  F:      file;
+  FSize:  Cardinal;
+  FRead:  Integer;
+begin
+  if Length(FRAMFile) = 0 then
+    FRAMFile := FMemory.Heap.LocalPath + 'nvram';
+
+  if FMemory.StaticSize = 0 then
+    Exit;
+
+  NVData := FMemory.GetSpan(FMemory.StaticAddress, FMemory.StaticSize);
+
+  if not Assigned(NVData) then
+    Error('Invalid NVRAM');
+
+  AssignFile(F, FRAMFile);
+
+  {$I-}System.Reset(F, 1);{$I+}
+
+  if IOResult <> 0 then
+    Exit;
+
+  try
+    FSize := FileSize(F);
+
+    if (FSize > FMemory.StaticSize) then
+      FSize := FMemory.StaticSize;
+
+    BlockRead(F, NVData^, FSize, FRead);
+  finally
+    CloseFile(F);
+  end;
+end;
+
+procedure TCustomHarness<TSystemMemory>.SaveNVRAM;
+var
+  NVData: PByte;
+  F:      file;
+  FWrite: Cardinal;
+  FRead:  Integer;
+begin
+  if Length(FRAMFile) = 0 then
+    FRAMFile := FMemory.Heap.LocalPath + 'nvram';
+
+  if FMemory.StaticSize = 0 then
+    Exit;
+
+  NVData := FMemory.GetSpan(FMemory.StaticAddress, FMemory.StaticSize);
+
+  if not Assigned(NVData) then
+    Error('Invalid NVRAM');
+
+  AssignFile(F, FRAMFile);
+
+  {$I-}System.Rewrite(F, 1);{$I+}
+
+  if IOResult <> 0 then
+    Error('Failed save NVRAM');
+
+  try
+    BlockWrite(F, NVData^, FMemory.StaticSize, FRead);
+  finally
+    CloseFile(F);
+  end;
 end;
 
 class function TCustomHarness<TSystemMemory>.GenTargetInc: String;

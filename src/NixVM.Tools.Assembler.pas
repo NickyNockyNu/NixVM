@@ -119,6 +119,8 @@ type
 implementation
 
 uses
+  NixVM.Tools.Compiler.CodeGen,
+
   NixVM.Tools.Embed.Bitmap,
   NixVM.Tools.Embed.Wav,
 
@@ -188,7 +190,7 @@ begin
     Exit;
 
   if AResize then
-    AMemory.Resize(FIR.Size, ROMHeader.HeapSize, ROMHeader.StackSize)
+    AMemory.Resize(FIR.Size, ROMHeader.StaticSize, ROMHeader.HeapSize, ROMHeader.StackSize)
   else
   begin
     ROMHeader.HeapSize  := AMemory.Heap.Size;
@@ -200,6 +202,15 @@ begin
 
   ROMHeader.UserAddress := AMemory.UserAddress;
   ROMHeader.UserSize    := FIR.Emit(AMemory, AMemory.UserAddress);
+  ROMHeader.StaticSize  := 0;
+
+  for var i := FIR.Count - 1 downto 0 do
+    if (FIR[i].Kind = TIRItem.TKind.&Label) and (FIR[i].Name = TCodeGenerator.StaticPoint) then
+    begin
+      ROMHeader.StaticSize := (ROMHeader.UserSize + ROMHeader.UserSize) - FIR[i].Address;
+      Break;
+    end;
+
   Result := True;
 end;
 
@@ -222,8 +233,16 @@ begin
   if not FIR.ResolveLabels(BaseAddr, FErrors) then
     Exit;
 
-  CodeBytes          := FIR.EmitToBytes;
-  ROMHeader.UserSize := Length(CodeBytes);
+  CodeBytes            := FIR.EmitToBytes;
+  ROMHeader.UserSize   := Length(CodeBytes);
+  ROMHeader.StaticSize := 0;
+
+  for var i := FIR.Count - 1 downto 0 do
+    if (FIR[i].Kind = TIRItem.TKind.&Label) and (FIR[i].Name = TCodeGenerator.StaticPoint) then
+    begin
+      ROMHeader.StaticSize := ROMHeader.UserSize - FIR[i].Address;
+      Break;
+    end;
 
   if AWithHeader then
     AStream.WriteBuffer(ROMHeader, SizeOf(TROMHeader));

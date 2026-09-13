@@ -368,7 +368,16 @@ begin
       if Verbose then
         Write('Saving ', OutputFile, ' ... ');
 
-      Compiler.ROMHeader.UserSize := Compiler.IR.Size;
+      Compiler.ROMHeader.UserSize   := Compiler.IR.Size;
+      Compiler.ROMHeader.StaticSize := 0;
+
+      if Compiler.IR.ResolveLabels(0, nil) then
+        for var i := Compiler.IR.Count - 1 downto 0 do
+          if (Compiler.IR[i].Kind = TIRItem.TKind.&Label) and (Compiler.IR[i].Name = TCodeGenerator.StaticPoint) then
+          begin
+            Compiler.ROMHeader.StaticSize := Compiler.ROMHeader.UserSize - Compiler.IR[i].Address;
+            Break;
+          end;
 
       try
         TFile.WriteAllText(OutputFile, Compiler.ToAsmString);

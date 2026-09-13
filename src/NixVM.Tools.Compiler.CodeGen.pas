@@ -41,7 +41,10 @@ uses
 type
   {$REGION 'CodeGenerator'}
   TCodeGenerator = class
- type
+  const
+    EntryPoint  = '__program_begin_';
+    StaticPoint = '__static_begin_';
+  type
     {$REGION 'LoopContext'}
     TLoopContext = record
       StartLabel:    String;
@@ -3453,61 +3456,98 @@ begin
 end;
 
 procedure TCodeGenerator.GenDataSections;
-  procedure EmitVarDecl(ADecl: TASTDeclaration);
+  procedure EmitVarDecl(ADecl: TASTVarDecl; AStatic: Boolean);
+  var
+    ConstVal: TConstValue;
+    HasInit:  Boolean;
   begin
-    if (ADecl is TASTVarDecl) and ADecl.IsUsed then
+    if (ADecl.IsStatic = AStatic) and (ADecl.IsUsed or AStatic) then
     begin
-      var VarDecl := TASTVarDecl(ADecl);
-      var VType   := FAnalyzer.GlobalScope.Resolve(VarDecl.Names[0]).SymbolType;
-      var VarSize := (VType.Size + 3) and not Cardinal(3);
+      var VType := FAnalyzer.GlobalScope.Resolve(ADecl.Names[0]).SymbolType;
 
-      for var Name in VarDecl.Names do
+      HasInit := (ADecl.InitialValue <> nil) and FAnalyzer.EvaluateConstValue(ADecl.InitialValue, ConstVal);
+
+      for var Name in ADecl.Names do
       begin
         FIR.AddBlankLine;
-        FIR.AddLabel       (TLabelString('_var_' + LowerCase(Name)));
-        FIR.AddDataReserved(VarSize);
+        FIR.AddLabel(TLabelString('_var_' + LowerCase(Name)));
+
+        if HasInit then
+        begin
+          case VType.Kind of
+            TType.TKind.Byte,
+            TType.TKind.Char,
+            TType.TKind.Boolean,
+            TType.TKind.ShortInt:
+              FIR.AddDataBytes([Byte(ConstVal.ValueInt and $FF)]);
+
+            TType.TKind.Word,
+            TType.TKind.SmallInt:
+              FIR.AddDataWords([Word(ConstVal.ValueInt and $FFFF)]);
+
+            TType.TKind.Single:
+            begin
+              if ConstVal.Kind = TConstValue.TKind.Single then
+                FIR.AddDataFloats([ConstVal.ValueFloat])
+              else
+                FIR.AddDataFloats([Single(Integer(ConstVal.ValueInt))]);
+            end;
+
+            TType.TKind.Integer,
+            TType.TKind.Cardinal,
+            TType.TKind.Enum,
+            TType.TKind.Set:
+              FIR.AddDataDWords([ConstVal.ValueInt]);
+          else
+            FIR.AddDataReserved(VType.Size);
+          end;
+        end
+        else
+          FIR.AddDataReserved(VType.Size);
       end;
     end;
   end;
 
-  procedure EmitEmbedDecl(ADecl: TASTDeclaration);
+  procedure EmitEmbedDecl(ADecl: TASTConstDecl; AStatic: Boolean);
   begin
-    if (ADecl is TASTConstDecl) and TASTConstDecl(ADecl).IsEmbed and ADecl.IsUsed then
+    if ADecl.IsEmbed and (ADecl.IsStatic = AStatic) and (ADecl.IsUsed or AStatic) then
     begin
-      var ConstDecl := TASTConstDecl(ADecl);
-
       FIR.AddBlankLine;
-      FIR.AddLabel(TLabelString('_embed_' + LowerCase(ConstDecl.Name)));
-      FIR.AddEmbed(ConstDecl.EmbedFile, ConstDecl.EmbedBytes);
+      FIR.AddLabel(TLabelString('_embed_' + LowerCase(ADecl.Name)));
+      FIR.AddEmbed(ADecl.EmbedFile, ADecl.EmbedBytes);
     end;
   end;
 
+  procedure AddDecls(AStatic: Boolean);
+  begin
+    if FUnits <> nil then
+    begin
+      for var U in FUnits do
+      begin
+        for var Decl in U.InterfaceDecls do
+          if Decl is TASTVarDecl then
+            EmitVarDecl(TASTVarDecl(Decl), AStatic)
+          else if Decl is TASTConstDecl then
+            EmitEmbedDecl(TASTConstDecl(Decl), AStatic);
+
+        for var Decl in U.ImplementationDecls do
+          if Decl is TASTVarDecl then
+            EmitVarDecl(TASTVarDecl(Decl), AStatic)
+          else if Decl is TASTConstDecl then
+            EmitEmbedDecl(TASTConstDecl(Decl), AStatic);
+      end;
+    end;
+
+    for var Decl in FProgram.Declarations do
+      if Decl is TASTVarDecl then
+        EmitVarDecl(TASTVarDecl(Decl), AStatic)
+      else if Decl is TASTConstDecl then
+        EmitEmbedDecl(TASTConstDecl(Decl), AStatic);
+  end;
 begin
   FIR.AddBlankLine;
 
-  if FUnits <> nil then
-  begin
-    for var U in FUnits do
-    begin
-      for var Decl in U.InterfaceDecls do
-      begin
-        EmitVarDecl  (Decl);
-        EmitEmbedDecl(Decl);
-      end;
-
-      for var Decl in U.ImplementationDecls do
-      begin
-        EmitVarDecl  (Decl);
-        EmitEmbedDecl(Decl);
-      end;
-    end;
-  end;
-
-  for var Decl in FProgram.Declarations do
-  begin
-    EmitVarDecl  (Decl);
-    EmitEmbedDecl(Decl);
-  end;
+  AddDecls(False);
 
   for var Pair in FStringTable do
   begin
@@ -3515,6 +3555,11 @@ begin
     FIR.AddLabel     (TLabelString(Pair.Value));
     FIR.AddDataString(AnsiString(Pair.Key), True);
   end;
+
+  FIR.AddBlankLine;
+  FIR.AddLabel(StaticPoint);
+
+  AddDecls(True);
 end;
 
 procedure TCodeGenerator.GenProgram;
@@ -3540,8 +3585,6 @@ procedure TCodeGenerator.GenProgram;
             GenRoutine(TASTRoutineDecl(MNode));
   end;
 
-const
-  EntryPoint = '__program_begin_';
 begin
   FIR.AddInstrRImm(TCPUInstruction.TOpCode.call, EntryPoint);
   FIR.AddInstr(TCPUInstruction.TOpCode.halt);

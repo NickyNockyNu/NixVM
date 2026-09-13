@@ -87,6 +87,9 @@ type
         &VarArgs,
         &Forward,
 
+        // Variable directives
+        &Static,
+
         // Self reference
         &Self,
 
@@ -282,6 +285,8 @@ begin
   FKeywords.Add('interrupt',      TToken.TKind.Interrupt);
   FKeywords.Add('varargs',        TToken.TKind.VarArgs);
   FKeywords.Add('forward',        TToken.TKind.Forward);
+
+  FKeywords.Add('static',         TToken.TKind.Static);
 
   FKeywords.Add('self',           TToken.TKind.Self);
 

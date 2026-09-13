@@ -220,14 +220,17 @@ type
 
     FUserAddress: Cardinal;
     FUserSize:    Cardinal;
+
+    FStaticAddress: Cardinal;
+    FStaticSize:    Cardinal;
   protected
     procedure InitSystemMemoryPointers;      virtual;
     function  GetSystemMemorySize: Cardinal; virtual;
   public
-    constructor Create(AUserSize, AHeapSize, AStackSize: Cardinal);
+    constructor Create(AUserSize, AStaticSize, AHeapSize, AStackSize: Cardinal);
     destructor  Destroy; override;
 
-    procedure Resize(AUserSize, AHeapSize, AStackSize: Cardinal); reintroduce;
+    procedure Resize(AUserSize, AStaticSize, AHeapSize, AStackSize: Cardinal); reintroduce;
 
     procedure Reset; override;
 
@@ -267,6 +270,9 @@ type
 
     property UserAddress: Cardinal read FUserAddress;
     property UserSize:    Cardinal read FUserSize;
+
+    property StaticAddress: Cardinal read FStaticAddress;
+    property StaticSize:    Cardinal read FStaticSize;
   end;
   {$ENDREGION}
 
@@ -1325,11 +1331,11 @@ begin
   Result := 0;
 end;
 
-constructor TMemory.Create(AUserSize, AHeapSize, AStackSize: Cardinal);
+constructor TMemory.Create(AUserSize, AStaticSize, AHeapSize, AStackSize: Cardinal);
 begin
   inherited Create(0);
 
-  Resize(AUserSize, AHeapSize, AStackSize);
+  Resize(AUserSize, AStaticSize, AHeapSize, AStackSize);
 end;
 
 destructor TMemory.Destroy;
@@ -1343,7 +1349,7 @@ begin
   inherited;
 end;
 
-procedure TMemory.Resize(AUserSize, AHeapSize, AStackSize: Cardinal);
+procedure TMemory.Resize(AUserSize, AStaticSize, AHeapSize, AStackSize: Cardinal);
 var
   HeapAddress: Cardinal;
 begin
@@ -1351,6 +1357,9 @@ begin
   FUserSize    := (AUserSize                                       + 3) and not Cardinal(3);
   AHeapSize    := (AHeapSize                                       + 3) and not Cardinal(3);
   AStackSize   := (AStackSize                                      + 3) and not Cardinal(3);
+
+  FStaticSize    := AStaticSize;
+  FStaticAddress := FUserAddress + (AUserSize - AStaticSize);
 
   inherited Resize(FUserAddress + FUserSize + AHeapSize + AStackSize);
 

@@ -74,6 +74,7 @@ type
     ROM:         TVersion;
     UserAddress: Cardinal;
     UserSize:    Cardinal;
+    StaticSize:  Cardinal;
     HeapSize:    Cardinal;
     StackSize:   Cardinal;
 
@@ -198,9 +199,10 @@ begin
   Result := Result +
     '  UserAddress: 0x' + IntToHex(UserAddress, 8) + #13#10 +
 
-    '     UserSize: ' + IntToStr(UserSize) + #13#10 +
-    '     HeapSize: ' + IntToStr(HeapSize) + #13#10 +
-    '    StackSize: ' + IntToStr(StackSize);
+    '     UserSize: ' + IntToStr(UserSize)   + #13#10 +
+    '   StaticSize: ' + IntToStr(StaticSize) + #13#10 +
+    '     HeapSize: ' + IntToStr(HeapSize)   + #13#10 +
+    '    StackSize: ' + IntToStr(StackSize)  + #13#10;
 end;
 {$ENDREGION}
 

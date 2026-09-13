@@ -900,13 +900,19 @@ begin
       Expect(TLexer.TToken.TKind.Colon, 'Expected ":" after field names');
       var FieldType := ParseType;
 
-      var VarDecl := TASTVarDecl.Create(FieldType, nil, StartTok.Line, StartTok.Col);
+      var VarDecl := TASTVarDecl.Create(FieldType, nil, False, StartTok.Line, StartTok.Col);
 
       for var Name in FieldNames do
         VarDecl.Names.Add(Name);
 
       Result.RecordFields.Add(VarDecl);
       Match(TLexer.TToken.TKind.Semicolon);
+
+      if Match(TLexer.TToken.TKind.Static) then
+      begin
+        Error('Record fields cannot be static', FCurTok);
+        Break;
+      end;
     finally
       FieldNames.Free;
     end;
@@ -1824,7 +1830,15 @@ begin
 
       Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after embedded asset declaration');
 
-      var ConstDecl := TASTConstDecl.Create(ConstName, nil, Default(TConstValue), ConstType, StartTok.Line, StartTok.Col);
+      var IsStatic := False;
+
+      if Match(TLexer.TToken.TKind.Static) then
+      begin
+        IsStatic := True;
+        Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after static directive');
+      end;
+
+      var ConstDecl := TASTConstDecl.Create(ConstName, nil, Default(TConstValue), ConstType, IsStatic, StartTok.Line, StartTok.Col);
 
       if IsImg or IsWav then
         RelPath := Protocol  + RelPath;
@@ -1843,7 +1857,15 @@ begin
     var ValueExpr := ParseExpression;
     Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after const declaration');
 
-    ADecls.Add(TASTConstDecl.Create(ConstName, ValueExpr, Default(TConstValue), ConstType, StartTok.Line, StartTok.Col));
+    var IsStatic := False;
+
+    if Match(TLexer.TToken.TKind.Static) then
+    begin
+      IsStatic := True;
+      Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after static directive');
+    end;
+
+    ADecls.Add(TASTConstDecl.Create(ConstName, ValueExpr, Default(TConstValue), ConstType, IsStatic, StartTok.Line, StartTok.Col));
   end;
 end;
 
@@ -1918,7 +1940,15 @@ begin
 
       Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after variable declaration');
 
-      var VarDecl := TASTVarDecl.Create(VarType, InitVal, StartTok.Line, StartTok.Col);
+      var IsStatic := False;
+
+      if Match(TLexer.TToken.TKind.Static) then
+      begin
+        IsStatic := True;
+        Expect(TLexer.TToken.TKind.Semicolon, 'Expected ";" after static directive');
+      end;
+
+      var VarDecl := TASTVarDecl.Create(VarType, InitVal, IsStatic, StartTok.Line, StartTok.Col);
 
       for var Name in VarNames do
         VarDecl.Names.Add(Name);

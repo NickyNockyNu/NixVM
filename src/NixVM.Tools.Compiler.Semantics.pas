@@ -2732,7 +2732,7 @@ begin
     var VarDecl := TASTVarDecl(ADecl);
     var VType   := ResolveType(VarDecl.VarType);
 
-     if VarDecl.InitialValue <> nil then
+    if VarDecl.InitialValue <> nil then
     begin
       var InitVal := VarDecl.InitialValue;
       FoldExpression(InitVal);
@@ -2741,6 +2741,9 @@ begin
 
     for var Name in VarDecl.Names do
     begin
+      if (FCurrentScope <> FGlobalScope) and VarDecl.IsStatic then
+         Error(Format('Variable "%s" cannot be static', [Name]), VarDecl);
+
       var Sym := TSymbol.Create(Name, TSymbol.TKind.Variable, VType);
 
       if FCurrentScope = FGlobalScope then

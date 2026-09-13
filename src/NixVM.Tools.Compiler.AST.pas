@@ -641,37 +641,41 @@ type
     FNames:        TList<String>;
     FVarType:      TASTType;
     FInitialValue: TASTExpression;
+    FStatic:       Boolean;
   public
-    constructor Create(AVarType: TASTType; AInitialValue: TASTExpression = nil; ALine: Integer = 0; ACol: Integer = 0);
+    constructor Create(AVarType: TASTType; AInitialValue: TASTExpression = nil; AStatic: Boolean = False; ALine: Integer = 0; ACol: Integer = 0);
     destructor  Destroy; override;
 
     property Names:        TList<String>  read FNames;
     property VarType:      TASTType       read FVarType      write FVarType;
     property InitialValue: TASTExpression read FInitialValue write FInitialValue;
+    property IsStatic:     Boolean        read FStatic       write FStatic;
   end;
   {$ENDREGION}
 
   {$REGION 'const'}
   TASTConstDecl = class(TASTDeclaration)
   private
-    FName:      String;
-    FConstType: TASTType;
-    FValue:     TASTExpression;
-    FConstVal:  TConstValue;
+    FName:       String;
+    FConstType:  TASTType;
+    FValue:      TASTExpression;
+    FConstVal:   TConstValue;
     FIsEmbed:    Boolean;
     FEmbedFile:  String;
     FEmbedBytes: TBytes;
+    FStatic:     Boolean;
   public
-    constructor Create(const AName: String; AValue: TASTExpression; const AConstVal: TConstValue; AConstType: TASTType = nil; ALine: Integer = 0; ACol: Integer = 0);
+    constructor Create(const AName: String; AValue: TASTExpression; const AConstVal: TConstValue; AConstType: TASTType = nil; AStatic: Boolean = False; ALine: Integer = 0; ACol: Integer = 0);
     destructor  Destroy; override;
 
-    property Name:      String         read FName       write FName;
-    property ConstType: TASTType       read FConstType  write FConstType;
-    property Value:     TASTExpression read FValue      write FValue;
-    property ConstVal:  TConstValue    read FConstVal   write FConstVal;
-    property IsEmbed:    Boolean       read FIsEmbed    write FIsEmbed;
-    property EmbedFile:  String        read FEmbedFile  write FEmbedFile;
-    property EmbedBytes: TBytes        read FEmbedBytes write FEmbedBytes;
+    property Name:       String         read FName       write FName;
+    property ConstType:  TASTType       read FConstType  write FConstType;
+    property Value:      TASTExpression read FValue      write FValue;
+    property ConstVal:   TConstValue    read FConstVal   write FConstVal;
+    property IsEmbed:    Boolean        read FIsEmbed    write FIsEmbed;
+    property EmbedFile:  String         read FEmbedFile  write FEmbedFile;
+    property EmbedBytes: TBytes         read FEmbedBytes write FEmbedBytes;
+    property IsStatic:   Boolean        read FStatic     write FStatic;
   end;
   {$ENDREGION}
 
@@ -1048,7 +1052,7 @@ begin
     if FieldNode is TASTVarDecl then
     begin
       var VD    := TASTVarDecl(FieldNode);
-      var NewVD := TASTVarDecl.Create(VD.VarType.Clone, nil, VD.Line, VD.Col);
+      var NewVD := TASTVarDecl.Create(VD.VarType.Clone, nil, False, VD.Line, VD.Col);
 
       for var N in VD.Names do
         NewVD.Names.Add(N);
@@ -1634,13 +1638,14 @@ begin
 end;
 
 {$REGION 'var'}
-constructor TASTVarDecl.Create(AVarType: TASTType; AInitialValue: TASTExpression; ALine, ACol: Integer);
+constructor TASTVarDecl.Create(AVarType: TASTType; AInitialValue: TASTExpression; AStatic: Boolean; ALine, ACol: Integer);
 begin
   inherited Create(ALine, ACol);
 
   FNames        := TList<String>.Create;
   FVarType      := AVarType;
   FInitialValue := AInitialValue;
+  FStatic       := AStatic;
 end;
 
 destructor TASTVarDecl.Destroy;
@@ -1658,7 +1663,7 @@ end;
 {$ENDREGION}
 
 {$REGION 'const'}
-constructor TASTConstDecl.Create(const AName: String; AValue: TASTExpression; const AConstVal: TConstValue; AConstType: TASTType; ALine, ACol: Integer);
+constructor TASTConstDecl.Create(const AName: String; AValue: TASTExpression; const AConstVal: TConstValue; AConstType: TASTType; AStatic: Boolean; ALine, ACol: Integer);
 begin
   inherited Create(ALine, ACol);
 
@@ -1669,6 +1674,7 @@ begin
   FIsEmbed    := False;
   FEmbedFile  := '';
   FEmbedBytes := nil;
+  FStatic     := AStatic;
 end;
 
 destructor TASTConstDecl.Destroy;

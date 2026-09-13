@@ -170,6 +170,9 @@ type
     UserAddress:  Cardinal;
     UserSize:     Cardinal;
 
+//    StaticAddress: Cardinal;
+//    StaticSize:    Cardinal;
+
     HeapAddress:  Cardinal;
     HeapSize:     Cardinal;
 
