@@ -4,13 +4,9 @@ program testaudio targets passe;
 {$STACK 1k}
 
 const
-  Screen: PFrameBuffer in 'img:passe.png';
-  Ring:   Pointer      in 'wav:ring01.wav';
+  Ring: Pointer in 'wav:ring01.wav';
 
-begin
-  VideoRegisters^.DisplayBuffer := Screen;
-  VideoRegisters^.DrawBuffer    := Screen;
-  
+begin  
   AudioRegisters^.Flags := %11;
   
   with SynthChannels[0] do
@@ -88,6 +84,6 @@ begin
 
     PCMChannels[0].Pan := Mouse^.Y - 90;
 
-    Yield;
+    yield;
   until False;
 end.

@@ -1,6 +1,6 @@
 program harness.passe;
 
-{$APPTYPE CONSOLE}
+{.$APPTYPE CONSOLE}
 {.$R *.res}
 
 uses

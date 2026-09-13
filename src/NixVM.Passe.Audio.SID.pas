@@ -772,6 +772,8 @@ end;
 
 procedure TSID.TPCMChannel.Reset;
 begin
+  Stop;
+
   if Channel.Pitch < 0 then
     Position := Channel.Length - 1
   else
@@ -1174,6 +1176,11 @@ end;
 
 procedure TSID.Reset;
 begin
+  SetLength(FBuffer, 0);
+
+  SetLength(FDelayBufferL, 0);
+  SetLength(FDelayBufferR, 0);
+
   FRegisters.Reset;
   FSChannels.Reset;
   FWChannels.Reset;
@@ -1218,6 +1225,8 @@ begin
     end;
 
   BeepReset;
+
+  FillChar(FBuffer, SizeOf(FBuffer), 0);
 end;
 
 function TSID.Start(AWantErrors: Boolean): Boolean;

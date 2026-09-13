@@ -68,6 +68,8 @@ type
     FStickers:  PStickers;
     FSprites:   PSprites;
 
+    FMouseAttachment: Boolean;
+
     FDebug: Byte;
 
     procedure SortSprites;
@@ -93,6 +95,8 @@ type
     property RenderContext: HGLRC read FRenderContext;
 
     property Texture: GLuint  read FTexture;
+
+    property MouseAttachment: Boolean read FMouseAttachment;
 
     property Debug: Byte read FDebug write FDebug;
   end;
@@ -167,6 +171,8 @@ procedure TRenderer.BuildStickerCache;
       begin
         CX := FOwner.Memory.System.Mouse.X + X;
         CY := FOwner.Memory.System.Mouse.Y + Y;
+
+        FMouseAttachment := True;
 
         Active := True;
       end
@@ -285,8 +291,13 @@ end;
 
 procedure TRenderer.Render;
 begin
+  FMouseAttachment := False;
+
   if FRegisters.Flags.FrameBufferEnabled then
-    RenderDisplayBuffer;
+    RenderDisplayBuffer
+  else
+    ClearBuffer;
+
 
   if FRegisters.Flags.SpritesEnabled then
   begin
@@ -521,7 +532,7 @@ begin
         Bits := Font.Data[Ord(Chr), dy];
 
         if IsBold then
-          Bits := Bits or (Bits shr 1);
+          Bits := Bits or (Bits shl 1);
 
         if DrawCaret then
           Bits := Bits xor Font.Data[Ord(FRegisters^.CaretChar), dy];
@@ -1119,35 +1130,18 @@ procedure TRenderer.RenderDebug;
   end;
 
   procedure DrawSize(var X: Integer; Y: Integer; ASize: Cardinal);
-  var
-    RSize: Double;
-    SIdx:  Integer;
-    Len:   Integer;
+    var
+    S: String;
   begin
-    SIdx  := 0;
-    RSize := ASize;
+    S := SizeToStr(ASize, 2, True);
 
-    while RSize > 900 do
-    begin
-      RSize := RSize / 1024;
+    DrawNumStr(X, Y, S);
 
-      Inc(SIdx);
-
-      if SIdx = 2 then
-        Break;
+    case S[Length(s)] of
+      'B': DrawTitle(X, Y, DBGSIZES[0], 3);
+      'K': DrawTitle(X, Y, DBGSIZES[1], 7);
+      'M': DrawTitle(X, Y, DBGSIZES[2], 9);
     end;
-
-    DrawNumStr(X, Y, FloatToStr(RSize, 2, True));
-
-    case SIdx of
-      0: Len := 3;
-      1: Len := 7;
-      2: Len := 9;
-    else
-      Len := 31;
-    end;
-
-    DrawTitle(X, Y, DBGSIZES[SIdx], Len);
   end;
 var
   sx, sy: Integer;

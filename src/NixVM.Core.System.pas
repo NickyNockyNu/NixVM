@@ -132,7 +132,7 @@ type
   PSystemState = ^TSystemState;
   TSystemState = packed record
   const
-    Prefix = '_SysemState_';
+    Prefix = '_SystemState_';
   type
     {$REGION 'PanicCode'}
     TPanicCode = type Cardinal;
@@ -148,6 +148,7 @@ type
       StackUnderflow       = 6;
       DivideByZero         = 7;
       Exception            = 8;
+      UserInvoked          = 10;
     public
       function ToString: String;
     end;
@@ -363,6 +364,7 @@ begin
     StackOverflow:        Result := Prefix + 'StackOverflow';
     StackUnderflow:       Result := Prefix + 'StackUnderflow';
     DivideByZero:         Result := Prefix + 'DivideByZero';
+    UserInvoked:          Result := Prefix + 'UserInvokedPanic';
   else
     Result := '';//Prefix + IntToStr(Self);
   end;

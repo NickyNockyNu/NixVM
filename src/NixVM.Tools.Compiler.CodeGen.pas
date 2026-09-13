@@ -1312,7 +1312,7 @@ begin
 
   CalleeLower := LowerCase(ACall.CalleeName);
 
-  if (CalleeLower = '_bsetf') or (CalleeLower = '_bclrf') or (CalleeLower = '_btstf') then
+  if (CalleeLower = '_bsetf') or (CalleeLower = '_bclearf') or (CalleeLower = '_btestf') then
   begin
     if ACall.Arguments.Count = 1 then
     begin
@@ -1324,7 +1324,7 @@ begin
 
         if CalleeLower = '_bsetf' then
           FIR.AddInstrRImm(TCPUInstruction.TOpCode.bsetf, LitVal)
-        else if CalleeLower = '_bclrf' then
+        else if CalleeLower = '_bclearf' then
           FIR.AddInstrRImm(TCPUInstruction.TOpCode.bclrf, LitVal)
         else
         begin
@@ -1338,7 +1338,7 @@ begin
 
         if CalleeLower = '_bsetf' then
           FIR.AddInstrRImm(TCPUInstruction.TOpCode.bsetf, TRegisters.ID.R5)
-        else if CalleeLower = '_bclrf' then
+        else if CalleeLower = '_bclearf' then
           FIR.AddInstrRImm(TCPUInstruction.TOpCode.bclrf, TRegisters.ID.R5)
         else
         begin

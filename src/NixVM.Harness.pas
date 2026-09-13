@@ -106,7 +106,7 @@ type
     procedure Start;
     procedure Stop;
 
-    procedure DebugBreak; virtual;
+    procedure DebugBreak;                            virtual;
     procedure DebugPrint(const AString: AnsiString); virtual;
 
     property Memory: TMemory<TSystemMemory> read FMemory;

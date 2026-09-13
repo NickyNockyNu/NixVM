@@ -280,7 +280,7 @@ end;
 
 procedure THID.PollMouse;
 const
-  FMouseEnabled = True;
+  FMouseEnabled = False;
 var
   cp:    TPoint;
   Over:  Boolean;
@@ -329,7 +329,7 @@ begin
       // TODO: Update mouse sprite coord
     end;
 
-    Over := Over and FMouseEnabled;
+    Over := Over and TPasse(FOwner).Renderer.MouseAttachment;
 
     if Over <> FMouseHidden then
     begin

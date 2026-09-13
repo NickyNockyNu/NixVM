@@ -89,6 +89,8 @@ type
     function SysCall  (ASysCallID:   TSysCalls.ID;   AMaxInstructions: Integer = 0): Boolean;
     function Interrupt(AInterruptID: TInterrupts.ID; AMaxInstructions: Integer = 0): Boolean;
 
+    function DecodeInstr(var AAddress: Cardinal): String;
+
     property Memory: TMemory read FMemory;
 
     property HaltState:  Boolean read FHalt;
@@ -235,6 +237,9 @@ function SingleToDWord(AValue: Single):   Cardinal; inline;
 function DWordToSingle(AValue: Cardinal): Single;   inline;
 
 implementation
+
+uses
+  NixVM.Core.Strings;
 
 function SingleToDWord(AValue: Single): Cardinal;
 begin
@@ -610,6 +615,42 @@ begin
 
   if AMaxInstructions > 0 then
     Result := Execute(AMaxInstructions, TCPUInstruction.TOpCode.IRET);
+end;
+
+function TCPU.DecodeInstr(var AAddress: Cardinal): String;
+var
+  Instr: TCPUInstruction;
+  RB:    String;
+
+  function NextDWord: String;
+  begin
+    Result := '$' + IntToHex(Memory.ReadDWord(AAddress), 0);
+    Inc(AAddress, 4);
+  end;
+begin
+  Instr := Memory.ReadWord(AAddress);
+  Inc(AAddress, 2);
+
+  Result := Instr.OpCode.ToString;
+
+  if Instr.RegB = TRegisters.ID.Imm then
+    RB := NextDWord
+  else
+    RB := Instr.RegB.ToString;
+
+  with Instr, OpCode.Definition do
+    case Params of
+      TCPUInstruction.TParameters.R1:      Result := String(Mnemonic) + #32 + RegA.ToString;
+      TCPUInstruction.TParameters.Imm:     Result := String(Mnemonic) + #32 + NextDWord;
+      TCPUInstruction.TParameters.R1Imm:   Result := String(Mnemonic) + #32 + RegA.ToString + ', ' + NextDWord;
+      TCPUInstruction.TParameters.R1R2:    Result := String(Mnemonic) + #32 + RegA.ToString + ', ' + RB;
+      TCPUInstruction.TParameters.RImm:    Result := String(Mnemonic) + #32 + RB;
+      TCPUInstruction.TParameters.R1R2Imm: Result := String(Mnemonic) + #32 + RegA.ToString + ', ' + RB + ', ' + NextDWord;
+      TCPUInstruction.TParameters.Rn:      Result := String(Mnemonic) + #32 + IntToStr(RegA);
+      TCPUInstruction.TParameters.RnImm:   Result := String(Mnemonic) + #32 + IntToStr(RegA) + ', ' + NextDWord;
+    else
+      Result := String(Mnemonic);
+    end;
 end;
 {$ENDREGION}
 

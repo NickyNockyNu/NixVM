@@ -141,6 +141,12 @@ type
     property Owner: TPasseHarness read FOwner;
 
     property Registers: PVideoRegisters read FRegisters;
+    property Palette:   PPalette        read FPalette;
+    property Scanlines: PScanlines      read FScanlines;
+    property Font:      PFont           read FFont;
+    property Console:   PConsole        read FConsole;
+    property Stickers:  PStickers       read FStickers;
+    property Sprites:   PSprites        read FSprites;
   end;
   {$ENDREGION}
 

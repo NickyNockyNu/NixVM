@@ -41,6 +41,9 @@ uses
 type
   {$REGION 'CustomWindowHarness'}
   TCustomWindowHarness<TSystemMemory: record> = class(TCustomPEHarness<TSystemMemory>)
+  const
+    SYSMENU_FULLSCREEN = 1;
+    SYSMENU_SYSRQ      = 2;
   private
     FHandle: HWND;
 
@@ -82,6 +85,7 @@ type
     procedure WMDestroy   (var AMessage: TWMDestroy);    message WM_DESTROY;
     procedure WMKeyDown   (var AMessage: TWMKeyDown);    message WM_KEYDOWN;
     procedure WMSysKeyDown(var AMessage: TWMSysKeyDown); message WM_SYSKEYDOWN;
+    procedure WMSysCommand(var AMessage: TWMSysCommand); message WM_SYSCOMMAND;
   public
     class procedure CError(const AMessage: String; AErrorCode: Integer = 0); override;
           procedure  Error(const AMessage: String; AErrorCode: Integer = 0); override;
@@ -227,6 +231,9 @@ begin
 end;
 
 procedure TCustomWindowHarness<TSystemMemory>.CreateWindow;
+var
+  SysMenu:  HMENU;
+  MenuItem: TMenuItemInfo;
 begin
   if FHandle <> 0 then
     Exit;
@@ -239,6 +246,30 @@ begin
   SetWindowLongPtr(FHandle, GWL_USERDATA, NativeInt(Self));
 
   SetColour(FColour);
+
+  SysMenu := GetSystemMenu(Handle, False);
+
+  FillChar(MenuItem, SizeOf(MenuItem), 0);
+  MenuItem.cbSize := SizeOf(MenuItem);
+
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_ID or MIIM_STRING;
+  MenuItem.fType      := MF_STRING;
+  MenuItem.wID        := SYSMENU_FULLSCREEN;
+  MenuItem.dwTypeData := 'Toggle fullscreen'#9'F10';
+
+  InsertMenuItem(SysMenu, 5, True, MenuItem);
+
+  MenuItem.fMask := MIIM_FTYPE;
+  MenuItem.fType := MF_SEPARATOR;
+
+  InsertMenuItem(SysMenu, 6, True, MenuItem);
+
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_ID or MIIM_STRING;
+  MenuItem.fType      := MF_STRING;
+  MenuItem.wID        := SYSMENU_SYSRQ;
+  MenuItem.dwTypeData := 'SysRq (Restart)'#9'Ctrl+F12';
+
+  InsertMenuItem(SysMenu, 7, True, MenuItem);
 end;
 
 procedure TCustomWindowHarness<TSystemMemory>.DestroyWindow;
@@ -304,7 +335,11 @@ begin
     begin
       if (GetAsyncKeyState(VK_CONTROL) and $8000) <> 0 then
       begin
-        CPU.Interrupt(TInterrupts.ID.SysRq, 0);
+        if (GetAsyncKeyState(VK_SHIFT) and $8000) <> 0 then
+          CPU.Panic(TSystemState.TPanicCode.UserInvoked, 0)
+        else
+          CPU.Interrupt(TInterrupts.ID.SysRq, 0);
+
         AMessage.Result := 1;
       end
       else
@@ -323,6 +358,20 @@ begin
     inherited;
   end;
 end;
+
+procedure TCustomWindowHarness<TSystemMemory>.WMSysCommand(var AMessage: TWMSysCommand);
+begin
+  case AMessage.CmdType of
+    SYSMENU_FULLSCREEN:
+      ToggleFullscreen;
+
+    SYSMENU_SYSRQ:
+      CPU.Interrupt(TInterrupts.ID.SysRq, 0);
+  else
+    inherited;
+  end;
+end;
+
 
 class procedure TCustomWindowHarness<TSystemMemory>.CError(const AMessage: String; AErrorCode: Integer = 0);
 begin

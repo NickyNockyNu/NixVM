@@ -1,4 +1,4 @@
-program testcase targets console;
+program testcase targets passe;
 
 {$DESCRIPTION 'Testing "case" syntax'}
 {$COPYRIGHT '(c) Nik'}

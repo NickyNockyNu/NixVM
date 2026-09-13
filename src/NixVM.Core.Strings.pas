@@ -34,6 +34,8 @@ function StrToInt(const AString: String; ADefault: Integer = 0): Integer;
 
 function FloatToStr(AValue: Single; APrec: Integer = 2; ATrim: Boolean = True): String;
 
+function SizeToStr(ASize: Cardinal; APrec: Integer = 2; ATrim: Boolean = True): String;
+
 function TrimWhitespace(const AString: String): String;
 
 function ParseNumber(const S: String; out AValue: Cardinal): Boolean;
@@ -45,7 +47,17 @@ function ExtractFileName(const AFileName: String; ARemoveExt: Boolean = True): S
 
 function Unescape(const AString: AnsiString): AnsiString;
 
+{$IF DEFINED(MSWINDOWS)}
+function  ClipboardToStr(const ADefault: String = ''): String;
+procedure StrToClipboard(const AValue: String; AUnicode: Boolean = True);
+{$ENDIF}
+
 implementation
+
+{$IF DEFINED(MSWINDOWS)}
+uses
+  Winapi.Windows;
+{$ENDIF}
 
 function Lowercase(const AString: String): String;
 begin
@@ -132,6 +144,33 @@ begin
 
     if (Length(Result) > 0) and (Result[Length(Result)] = '.') then
       Delete(Result, Length(Result), 1);
+  end;
+end;
+
+function SizeToStr(ASize: Cardinal; APrec: Integer = 2; ATrim: Boolean = True): String;
+var
+  RSize: Double;
+  SIdx:  Integer;
+begin
+  SIdx  := 0;
+  RSize := ASize;
+
+  while RSize > 900 do
+  begin
+    RSize := RSize / 1024;
+
+    Inc(SIdx);
+
+    if SIdx = 2 then
+      Break;
+  end;
+
+  Result := FloatToStr(RSize, APrec, ATrim);
+
+  case SIdx of
+    0: Result := Result + 'B';
+    1: Result := Result + 'K';
+    2: Result := Result + 'M';
   end;
 end;
 
@@ -423,5 +462,103 @@ begin
 
   SetLength(Result, Dst - PAnsiChar(Result));
 end;
+
+{$IF DEFINED(MSWINDOWS)}
+function ClipboardToStr(const ADefault: String = ''): String;
+var
+  h: THandle;
+  s: AnsiString;
+begin
+  if not OpenClipboard(0) then
+    Exit(ADefault);
+
+  try
+    if IsClipboardFormatAvailable(CF_UNICODETEXT) then
+    begin
+      h := GetClipboardData(CF_UNICODETEXT);
+
+      if h = 0 then
+        Exit(ADefault);
+
+      Result := PChar(GlobalLock(h));
+      GlobalUnlock(h);
+    end
+    else if IsClipboardFormatAvailable(CF_TEXT) then
+    begin
+      h := GetClipboardData(CF_TEXT);
+
+      if h = 0 then
+        Exit(ADefault);
+
+      s := PAnsiChar(GlobalLock(h));
+      GlobalUnlock(h);
+
+      Result := String(s);
+    end
+    else
+      Result := ADefault;
+  finally
+    CloseClipboard;
+  end;
+end;
+
+procedure StrToClipboard(const AValue: String; AUnicode: Boolean = True);
+var
+  h:   THandle;
+  ptr: Pointer;
+  sw:  String;
+  sa:  AnsiString;
+  l:   Integer;
+  f:   Cardinal;
+begin
+  if AUnicode then
+  begin
+    sw := AValue + #0;
+    l  := Length(sw) * SizeOf(Char);
+    f  := CF_UNICODETEXT;
+  end
+  else
+  begin
+    sa := AnsiString(AValue) + AnsiChar(#0);
+    l  := Length(sa);
+    f  := CF_TEXT;
+  end;
+
+  h := GlobalAlloc(GMEM_MOVEABLE, l);
+  if h = 0 then
+    Exit;
+
+  ptr := GlobalLock(h);
+  if ptr = nil then
+  begin
+    GlobalFree(h);
+    Exit;
+  end;
+
+  try
+    if AUnicode then
+      Move(PChar(sw)^, ptr^, l)
+    else
+      Move(PAnsiChar(sa)^, ptr^, l);
+  finally
+    GlobalUnlock(h);
+  end;
+
+  if OpenClipboard(0) then
+  begin
+    try
+      EmptyClipboard;
+
+      if SetClipboardData(f, h) <> 0 then
+        h := 0;
+    finally
+      CloseClipboard;
+    end;
+  end;
+
+  if h <> 0 then
+    GlobalFree(h);
+end;
+{$ENDIF}
 
 end.

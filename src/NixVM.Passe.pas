@@ -31,20 +31,12 @@ unit NixVM.Passe;
 
     if Yield=Poll then do we switch keyboard reading methods to read from the message queue?
 
-    Fullscreen switch (Part of TCustomWindow harness or here?)
-
-    Panic screen
-
     Screen capture
-
-    Console capture (Ctrl+C -> to clipboard) (and/or add this to the system menu)
-
-    Debug layer
 
     Embed font and palette protocols
     Multi-platform the embed protocols (Use TBitmap?)
 
-    PCM channel "playing" flag
+    Channel "playing" flag
 
     Sprite raster operations
       normal
@@ -74,6 +66,8 @@ uses
   Winapi.OpenGL,
   Winapi.OpenGLext,
 
+  NixVM.Core.Registers,
+  NixVM.Core.Instructions,
   NixVM.Core.System,
   NixVM.Core.Memory,
 
@@ -95,6 +89,11 @@ uses
 type
   {$REGION 'Passe'}
   TPasse = class(TPasseHarness)
+  const
+    SYSMENU_SCALEAUTO   = 3;
+    SYSMENU_SCALECOUNT  = 5;
+    SYSMENU_DEBUG       = SYSMENU_SCALEAUTO + SYSMENU_SCALECOUNT + 1;
+    SYSMENU_COPYCONSOLE = SYSMENU_DEBUG + 5;
   private
     FClientWidth:  Integer;
     FClientHeight: Integer;
@@ -107,10 +106,14 @@ type
 
     FRenderer: TRenderer;
 
+    FDebugMenu: HMENU;
+
     procedure SetScale(AScale: Single);
   protected
     procedure Initialize; override;
     procedure Finalize;   override;
+
+    procedure UpdateDebugMenu;
 
     procedure CreateWindow;  override;
     procedure DestroyWindow; override;
@@ -122,11 +125,10 @@ type
 
     procedure Resized;
 
+    procedure HandlePanic; override;
     procedure HandleYield; override;
 
     function HandleSysCall(ASysCall: TSysCalls.ID): Boolean; override;
-
-    property Renderer: TRenderer read FRenderer;
   protected
     procedure WMWindowPosChanged(var AMessage: TWMWindowPosChanged); message WM_WINDOWPOSCHANGED;
     procedure WMSize            (var AMessage: TWMSize);             message WM_SIZE;
@@ -134,6 +136,7 @@ type
     procedure WMMouseWheel      (var AMessage: TWMMouseWheel);       message WM_MOUSEWHEEL;
     procedure WMKeyDown         (var AMessage: TWMKeyDown);          message WM_KEYDOWN;
     procedure WMEraseBkgnd      (var AMessage: TWMEraseBkgnd);       message WM_ERASEBKGND;
+    procedure WMSysCommand      (var AMessage: TWMSysCommand);       message WM_SYSCOMMAND;
   public
     class procedure CError(const AMessage: String; AErrorCode: Integer = 0); override;
 
@@ -143,6 +146,8 @@ type
 
     function HandleScanlineIRQ: Boolean;
 
+    procedure DebugPrintRegs(const ARegs: TRegisters);
+    procedure DebugBreak;                            override;
     procedure DebugPrint(const AString: AnsiString); override;
 
     property ClientWidth:  Integer read FClientWidth;
@@ -151,6 +156,8 @@ type
     property Viewport: TRect read FViewport;
 
     property Scale: Single read FScale write SetScale;
+
+    property Renderer: TRenderer read FRenderer;
 
     property HID: THID read FHID;
     property SID: TSID read FSID;
@@ -289,9 +296,102 @@ begin
   Passe := nil;
 end;
 
+procedure TPasse.UpdateDebugMenu;
+var
+  MenuItem: TMenuItemInfo;
+begin
+  FillChar(MenuItem, SizeOf(MenuItem), 0);
+  MenuItem.cbSize := SizeOf(MenuItem);
+  MenuItem.fMask  := MIIM_STATE;
+
+  for var i := 0 to 4 do
+  begin
+    if FRenderer.Debug = i then
+      MenuItem.fState := MFS_CHECKED
+    else
+      MenuItem.fState := MFS_UNCHECKED;
+
+    SetMenuItemInfo(FDebugMenu, i, True, MenuItem);
+  end;
+end;
+
 procedure TPasse.CreateWindow;
+var
+  SysMenu:  HMENU;
+  SubMenu:  HMENU;
+  MenuItem: TMenuItemInfo;
 begin
   inherited;
+
+  SysMenu := GetSystemMenu(Handle, False);
+
+  FillChar(MenuItem, SizeOf(MenuItem), 0);
+  MenuItem.cbSize := SizeOf(MenuItem);
+
+  MenuItem.fMask := MIIM_FTYPE or MIIM_ID or MIIM_STRING;
+  MenuItem.fType := MF_STRING;
+
+  SubMenu := CreatePopupMenu;
+
+  MenuItem.dwTypeData := 'Best fit';
+  MenuItem.wID        := SYSMENU_SCALEAUTO;
+  InsertMenuItem(SubMenu, 0, False, MenuItem);
+
+  for var i := 1 to SYSMENU_SCALECOUNT do
+  begin
+    MenuItem.dwTypeData := PChar('x' + IntToStr(i));
+    MenuItem.wID        := SYSMENU_SCALEAUTO + i;
+    InsertMenuItem(SubMenu, 0, False, MenuItem);
+  end;
+
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_STRING or MIIM_SUBMENU;
+  MenuItem.fType      := MF_STRING;
+  MenuItem.dwTypeData := 'Set scale';
+  MenuItem.hSubMenu   := SubMenu;
+  InsertMenuItem(SysMenu, 6, True, MenuItem);
+
+
+  MenuItem.fMask      := MIIM_FTYPE;
+  MenuItem.fType      := MF_SEPARATOR;
+  InsertMenuItem(SysMenu, 7, True, MenuItem);
+
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_STRING or MIIM_ID;
+  MenuItem.fType      := MF_STRING;
+  MenuItem.wID        := SYSMENU_COPYCONSOLE;
+  MenuItem.dwTypeData := 'Copy console'#9'Ctrl+C';
+  InsertMenuItem(SysMenu, 8, True, MenuItem);
+
+  FDebugMenu := CreatePopupMenu;
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_ID or MIIM_STRING or MIIM_STATE;
+  MenuItem.fType      := MF_STRING;
+
+  MenuItem.dwTypeData := 'Off';
+  MenuItem.fState     := MFS_CHECKED;
+  MenuItem.wID        := SYSMENU_DEBUG;
+  InsertMenuItem(FDebugMenu, 0, False, MenuItem);
+
+  MenuItem.dwTypeData := 'Top left';
+  MenuItem.fState     := MFS_UNCHECKED;
+  MenuItem.wID        := SYSMENU_DEBUG + 1;
+  InsertMenuItem(FDebugMenu, 0, False, MenuItem);
+
+  MenuItem.dwTypeData := 'Top right';
+  MenuItem.wID        := SYSMENU_DEBUG + 2;
+  InsertMenuItem(FDebugMenu, 0, False, MenuItem);
+
+  MenuItem.dwTypeData := 'Bottom right';
+  MenuItem.wID        := SYSMENU_DEBUG + 3;
+  InsertMenuItem(FDebugMenu, 0, False, MenuItem);
+
+  MenuItem.dwTypeData := 'Bottom left';
+  MenuItem.wID        := SYSMENU_DEBUG + 4;
+  InsertMenuItem(FDebugMenu, 0, False, MenuItem);
+
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_STRING or MIIM_SUBMENU;
+  MenuItem.fType      := MF_STRING;
+  MenuItem.dwTypeData := 'Debug information';
+  MenuItem.hSubMenu   := FDebugMenu;
+  InsertMenuItem(SysMenu, 10, True, MenuItem);
 end;
 
 procedure TPasse.DestroyWindow;
@@ -370,6 +470,51 @@ begin
 
   if Running then
     FRenderer.Paint;
+end;
+
+procedure TPasse.HandlePanic;
+begin
+  CPU.Halt;
+
+  FHID.Reset;
+  FVDU.Reset;
+  FSID.Reset;
+
+  //FVDU.Clear(4);
+  FVDU.Registers.BorderColour := FVDU.Palette.Colours[4];
+
+  FVDU.Registers.Flags.StickersEnabled    := False;
+  FVDU.Registers.Flags.SpritesEnabled     := False;
+  FVDU.Registers.Flags.FrameBufferEnabled := False;
+
+  FVDU.Registers.CaretChar := #0;
+
+  FSID.Beep(300, 1);
+
+  //FVDU.Registers.CaretAttrib := $07;
+  //DebugPrint(#13#10#32#27#2' SYSTEM PANIC '#27#2#13#10);
+
+  FVDU.Registers.CaretAttrib := $0F or $80;
+  DebugPrint(AnsiString(#13#10#32 + TSystemState.TPanicCode(Memory.CoreSystem.SystemState.PanicCode).ToString + #13#10));
+
+  FVDU.Registers.CaretAttrib := $07;
+  inherited;
+  DebugPrint(#13#10);
+  DebugPrint(AnsiString('  Heap:' + SizeToStr(Memory.Heap.Size - Memory.Heap.GetAvailable) + ' / ' + SizeToStr(Memory.Heap.Size)  + #13#10));
+  DebugPrint(AnsiString(' Stack:' + SizeToStr(Memory.Size - CPU.Registers.SP)              + ' / ' + SizeToStr(Memory.Stack.Size) + #13#10));
+  DebugPrint(#13#10);
+  DebugPrint(AnsiString('  Code:' + IntToStr(Memory.CoreSystem.SystemState.UserCode) + #13#10));
+  DebugPrint(#13#10);
+
+  DebugPrint(' Bytes at PC:'#13#10#13#10'  ');
+  for var i := 0 to 9 do
+  begin
+    DebugPrint(AnsiString(' ' + IntToHex(Memory.ReadByte(CPU.Registers.PC + i), 2)));
+    if (i = 1) or (i = 5) then DebugPrint(' -');
+  end;
+
+  var Addr := CPU.Registers.PC;
+  DebugPrint(#13#10'   ' + AnsiString(CPU.DecodeInstr(Addr)));
 end;
 
 procedure TPasse.HandleYield;
@@ -479,8 +624,22 @@ begin
       inherited;
 
       if AMessage.Result = 0 then
+      begin
         FRenderer.Debug := (FRenderer.Debug + 1) mod 5;
+        UpdateDebugMenu;
+      end;
     end;
+
+    Ord('C'):
+    begin
+      if (GetAsyncKeyState(VK_CONTROL) and $8000) <> 0 then
+      begin
+        FVDU.NeedsConsole;
+        StrToClipboard(String(FVDU.Console.ToString), False);
+      end
+      else
+        inherited;
+    end
   else
     inherited;
   end;
@@ -488,7 +647,32 @@ end;
 
 procedure TPasse.WMEraseBkgnd(var AMessage: TWMEraseBkgnd);
 begin
-  AMessage.Result := 1;
+  if Running then
+    AMessage.Result := 1
+  else
+    inherited;
+end;
+
+procedure TPasse.WMSysCommand(var AMessage: TWMSysCommand);
+begin
+  case AMessage.CmdType of
+    SYSMENU_SCALEAUTO..SYSMENU_SCALEAUTO + SYSMENU_SCALECOUNT:
+      SetScale(AMessage.CmdType - SYSMENU_SCALEAUTO);
+
+    SYSMENU_DEBUG..SYSMENU_DEBUG + 4:
+    begin
+      FRenderer.Debug := AMessage.CmdType - SYSMENU_DEBUG;
+      UpdateDebugMenu;
+    end;
+
+    SYSMENU_COPYCONSOLE:
+    begin
+      FVDU.NeedsConsole;
+      StrToClipboard(String(FVDU.Console.ToString), False);
+    end;
+  else
+    inherited;
+  end;
 end;
 
 class procedure TPasse.CError(const AMessage: String; AErrorCode: Integer);
@@ -512,6 +696,48 @@ function TPasse.HandleScanlineIRQ: Boolean;
 begin
   // TODO: Work out a good instruction budget size for scanline interrupts
   Result := CPU.Interrupt(TPasseMemory.ScanlineIRQID, 10000);
+end;
+
+procedure TPasse.DebugPrintRegs(const ARegs: TRegisters);
+begin
+  with ARegs do
+  begin
+    DebugPrint(' r0:' + AnsiString(IntToHex(R[ 0], 8)) + ' ');
+    DebugPrint(' r1:' + AnsiString(IntToHex(R[ 1], 8)) + ' ');
+    DebugPrint(' r2:' + AnsiString(IntToHex(R[ 2], 8)) + #13#10);
+    DebugPrint(' r3:' + AnsiString(IntToHex(R[ 3], 8)) + ' ');
+    DebugPrint(' r4:' + AnsiString(IntToHex(R[ 4], 8)) + ' ');
+    DebugPrint(' r5:' + AnsiString(IntToHex(R[ 5], 8)) + #13#10);
+    DebugPrint(' r6:' + AnsiString(IntToHex(R[ 6], 8)) + ' ');
+    DebugPrint(' r7:' + AnsiString(IntToHex(R[ 7], 8)) + ' ');
+    DebugPrint(' r8:' + AnsiString(IntToHex(R[ 8], 8)) + #13#10);
+    DebugPrint(' r9:' + AnsiString(IntToHex(R[ 9], 8)) + ' ');
+    DebugPrint('r10:' + AnsiString(IntToHex(R[10], 8)) + ' ');
+    DebugPrint('r11:' + AnsiString(IntToHex(R[11], 8)) + #13#10);
+    DebugPrint('r12:' + AnsiString(IntToHex(R[12], 8)) + ' ');
+    DebugPrint('Imm:' + AnsiString(IntToHex(R[13], 8)) + ' ');
+    DebugPrint(' BP:' + AnsiString(IntToHex(R[14], 8)) + #13#10);
+    DebugPrint(' SP:' + AnsiString(IntToHex(R[15], 8)) + ' ');
+    DebugPrint(' PC:' + AnsiString(IntToHex(PC,    8)) + ' ');
+    DebugPrint('  F:' + AnsiString(Flags.ToString)     + #13#10);
+  end;
+end;
+
+
+procedure TPasse.DebugBreak;
+begin
+  inherited;
+
+  DebugPrint(#13#10);
+  DebugPrintRegs(CPU.Registers);
+  DebugPrint(#13#10);
+
+  DebugPrint(' CPU state:');
+  if CPU.HaltState  then DebugPrint(' halt');
+  if CPU.YieldState then DebugPrint(' yield');
+  if CPU.PanicState then DebugPrint(' panic');
+
+  DebugPrint(#13#10);
 end;
 
 procedure TPasse.DebugPrint(const AString: AnsiString);

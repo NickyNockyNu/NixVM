@@ -12,6 +12,9 @@
         <Projects Include="harness.console.dproj">
             <Dependencies/>
         </Projects>
+        <Projects Include="..\ide\nvmide.dproj">
+            <Dependencies/>
+        </Projects>
     </ItemGroup>
     <ProjectExtensions>
         <Borland.Personality>Default.Personality.12</Borland.Personality>
@@ -47,14 +50,23 @@
     <Target Name="harness_console:Make">
         <MSBuild Projects="harness.console.dproj" Targets="Make"/>
     </Target>
+    <Target Name="nvmide">
+        <MSBuild Projects="..\ide\nvmide.dproj"/>
+    </Target>
+    <Target Name="nvmide:Clean">
+        <MSBuild Projects="..\ide\nvmide.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="nvmide:Make">
+        <MSBuild Projects="..\ide\nvmide.dproj" Targets="Make"/>
+    </Target>
     <Target Name="Build">
-        <CallTarget Targets="nvm;harness_passe;harness_console"/>
+        <CallTarget Targets="nvm;harness_passe;harness_console;nvmide"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="nvm:Clean;harness_passe:Clean;harness_console:Clean"/>
+        <CallTarget Targets="nvm:Clean;harness_passe:Clean;harness_console:Clean;nvmide:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="nvm:Make;harness_passe:Make;harness_console:Make"/>
+        <CallTarget Targets="nvm:Make;harness_passe:Make;harness_console:Make;nvmide:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

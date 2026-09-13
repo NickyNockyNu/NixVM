@@ -668,9 +668,9 @@ begin
   FGlobalScope.Define(TSymbol.Create('pred',     TSymbol.TKind.Function, FuncInt));
   FGlobalScope.Define(TSymbol.Create('assigned', TSymbol.TKind.Function, FuncBool));
 
-  FGlobalScope.Define(TSymbol.Create('_bsetf', TSymbol.TKind.Procedure, ProcType));
-  FGlobalScope.Define(TSymbol.Create('_bclrf', TSymbol.TKind.Procedure, ProcType));
-  FGlobalScope.Define(TSymbol.Create('_btstf', TSymbol.TKind.Function,  FuncBool));
+  FGlobalScope.Define(TSymbol.Create('_bsetf',   TSymbol.TKind.Procedure, ProcType));
+  FGlobalScope.Define(TSymbol.Create('_bclearf', TSymbol.TKind.Procedure, ProcType));
+  FGlobalScope.Define(TSymbol.Create('_btestf',  TSymbol.TKind.Function,  FuncBool));
 end;
 
 procedure TSemanticAnalyzer.Error(const AMsg: String; ANode: TASTNode);
@@ -1755,6 +1755,27 @@ begin
       Exit(FBuiltinTypes['void']);
     end;
   end;
+
+  if (CalleeLower = '_bsetf') or (CalleeLower = '_bclearf') then
+  begin
+    if ACall.Arguments.Count <> 1 then
+      Error(CalleeLower + '() expects exactly 1 argument', ACall)
+    else
+      AnalyzeExpression(ACall.Arguments[0]);
+
+    Exit(FBuiltinTypes['void']);
+  end;
+
+  if CalleeLower = '_btestf' then
+  begin
+    if ACall.Arguments.Count <> 1 then
+      Error('_btstf() expects exactly 1 argument', ACall)
+    else
+      AnalyzeExpression(ACall.Arguments[0]);
+
+    Exit(FBuiltinTypes['boolean']);
+  end;
+
 
   if (CalleeLower = 'sin')  or (CalleeLower = 'cos')   or (CalleeLower = 'tan')   or
      (CalleeLower = 'atan') or (CalleeLower = 'exp')   or (CalleeLower = 'ln')    or

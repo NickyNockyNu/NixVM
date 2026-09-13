@@ -167,6 +167,8 @@ type
     Attribs: array[0..Height - 1, 0..Width - 1] of Byte;
 
     procedure Reset;
+
+    function ToString: AnsiString;
   end;
   {$ENDREGION}
 
@@ -435,7 +437,7 @@ end;
 
 {$REGION 'Font'}
 procedure TFont.Reset;
-{$INCLUDE 'NixVM.Passe.Font.inc'}
+{$INCLUDE 'NixVM.Passe.Font.Thin.inc'}
 begin
   Move(FontData, Data, SizeOf(Data));
 end;
@@ -445,6 +447,46 @@ end;
 procedure TConsole.Reset;
 begin
   FillChar(Self, SizeOf(Self), 0);
+end;
+
+function TConsole.ToString: AnsiString;
+var
+  Line: AnsiString;
+  C:    AnsiChar;
+begin
+  Result := '';
+
+  for var y := 0 to Height - 1 do
+  begin
+    Line := '';
+
+    for var x := 0 to Width - 1 do
+    begin
+      C := Chars[y, x];
+
+      if (C < #32) or (C > #128) then
+        C := #32;
+
+      Line := Line + C;
+    end;
+
+    for var x := Length(Line) downto 1 do
+      if (Line[x] <> #32) then
+      begin
+        Result := Result + Copy(Line, 1, x);
+        Break;
+      end;
+
+    Result := Result + #13#10;
+  end;
+
+  for var x := Length(Result) downto 1 do
+    case Result[x] of
+      #13, #10, #32: ;
+    else
+      Result := Copy(Result, 1, x);
+      Break;
+    end;
 end;
 {$ENDREGION}
 
