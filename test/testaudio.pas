@@ -4,9 +4,13 @@ program testaudio targets passe;
 {$STACK 1k}
 
 const
+  Logo: PFrameBuffer in 'img:Passe.png';
   Ring: Pointer in 'wav:ring01.wav';
 
-begin  
+begin
+  VideoRegisters^.DisplayBuffer := Logo;
+  VideoRegisters^.DrawBuffer := Logo;
+
   AudioRegisters^.Flags := %11;
   
   with SynthChannels[0] do
@@ -37,10 +41,15 @@ begin
     
     Volume := 255;
     Pitch  := 1.0;
-    
+
     Flags := %10;
   end;
-  
+
+  DrawText(10, 10, 'Hello, World!', 15);
+
+  DrawTextEx(11, 21, 'Goodbye, World!', 14, 2, 2, %11);
+  DrawTextEx(10, 20, 'Goodbye, World!', 13, 2, 2, %11);
+
   repeat
     DrawHLine(10, 150, 64, 28);
     DrawHLine(10, 150, AudioRegisters^.OutLevel div 4, 10);
@@ -49,7 +58,7 @@ begin
     begin
       DrawHLine(10, 154 + (i * 2), 64, 28);
       DrawHLine(10, 154 + (i * 2), SynthChannels[i].OutLevel div 4, 10);
-    end;    
+    end;
   
     for var i := 0 to PCMChannelCount - 1 do
     begin
@@ -79,7 +88,7 @@ begin
       SynthChannels[0].Frequency := 100 + (Mouse^.X * 2);
       SynthChannels[0].Volume := Round(255 * (Mouse^.Y / FrameBufferHeight));
     end;
-    
+
     PCMChannels[0].Pitch := ((Mouse^.X * 4) / FrameBufferWidth) - 2;
 
     PCMChannels[0].Pan := Mouse^.Y - 90;

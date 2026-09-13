@@ -65,6 +65,11 @@ type
       DrawTriangle = VDU + 13;
       FillTriangle = VDU + 14;
 
+      DrawText   = VDU + 15;
+      DrawTextEx = VDU + 16;
+
+      Scroll = VDU + 20;
+
       CON = $C0;
 
       Cls    = CON + 0;
@@ -128,7 +133,20 @@ type
 
     procedure DrawTriangle(X1, Y1, X2, Y2, X3, Y3: Integer; AColour: Byte);
     procedure FillTriangle(X1, Y1, X2, Y2, X3, Y3: Integer; AColour: Byte);
-    {$ENDREGION'}
+    {$ENDREGION}
+
+    {$REGION 'Text'}
+    procedure DrawText  (X, Y: Integer; const AText: AnsiString; AColour: Byte);
+    procedure DrawTextEx(X, Y: Integer; const AText: AnsiString; AColour: Byte; AScaleX, AScaleY: Integer; AFlags: Byte);
+    {$ENDREGION}
+
+    {$REGION 'Sprite'}
+
+    {$ENDREGION}
+
+    {$REGION 'Effect'}
+    procedure Scroll(DX, DY: Integer; AClearColour: Integer = -1);
+    {$ENDREGION}
 
     {$REGION 'Console'}
     procedure Cls;
@@ -793,6 +811,231 @@ begin
   end;
 end;
 {$ENDREGION'}
+
+{$REGION 'Text'}
+procedure TVDU.DrawText(X, Y: Integer; const AText: AnsiString; AColour: Byte);
+var
+  CurX: Integer;
+  CurY: Integer;
+  Bits: Byte;
+  Addr: PByte;
+  Idx:  Byte;
+begin
+  if (Y <= -TFont.CharHeight) or (Y >= TFrameBuffer.Height) then
+    Exit;
+
+  NeedsDrawBuffer;
+  NeedsFont;
+
+  for var i := 1 to Length(AText) do
+  begin
+    CurX := X + (i - 1) * 8;
+
+    if (CurX <= -8) or (CurX >= TFrameBuffer.Width) then
+      Continue;
+
+    Idx := Ord(AText[i]);
+
+    for var dy := 0 to TFont.CharHeight - 1 do
+    begin
+      CurY := Y + dy;
+
+      if (Cardinal(CurY) < TFrameBuffer.Height) then
+      begin
+        Bits := FFont.Data[Idx, dy];
+
+        if Bits = 0 then
+          Continue;
+
+        Addr := @FDrawBuffer^.Pixels[CurY * TFrameBuffer.Width + CurX];
+
+        if (Bits and $80) <> 0 then if Cardinal(CurX + 0) < TFrameBuffer.Width then Addr[0] := AColour;
+        if (Bits and $40) <> 0 then if Cardinal(CurX + 1) < TFrameBuffer.Width then Addr[1] := AColour;
+        if (Bits and $20) <> 0 then if Cardinal(CurX + 2) < TFrameBuffer.Width then Addr[2] := AColour;
+        if (Bits and $10) <> 0 then if Cardinal(CurX + 3) < TFrameBuffer.Width then Addr[3] := AColour;
+        if (Bits and $08) <> 0 then if Cardinal(CurX + 4) < TFrameBuffer.Width then Addr[4] := AColour;
+        if (Bits and $04) <> 0 then if Cardinal(CurX + 5) < TFrameBuffer.Width then Addr[5] := AColour;
+        if (Bits and $02) <> 0 then if Cardinal(CurX + 6) < TFrameBuffer.Width then Addr[6] := AColour;
+        if (Bits and $01) <> 0 then if Cardinal(CurX + 7) < TFrameBuffer.Width then Addr[7] := AColour;
+      end;
+    end;
+  end;
+end;
+
+procedure TVDU.DrawTextEx(X, Y: Integer; const AText: AnsiString; AColour: Byte; AScaleX, AScaleY: Integer; AFlags: Byte);
+var
+  CurY:  Integer;
+  CharX: Integer;
+  Bits:  Byte;
+  Idx:   Byte;
+begin
+  if (AScaleX < 1) or (AScaleY < 1) then
+    Exit;
+
+  if (Y <= -(TFont.CharHeight * AScaleY)) or (Y >= TFrameBuffer.Height) then
+    Exit;
+
+  NeedsDrawBuffer;
+  NeedsFont;
+
+  CharX := X;
+
+  for var i := 1 to Length(AText) do
+  begin
+    if (CharX <= -(8 * AScaleX)) or (CharX >= TFrameBuffer.Width) then
+    begin
+      Inc(CharX, 8 * AScaleX);
+      Continue;
+    end;
+
+    Idx := Ord(AText[i]);
+
+    for var dy := 0 to TFont.CharHeight - 1 do
+    begin
+      Bits := FFont.Data[Idx, dy];
+
+      if Bits = 0 then
+        Continue;
+
+      if (AFlags and %01) <> 0 then
+        Bits := Bits or (Bits shl 1);
+
+      if (AFlags and %10) <> 0 then
+      begin
+        if dy < 3 then
+          Bits := Bits shr 1
+        else if dy > (TFont.CharHeight - 3) then
+          Bits := Bits shl 1;
+      end;
+
+      for var sy := 0 to AScaleY - 1 do
+      begin
+        CurY := Y + (dy * AScaleY) + sy;
+
+        if (Cardinal(CurY) < TFrameBuffer.Height) then
+        begin
+          if (Bits and $80) <> 0 then _HLine(CharX + (0 * AScaleX), CurY, AScaleX, AColour);
+          if (Bits and $40) <> 0 then _HLine(CharX + (1 * AScaleX), CurY, AScaleX, AColour);
+          if (Bits and $20) <> 0 then _HLine(CharX + (2 * AScaleX), CurY, AScaleX, AColour);
+          if (Bits and $10) <> 0 then _HLine(CharX + (3 * AScaleX), CurY, AScaleX, AColour);
+          if (Bits and $08) <> 0 then _HLine(CharX + (4 * AScaleX), CurY, AScaleX, AColour);
+          if (Bits and $04) <> 0 then _HLine(CharX + (5 * AScaleX), CurY, AScaleX, AColour);
+          if (Bits and $02) <> 0 then _HLine(CharX + (6 * AScaleX), CurY, AScaleX, AColour);
+          if (Bits and $01) <> 0 then _HLine(CharX + (7 * AScaleX), CurY, AScaleX, AColour);
+        end;
+      end;
+    end;
+
+    Inc(CharX, 8 * AScaleX);
+  end;
+end;
+{$ENDREGION}
+
+{$REGION 'Sprite'}
+
+{$ENDREGION}
+
+{$REGION 'Effect'}
+procedure TVDU.Scroll(DX, DY: Integer; AClearColour: Integer);
+var
+  RowSize: Integer;
+  Y:       Integer;
+  IsWrap:  Boolean;
+  IsClear: Boolean;
+
+  TempRow:    array[0..TFrameBuffer.Width - 1] of Byte;
+  TempScreen: packed array of Byte;
+begin
+  if (DX = 0) and (DY = 0) then
+    Exit;
+
+  IsWrap  := AClearColour = -1;
+  IsClear := AClearColour >  0;
+
+  if IsWrap then
+  begin
+    DX := DX mod TFrameBuffer.Width;
+    DY := DY mod TFrameBuffer.Height;
+  end
+  else if (Abs(DX) >= TFrameBuffer.Width) or (Abs(DY) >= TFrameBuffer.Height) then
+  begin
+    if IsClear then
+      Clear(Byte(AClearColour));
+
+    Exit;
+  end;
+
+  NeedsDrawBuffer;
+
+  if DY < 0 then
+  begin
+    if IsWrap then
+    begin
+      SetLength(TempScreen, -DY * TFrameBuffer.Width);
+      Move(FDrawBuffer.Pixels[0], TempScreen[0], -DY * TFrameBuffer.Width);
+    end;
+
+    Move(FDrawBuffer.Pixels[(-DY) * TFrameBuffer.Width], FDrawBuffer.Pixels[0], (TFrameBuffer.Height + DY) * TFrameBuffer.Width);
+
+    if IsWrap then
+      Move(TempScreen[0], FDrawBuffer.Pixels[(TFrameBuffer.Height + DY) * TFrameBuffer.Width], -DY * TFrameBuffer.Width)
+    else if IsClear then
+      FillChar(FDrawBuffer.Pixels[(TFrameBuffer.Height + DY) * TFrameBuffer.Width], -DY * TFrameBuffer.Width, Byte(AClearColour));
+  end
+
+  else if DY > 0 then
+  begin
+    if IsWrap then
+    begin
+      SetLength(TempScreen, DY * TFrameBuffer.Width);
+      Move(FDrawBuffer.Pixels[(TFrameBuffer.Height - DY) * TFrameBuffer.Width], TempScreen[0], DY * TFrameBuffer.Width);
+    end;
+
+    Move(FDrawBuffer.Pixels[0], FDrawBuffer.Pixels[DY * TFrameBuffer.Width], (TFrameBuffer.Height - DY) * TFrameBuffer.Width);
+
+    if IsWrap then
+      Move(TempScreen[0], FDrawBuffer.Pixels[0], DY * TFrameBuffer.Width)
+    else if IsClear then
+      FillChar(FDrawBuffer.Pixels[0], DY * TFrameBuffer.Width, Byte(AClearColour));
+  end;
+
+  if DX < 0 then
+  begin
+    RowSize := TFrameBuffer.Width + DX;
+
+    for Y := 0 to TFrameBuffer.Height - 1 do
+    begin
+      if IsWrap then
+        Move(FDrawBuffer.Pixels[Y * TFrameBuffer.Width], TempRow[0], -DX);
+
+      Move(FDrawBuffer.Pixels[(Y * TFrameBuffer.Width) + (-DX)], FDrawBuffer.Pixels[Y * TFrameBuffer.Width], RowSize);
+
+      if IsWrap then
+        Move(TempRow[0], FDrawBuffer.Pixels[(Y * TFrameBuffer.Width) + RowSize], -DX)
+      else if IsClear then
+        FillChar(FDrawBuffer.Pixels[(Y * TFrameBuffer.Width) + RowSize], -DX, Byte(AClearColour));
+    end;
+  end
+
+  else if DX > 0 then
+  begin
+    RowSize := TFrameBuffer.Width - DX;
+
+    for Y := 0 to TFrameBuffer.Height - 1 do
+    begin
+      if IsWrap then
+        Move(FDrawBuffer.Pixels[(Y * TFrameBuffer.Width) + RowSize], TempRow[0], DX);
+
+      Move(FDrawBuffer.Pixels[Y * TFrameBuffer.Width], FDrawBuffer.Pixels[(Y * TFrameBuffer.Width) + DX], RowSize);
+
+      if IsWrap then
+        Move(TempRow[0], FDrawBuffer.Pixels[Y * TFrameBuffer.Width], DX)
+      else if IsClear then
+        FillChar(FDrawBuffer.Pixels[Y * TFrameBuffer.Width], DX, Byte(AClearColour));
+    end;
+  end;
+end;
+{$ENDREGION}
 
 {$REGION 'Console'}
 procedure TVDU.Cls;

@@ -38,17 +38,14 @@ unit NixVM.Passe;
 
     Channel "playing" flag
 
-    Sprite raster operations
-      normal
-      add, sub
-      colour/mask (PaletteOfs becomes a the absolute palette index of the colour)
+    Video "Overlay" (PFrameBuffer in the video registers), rendered over the main screen, masked.
 
     DrawBuffer
-      Scroll(x, y)
       DrawText(x, y, text, colour)
       DrawTextEx(x, y, text, colour, scalex, scaley, flipx, flipy, bold, italic, (font?))
       DrawSprite(atlasid, x, y, scalex, scaley)
       DrawSpriteEx(atlasid, x, y, scalex, scaley, pivetx, pivety, angle, rasterop)
+      FillTriangle (optimised version)
 
     Console
       Scroll(x, y)
@@ -90,7 +87,9 @@ type
   {$REGION 'Passe'}
   TPasse = class(TPasseHarness)
   const
-    SYSMENU_SCALEAUTO   = 3;
+    ScanlineBudget = 5000;
+
+    SYSMENU_SCALEAUTO   = 10;
     SYSMENU_SCALECOUNT  = 5;
     SYSMENU_DEBUG       = SYSMENU_SCALEAUTO + SYSMENU_SCALECOUNT + 1;
     SYSMENU_COPYCONSOLE = SYSMENU_DEBUG + 5;
@@ -258,7 +257,6 @@ begin
   Writeln('  _Addr_Atlas          = $', IntToHex(TPasseMemory.SpritesAddress), ';');
   Writeln('  _Addr_Sprites        = $', IntToHex(TPasseMemory.SpritesAddress + (SizeOf(TSprites.TAtlasEntry) * TSprites.AtlasCount)), ';');
 
-
   Writeln('D:\NixVM\bin\nvm.exe stamp D:\NixVM\bin\harness.passe.exe -base $' + IntToHex(Memory.UserAddress, 0) + ' -oem ' + IntToStr(SizeOf(TPasseMemory)));
 {$ENDIF}
 
@@ -271,8 +269,8 @@ begin
 
   inherited;
 
-  ShowFPS := False;
-  ShowIPS := False;
+  ShowFPS := True;
+  ShowIPS := True;
 
   FHID := THID.Create(Self);
   FVDU := TVDU.Create(Self);
@@ -349,7 +347,6 @@ begin
   MenuItem.dwTypeData := 'Set scale';
   MenuItem.hSubMenu   := SubMenu;
   InsertMenuItem(SysMenu, 6, True, MenuItem);
-
 
   MenuItem.fMask      := MIIM_FTYPE;
   MenuItem.fType      := MF_SEPARATOR;
@@ -563,6 +560,11 @@ begin
       TVDU.TSysCalls.DrawTriangle: FVDU.DrawTriangle(R0, R1, R2, R3, R4, R5, R6);
       TVDU.TSysCalls.FillTriangle: FVDU.FillTriangle(R0, R1, R2, R3, R4, R5, R6);
 
+      TVDU.TSysCalls.DrawText:   FVDU.DrawText  (R0, R1, Memory.ReadString(R2), R3);
+      TVDU.TSysCalls.DrawTextEx: FVDU.DrawTextEx(R0, R1, Memory.ReadString(R2), R3, R4, R5, R6);
+
+      TVDU.TSysCalls.Scroll: FVDU.Scroll(R0, R1, R2);
+
       TVDU.TSysCalls.Cls:    FVDU.Cls;
       TVDU.TSysCalls.Write:  FVDU.Write(R0, R1, Memory.ReadString(R2), R3);
       TVDU.TSysCalls.Print:  FVDU.Print(Memory.ReadString(R0));
@@ -619,17 +621,6 @@ end;
 procedure TPasse.WMKeyDown(var AMessage: TWMKeyDown);
 begin
   case AMessage.CharCode of
-    VK_F12:
-    begin
-      inherited;
-
-      if AMessage.Result = 0 then
-      begin
-        FRenderer.Debug := (FRenderer.Debug + 1) mod 5;
-        UpdateDebugMenu;
-      end;
-    end;
-
     Ord('C'):
     begin
       if (GetAsyncKeyState(VK_CONTROL) and $8000) <> 0 then
@@ -694,8 +685,7 @@ end;
 
 function TPasse.HandleScanlineIRQ: Boolean;
 begin
-  // TODO: Work out a good instruction budget size for scanline interrupts
-  Result := CPU.Interrupt(TPasseMemory.ScanlineIRQID, 10000);
+  Result := CPU.Interrupt(TPasseMemory.ScanlineIRQID, ScanlineBudget);
 end;
 
 procedure TPasse.DebugPrintRegs(const ARegs: TRegisters);

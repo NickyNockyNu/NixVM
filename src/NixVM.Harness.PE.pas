@@ -53,9 +53,11 @@ type
     procedure Initialize; override;
 
     function LoadROMFromBuffer  (const ABuffer: Pointer; ASize: Cardinal):           Boolean;
-    function LoadROMFromResource(const AResourceName: String = DefaultResourceName): Boolean;
+    function LoadROMFromResource(AResourceName: String = DefaultResourceName): Boolean;
   public
     constructor Create(const AROMFile: String = ''; const AResourceName: String = DefaultResourceName);
+
+    procedure HardReset; override;
 
     property IsEmbeddedROM: Boolean read FIsEmbeddedROM;
     property ResourceName:  String  read FResourceName;
@@ -159,14 +161,15 @@ begin
   Result := True;
 end;
 
-function TCustomPEHarness<TSystemMemory>.LoadROMFromResource(const AResourceName: String): Boolean;
+function TCustomPEHarness<TSystemMemory>.LoadROMFromResource(AResourceName: String): Boolean;
 var
   HResInfo: HRSRC;
   HResData: HGLOBAL;
   PRes:     Pointer;
   ResSize:  DWORD;
 begin
-  Result := False;
+  Result        := False;
+  FResourceName := '';
 
   HResInfo := FindResource(SysInit.HInstance, PChar(AResourceName), RT_RCDATA);
   if HResInfo = 0 then
@@ -185,6 +188,9 @@ begin
     Exit;
 
   Result := LoadROMFromBuffer(PRes, ResSize);
+
+  if Result then
+    FResourceName := AResourceName;
 end;
 
 constructor TCustomPEHarness<TSystemMemory>.Create(const AROMFile: String; const AResourceName: String);
@@ -194,6 +200,26 @@ begin
 
   inherited Create(AROMFile);
 end;
+
+procedure TCustomPEHarness<TSystemMemory>.HardReset;
+begin
+  if FIsEmbeddedROM then
+  begin
+    SaveNVRAM;
+
+    if not LoadROMFromResource(FResourceName) then
+    begin
+      inherited;
+      Exit;
+    end;
+
+    Reset;
+  end
+  else
+    inherited;
+end;
+
+
 {$ENDREGION}
 
 end.

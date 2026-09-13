@@ -1,4 +1,4 @@
-program teststatic targets console;
+program teststatic targets passe;
 
 type
   TTest = record

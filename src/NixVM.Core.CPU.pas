@@ -106,7 +106,7 @@ type
   public
     Registers: TRegisters;
 
-  private
+  public
     {$REGION 'Instructions'}
     procedure DoHALT;  inline;
     procedure DoYIELD; inline;

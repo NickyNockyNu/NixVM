@@ -44,6 +44,11 @@ type
   const
     SYSMENU_FULLSCREEN = 1;
     SYSMENU_SYSRQ      = 2;
+    SYSMENU_SOFTRESET  = 3;
+    SYSMENU_HARDRESET  = 4;
+    SYSMENU_YIELD      = 5;
+    SYSMENU_HALT       = 6;
+    SYSMENU_PANIC      = 7;
   private
     FHandle: HWND;
 
@@ -117,6 +122,7 @@ function DwmSetWindowAttribute(hwnd: HWND; dwAttribute: DWORD; pvAttribute: LPCV
 implementation
 
 uses
+  NixVM.Core.CPU,
   NixVM.Core.ROM,
   NixVM.Core.System,
   NixVM.Core.Strings;
@@ -233,6 +239,7 @@ end;
 procedure TCustomWindowHarness<TSystemMemory>.CreateWindow;
 var
   SysMenu:  HMENU;
+  SubMenu:  HMENU;
   MenuItem: TMenuItemInfo;
 begin
   if FHandle <> 0 then
@@ -256,19 +263,62 @@ begin
   MenuItem.fType      := MF_STRING;
   MenuItem.wID        := SYSMENU_FULLSCREEN;
   MenuItem.dwTypeData := 'Toggle fullscreen'#9'F10';
-
   InsertMenuItem(SysMenu, 5, True, MenuItem);
 
   MenuItem.fMask := MIIM_FTYPE;
   MenuItem.fType := MF_SEPARATOR;
-
   InsertMenuItem(SysMenu, 6, True, MenuItem);
+
+  SubMenu := CreatePopupMenu;
 
   MenuItem.fMask      := MIIM_FTYPE or MIIM_ID or MIIM_STRING;
   MenuItem.fType      := MF_STRING;
   MenuItem.wID        := SYSMENU_SYSRQ;
-  MenuItem.dwTypeData := 'SysRq (Restart)'#9'Ctrl+F12';
+  MenuItem.dwTypeData := 'SysRq'#9'Ctrl+F12';
+  InsertMenuItem(SubMenu, 0, True, MenuItem);
 
+  MenuItem.fMask      := MIIM_FTYPE;
+  MenuItem.fType      := MF_SEPARATOR;
+  InsertMenuItem(SubMenu, 1, True, MenuItem);
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_ID or MIIM_STRING;
+  MenuItem.fType      := MF_STRING;
+
+  MenuItem.wID        := SYSMENU_SOFTRESET;
+  MenuItem.dwTypeData := 'Soft reset'#9'Ctrl+Alt+F12';
+  InsertMenuItem(SubMenu, 2, True, MenuItem);
+
+  MenuItem.wID        := SYSMENU_HARDRESET;
+  MenuItem.dwTypeData := 'Hard reset'#9'Shift+Ctrl+Alt+F12';
+  InsertMenuItem(SubMenu, 3, True, MenuItem);
+
+  MenuItem.fMask      := MIIM_FTYPE;
+  MenuItem.fType      := MF_SEPARATOR;
+  InsertMenuItem(SubMenu, 4, True, MenuItem);
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_ID or MIIM_STRING;
+  MenuItem.fType      := MF_STRING;
+
+  MenuItem.wID        := SYSMENU_YIELD;
+  MenuItem.dwTypeData := 'Force yield'#9'Shift+F5';
+  InsertMenuItem(SubMenu, 5, True, MenuItem);
+
+  MenuItem.fMask      := MIIM_FTYPE;
+  MenuItem.fType      := MF_SEPARATOR;
+  InsertMenuItem(SubMenu, 6, True, MenuItem);
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_ID or MIIM_STRING;
+  MenuItem.fType      := MF_STRING;
+
+  MenuItem.wID        := SYSMENU_HALT;
+  MenuItem.dwTypeData := 'Halt';
+  InsertMenuItem(SubMenu, 7, True, MenuItem);
+
+  MenuItem.wID        := SYSMENU_PANIC;
+  MenuItem.dwTypeData := 'Invoke panic';
+  InsertMenuItem(SubMenu, 8, True, MenuItem);
+
+  MenuItem.fMask      := MIIM_FTYPE or MIIM_STRING or MIIM_SUBMENU;
+  MenuItem.fType      := MF_STRING;
+  MenuItem.dwTypeData := 'System';
+  MenuItem.hSubMenu   := SubMenu;
   InsertMenuItem(SysMenu, 7, True, MenuItem);
 end;
 
@@ -331,16 +381,25 @@ end;
 procedure TCustomWindowHarness<TSystemMemory>.WMKeyDown(var AMessage: TWMKeyDown);
 begin
   case AMessage.CharCode of
+    VK_F5:
+      if (GetAsyncKeyState(VK_SHIFT) and $8000) <> 0 then
+        CPU.DoYIELD
+      else
+        inherited;
+
     VK_F12:
     begin
       if (GetAsyncKeyState(VK_CONTROL) and $8000) <> 0 then
       begin
-        if (GetAsyncKeyState(VK_SHIFT) and $8000) <> 0 then
-          CPU.Panic(TSystemState.TPanicCode.UserInvoked, 0)
+        if (GetAsyncKeyState(VK_MENU) and $8000) <> 0 then
+        begin
+          if (GetAsyncKeyState(VK_SHIFT) and $8000) <> 0 then
+            HardReset
+          else
+            SoftReset;
+        end
         else
-          CPU.Interrupt(TInterrupts.ID.SysRq, 0);
-
-        AMessage.Result := 1;
+          CPU.Interrupt(TInterrupts.ID.SysRq);
       end
       else
         inherited;
@@ -366,7 +425,22 @@ begin
       ToggleFullscreen;
 
     SYSMENU_SYSRQ:
-      CPU.Interrupt(TInterrupts.ID.SysRq, 0);
+      CPU.Interrupt(TInterrupts.ID.SysRq);
+
+    SYSMENU_SOFTRESET:
+      SoftReset;
+
+    SYSMENU_HARDRESET:
+      HardReset;
+
+    SYSMENU_YIELD:
+      CPU.DoYIELD;
+
+    SYSMENU_HALT:
+      CPU.Halt;
+
+    SYSMENU_PANIC:
+      CPU.Panic(TSystemState.TPanicCode.UserInvoked, 0);
   else
     inherited;
   end;

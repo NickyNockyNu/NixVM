@@ -1274,7 +1274,6 @@ begin
 
   LocalName := Sanitise(String(FMemory.ReadString(AName)));
 
-
   if Length(LocalName) = 0 then
     Exit;
 

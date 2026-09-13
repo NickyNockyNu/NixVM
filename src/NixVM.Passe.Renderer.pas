@@ -596,9 +596,10 @@ procedure TRenderer.RenderSprites(APriority: Boolean);
     if (AVal > 0) and (Frac(AVal) <> 0) then
       Inc(Result);
   end;
-
 var
   Palette: PPalette;
+  SpriteX: Single;
+  SpriteY: Single;
 
   procedure DrawSpriteAxisAligned(const ASprite: TSprites.TSprite; const AAtlas: TSprites.TAtlasEntry; const ASrcData: Pointer);
   var
@@ -613,7 +614,10 @@ var
     sx, sy:           Integer;
     ColIdx, PalIdx:   Byte;
     SrcRow:           PByte;
-    OutRow:           PCardinal;
+    OutRow:           PColour;
+    BlendMode:        TColour.TBlendMode;
+    MaskCol:          TColour;
+    NotTrans:         Boolean;
   begin
     SrcW := AAtlas.Width;
     SrcH := AAtlas.Height;
@@ -624,11 +628,14 @@ var
     if (DstW <= 0) or (DstH <= 0) then
       Exit;
 
+    BlendMode :=     ASprite.Flags.BlendMode;
+    NotTrans  := not ASprite.Flags.Transparent;
+
     OffsetX := Round(DstW * ASprite.PivotX);
     OffsetY := Round(DstH * ASprite.PivotY);
 
-    DstX1 := Round(ASprite.X) - OffsetX;
-    DstY1 := Round(ASprite.Y) - OffsetY;
+    DstX1 := Round(SpriteX) - OffsetX;
+    DstY1 := Round(SpriteY) - OffsetY;
     DstX2 := DstX1 + DstW - 1;
     DstY2 := DstY1 + DstH - 1;
 
@@ -642,6 +649,8 @@ var
 
     IsFlipX := ASprite.Flags.FlipX xor (ASprite.ScaleX < 0);
     IsFlipY := ASprite.Flags.FlipY xor (ASprite.ScaleY < 0);
+
+    MaskCol := Palette.Colours[Byte(ASprite.PaletteOffset)];
 
     for var dy := ClipY1 to ClipY2 do
     begin
@@ -661,10 +670,21 @@ var
 
         ColIdx := PByte(NativeInt(SrcRow) + sx)^;
 
-        if ColIdx <> 0 then
+        if NotTrans or (ColIdx <> 0) then
         begin
           PalIdx := Byte(ColIdx + ASprite.PaletteOffset);
-          OutRow[dx] := Palette.Colours[PalIdx].RGBA;
+
+          case BlendMode of
+            TColour.TBlendMode.Add:      OutRow[dx] := OutRow[dx].Add     (Palette.Colours[PalIdx]);
+            TColour.TBlendMode.Sub:      OutRow[dx] := OutRow[dx].Sub     (Palette.Colours[PalIdx]);
+            TColour.TBlendMode.Blend:    OutRow[dx] := OutRow[dx].Blend   (Palette.Colours[PalIdx]);
+            TColour.TBlendMode.Multiply: OutRow[dx] := OutRow[dx].Multiply(Palette.Colours[PalIdx]);
+            TColour.TBlendMode.Screen:   OutRow[dx] := OutRow[dx].Screen  (Palette.Colours[PalIdx]);
+            TColour.TBlendMode.Mask:     OutRow[dx] := MaskCol;
+            TColour.TBlendMode.XOR:      OutRow[dx].RGBA := OutRow[dx].RGBA xor Palette.Colours[PalIdx].RGBA;
+          else
+            OutRow[dx] := Palette.Colours[PalIdx];
+          end;
         end;
       end;
     end;
@@ -689,12 +709,15 @@ var
     u, v:                 Single;
     iu, iv:               Integer;
     ColIdx, PalIdx:       Byte;
-    OutRow:               PCardinal;
+    OutRow:               PColour;
+    BlendMode:            TColour.TBlendMode;
+    MaskCol:              TColour;
+    NotTrans:             Boolean;
 
     procedure RotatePoint(LX, LY: Single; out RX, RY: Single);
     begin
-      RX := ASprite.X + (LX * CosA - LY * SinA);
-      RY := ASprite.Y + (LX * SinA + LY * CosA);
+      RX := SpriteX + (LX * CosA - LY * SinA);
+      RY := SpriteY + (LX * SinA + LY * CosA);
     end;
   begin
     SrcW := AAtlas.Width;
@@ -705,6 +728,9 @@ var
 
     if (ScaleX < 0.0001) or (ScaleY < 0.0001) then
       Exit;
+
+    BlendMode :=     ASprite.Flags.BlendMode;
+    NotTrans  := not ASprite.Flags.Transparent;
 
     Rad  := ASprite.Angle * (PI / 180.0);
     CosA := Cos(Rad);
@@ -740,11 +766,13 @@ var
     if (MinX > MaxX) or (MinY > MaxY) then
       Exit;
 
-    dx0 := (MinX + 0.5) - ASprite.X;
-    dy0 := (MinY + 0.5) - ASprite.Y;
+    dx0 := (MinX + 0.5) - SpriteX;
+    dy0 := (MinY + 0.5) - SpriteY;
 
     u0 := PivX + (dx0 * du_dx) + (dy0 * du_dy);
     v0 := PivY + (dx0 * dv_dx) + (dy0 * dv_dy);
+
+    MaskCol := Palette.Colours[Byte(ASprite.PaletteOffset)];
 
     for var dy := MinY to MaxY do
     begin
@@ -760,10 +788,22 @@ var
           iv := Trunc(v);
 
           ColIdx := PByte(NativeInt(ASrcData) + (iv * AAtlas.Stride) + iu)^;
-          if ColIdx <> 0 then
+
+          if NotTrans or (ColIdx <> 0) then
           begin
             PalIdx := Byte(ColIdx + ASprite.PaletteOffset);
-            OutRow[dx] := Palette.Colours[PalIdx].RGBA;
+
+            case BlendMode of
+              TColour.TBlendMode.Add:      OutRow[dx] := OutRow[dx].Add     (Palette.Colours[PalIdx]);
+              TColour.TBlendMode.Sub:      OutRow[dx] := OutRow[dx].Sub     (Palette.Colours[PalIdx]);
+              TColour.TBlendMode.Blend:    OutRow[dx] := OutRow[dx].Blend   (Palette.Colours[PalIdx]);
+              TColour.TBlendMode.Multiply: OutRow[dx] := OutRow[dx].Multiply(Palette.Colours[PalIdx]);
+              TColour.TBlendMode.Screen:   OutRow[dx] := OutRow[dx].Screen  (Palette.Colours[PalIdx]);
+              TColour.TBlendMode.Mask:     OutRow[dx] := MaskCol;
+              TColour.TBlendMode.XOR:      OutRow[dx].RGBA := OutRow[dx].RGBA xor Palette.Colours[PalIdx].RGBA;
+            else
+              OutRow[dx] := Palette.Colours[PalIdx];
+            end;
           end;
         end;
 
@@ -807,6 +847,17 @@ begin
     SrcData := FOwner.Memory.GetSpan(Atlas^.Address, 1);
     if SrcData = nil then
       Continue;
+
+    if Sprite.Flags.MouseAttach then
+    begin
+      SpriteX := FOwner.Memory.System.Mouse.X + Sprite.X;
+      SpriteY := FOwner.Memory.System.Mouse.Y + Sprite.Y;
+    end
+    else
+    begin
+      SpriteX := Sprite.X;
+      SpriteY := Sprite.Y;
+    end;
 
     if Abs(Sprite^.Angle) < 0.001 then
       DrawSpriteAxisAligned(Sprite^, Atlas^, SrcData)

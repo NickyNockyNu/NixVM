@@ -168,7 +168,7 @@ type
 
       procedure Process(ABuffer: PSingle; ASampleCount, ASampleRate: Integer);
 
-      procedure Reset;
+      procedure Reset(AStop: Boolean);
 
       procedure Play(AReset: Boolean = True);
       procedure Stop;
@@ -677,7 +677,9 @@ begin
     Position := Channel.Position;
 
     if Position >= Channel.Length then
-      Position := Channel.Length - 1;
+      Position := Channel.Length - 1
+    else if Position < 0 then
+      Position := 0;
   end;
 
   if not Playing or (Channel.Pitch = 0) then
@@ -715,7 +717,7 @@ begin
         if FadeVol <= 0.0 then
         begin
           FadeVol := 0.0;
-          Reset;
+          Reset(False);
           FadeState := 2;
         end;
       end
@@ -770,9 +772,10 @@ begin
   Channel^.OutLevel := Round($FF * Level);
 end;
 
-procedure TSID.TPCMChannel.Reset;
+procedure TSID.TPCMChannel.Reset(AStop: Boolean);
 begin
-  Stop;
+  if AStop then
+    Stop;
 
   if Channel.Pitch < 0 then
     Position := Channel.Length - 1
@@ -790,7 +793,7 @@ begin
         FadeState := 1
       else
       begin
-        Reset;
+        Reset(True);
 
         FadeVol   := 0.0;
         FadeState := 2;
@@ -800,7 +803,7 @@ begin
   else
   begin
     if AReset then
-      Reset;
+      Reset(True);
   end;
 
   Playing := True;
@@ -808,7 +811,7 @@ end;
 
 procedure TSID.TPCMChannel.Stop;
 begin
-  Channel^.OutLevel := 0;
+  //Channel^.OutLevel := 0;
   Playing := False;
 end;
 {$ENDREGION}
@@ -1176,11 +1179,6 @@ end;
 
 procedure TSID.Reset;
 begin
-  SetLength(FBuffer, 0);
-
-  SetLength(FDelayBufferL, 0);
-  SetLength(FDelayBufferR, 0);
-
   FRegisters.Reset;
   FSChannels.Reset;
   FWChannels.Reset;
@@ -1215,18 +1213,21 @@ begin
       Registers := FRegisters;
       Channel   := @FWChannels^.Channels[i];
 
-      Reset;
+      Reset(False);
 
       Position := 0;
 
       Playing := False;
 
-      Reset;
+      Reset(False);
     end;
 
   BeepReset;
 
-  FillChar(FBuffer, SizeOf(FBuffer), 0);
+  FillChar(FBuffer[0], Length(FBuffer) * SizeOf(Single), 0);
+
+  FillChar(FDelayBufferL[0], Length(FDelayBufferL) * SizeOf(Single), 0);
+  FillChar(FDelayBufferR[0], Length(FDelayBufferR) * SizeOf(Single), 0);
 end;
 
 function TSID.Start(AWantErrors: Boolean): Boolean;
@@ -1274,6 +1275,9 @@ begin
   for var i := 0 to TSynthChannels.Count - 1 do
     FPCMChannels[i].Stop;
 
+  if Assigned(FAudioClient) then
+    FAudioClient.Stop;
+
   if FThreadHandle <> 0 then
   begin
     FTerminated := True;
@@ -1285,9 +1289,6 @@ begin
     CloseHandle(FThreadHandle);
     FThreadHandle := 0;
   end;
-
-  if Assigned(FAudioClient) then
-    FAudioClient.Stop;
 end;
 
 procedure TSID.Update;

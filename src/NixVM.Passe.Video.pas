@@ -28,7 +28,25 @@ interface
 type
   {$REGION 'Colour'}
   PColour = ^TColour;
-  TColour = packed record case Cardinal of
+  TColour = packed record
+  type
+    TBlendMode = (
+      Normal,
+      Add,
+      Sub,
+      Blend,
+      Multiply,
+      Screen,
+      Mask,
+      &XOR
+    );
+  public
+    function Add     (AColour: TColour): TColour; inline;
+    function Sub     (AColour: TColour): TColour; inline;
+    function Blend   (AColour: TColour): TColour; inline;
+    function Multiply(AColour: TColour): TColour; inline;
+    function Screen  (AColour: TColour): TColour; inline;
+  case Cardinal of
     0: (RGBA: Cardinal);
     1: (R, G, B, A: Byte);
   end;
@@ -277,17 +295,28 @@ type
 
       TFlagsHelper = record helper for TFlags
       const
-        MaskEnabled = %00000001;
-        MaskFlipX   = %00000010;
-        MaskFlipY   = %00000100;
+        MaskEnabled     = %00000001;
+        MaskFlipX       = %00000010;
+        MaskFlipY       = %00000100;
+        MaskTransparent = %00001000;
+        MaskMouseAttach = %00010000;
       private
         function  GetFlag(AMask: Integer): Boolean;          inline;
         procedure SetFlag(AMask: Integer; AEnable: Boolean); inline;
+
+        function  GetBlendMode:       TColour.TBlendMode;  inline;
+        procedure SetBlendMode(AMode: TColour.TBlendMode); inline;
       public
         property Enabled: Boolean index MaskEnabled read GetFlag write SetFlag;
 
         property FlipX: Boolean index MaskFlipX read GetFlag write SetFlag;
         property FlipY: Boolean index MaskFlipY read GetFlag write SetFlag;
+
+        property Transparent: Boolean index MaskTransparent read GetFlag write SetFlag;
+
+        property MouseAttach: Boolean index MaskMouseAttach read GetFlag write SetFlag;
+
+        property BlendMode: TColour.TBlendMode read GetBlendMode write SetBlendMode;
       end;
       {$ENDREGION}
     public
@@ -318,6 +347,48 @@ type
   {$ENDREGION}
 
 implementation
+
+{$REGION 'Colour'}
+function TColour.Add(AColour: TColour): TColour;
+begin
+  Result.R := R + AColour.R; if Result.R < R then Result.R := $FF;
+  Result.G := G + AColour.G; if Result.G < G then Result.G := $FF;
+  Result.B := B + AColour.B; if Result.B < B then Result.B := $FF;
+  Result.A := A;
+end;
+
+function TColour.Sub(AColour: TColour): TColour;
+begin
+  Result.R := R - AColour.R; if Result.R > R then Result.R := $00;
+  Result.G := G - AColour.G; if Result.G > G then Result.G := $00;
+  Result.B := B - AColour.B; if Result.B > B then Result.B := $00;
+  Result.A := A;
+end;
+
+function TColour.Blend(AColour: TColour): TColour;
+begin
+  Result.R := (R + AColour.R) shr 1;
+  Result.G := (G + AColour.G) shr 1;
+  Result.B := (B + AColour.B) shr 1;
+  Result.A := A;
+end;
+
+function TColour.Multiply(AColour: TColour): TColour;
+begin
+  Result.R := Byte(Cardinal(R * AColour.R) div 255);
+  Result.G := Byte(Cardinal(G * AColour.G) div 255);
+  Result.B := Byte(Cardinal(B * AColour.B) div 255);
+  Result.A := A;
+end;
+
+function TColour.Screen(AColour: TColour): TColour;
+begin
+  Result.R := 255 - (((255 - R) * (255 - AColour.R)) div 255);
+  Result.G := 255 - (((255 - G) * (255 - AColour.G)) div 255);
+  Result.B := 255 - (((255 - B) * (255 - AColour.B)) div 255);
+  Result.A := A;
+end;
+{$ENDREGION}
 
 {$REGION 'VideoRegisters'}
 {$REGION 'Flags'}
@@ -577,6 +648,16 @@ begin
   else
     Self := Self and not AMask;
 end;
+
+function TSprites.TSprite.TFlagsHelper.GetBlendMode: TColour.TBlendMode;
+begin
+  Result := TColour.TBlendMode((Self and %11100000) shr 5);
+end;
+
+procedure TSprites.TSprite.TFlagsHelper.SetBlendMode(AMode: TColour.TBlendMode);
+begin
+  Self := (Self and %00011111) or ((Ord(AMode) and %111) shl 5);
+end;
 {$ENDREGION}
 
 procedure TSprites.Reset;
@@ -595,6 +676,8 @@ begin
 
       PivotX := 0.5;
       PivotY := 0.5;
+
+      Flags.Transparent := True;
     end;
 end;
 {$ENDREGION}

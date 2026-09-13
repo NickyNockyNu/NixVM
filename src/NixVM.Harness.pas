@@ -94,7 +94,7 @@ type
     procedure HandlePanic; virtual;
     procedure HandleYield; virtual;
 
-    function LoadROM(const AROMFile: String): Boolean;
+    function LoadROM(AROMFile: String): Boolean;
   public
     constructor Create(const AROMFile: String = '');
     destructor  Destroy; override;
@@ -112,6 +112,9 @@ type
 
     procedure LoadNVRAM; virtual;
     procedure SaveNVRAM; virtual;
+
+    procedure SoftReset; virtual;
+    procedure HardReset; virtual;
 
     property Memory: TMemory<TSystemMemory> read FMemory;
     property CPU:    TCPU                   read FCPU;
@@ -141,6 +144,9 @@ type
 implementation
 
 uses
+{$IF DEFINED(MSWINDOWS)}
+  Winapi.Windows,
+{$ENDIF}
   NixVM.Core.Strings;
 
 {$REGION 'CustomHarness'}
@@ -407,8 +413,7 @@ end;
 
 function TCustomHarness<TSystemMemory>.HandleSysRq: Boolean;
 begin
-  Reset;
-  //DebugBreak;
+  SoftReset;
   Result := True;
 end;
 
@@ -427,98 +432,91 @@ begin
 
 end;
 
-function TCustomHarness<TSystemMemory>.LoadROM(const AROMFile: String): Boolean;
+function TCustomHarness<TSystemMemory>.LoadROM(AROMFile: String): Boolean;
 var
   F:         file;
-  OldMode:   Byte;
   Header:    TROMHeader;
   BytesRead: Integer;
 begin
   Result   := False;
-  OldMode  := FileMode;
-  FileMode := 0;
   FROMFile := '';
 
   AssignFile(F, AROMFile);
 
-  try
-    {$I-}System.Reset(F, 1);{$I+}
+  {$I-}System.Reset(F, 1);{$I+}
 
-    if IOResult <> 0 then
+  if IOResult <> 0 then
+  begin
+    DebugPrint('Unable to open file "' + AnsiString(AROMFile) + '"'#13#10);
+
+    Exit;
+  end;
+
+  try
+    BlockRead(F, Header, SizeOf(TROMHeader), BytesRead);
+
+    if (BytesRead <> SizeOf(TROMHeader)) or not Header.IsValid then
     begin
-      DebugPrint('Unable to open file "' + AnsiString(AROMFile) + '"'#13#10);
+      DebugPrint('Not a valid NixVM ROM'#13#10);
 
       Exit;
     end;
 
-    try
-      BlockRead(F, Header, SizeOf(TROMHeader), BytesRead);
+    if Header.UserAddress <> FMemory.UserAddress then
+    begin
+      DebugPrint('Incompatable memory layout'#13#10);
 
-      if (BytesRead <> SizeOf(TROMHeader)) or not Header.IsValid then
-      begin
-        DebugPrint('Not a valid NixVM ROM'#13#10);
-
-        Exit;
-      end;
-
-      if Header.UserAddress <> FMemory.UserAddress then
-      begin
-        DebugPrint('Incompatable memory layout'#13#10);
-
-        Exit;
-      end;
-
-      if Length(Header.Harness.Name) > 0 then
-      begin
-        if Lowercase(Header.Harness.Name) <> Lowercase(HarnessName) then
-        begin
-          DebugPrint(AnsiString('Requires harness: "' + Header.Harness.Name + '" is "' + HarnessName + '"'#13#10));
-
-          Exit;
-        end;
-
-        if (Header.Harness.Major > HarnessMajor) or ((Header.Harness.Major = HarnessMajor) and (Header.Harness.Minor > HarnessMinor)) then
-        begin
-          DebugPrint(AnsiString('Requires harness version:' + IntToStr(Header.Harness.Major) + '.' + IntToStr(Header.Harness.Minor) + #13#10));
-
-          Exit;
-        end;
-      end;
-
-      if Header.UserSize = 0 then
-        Header.UserSize := FileSize(F) - SizeOf(TROMHeader);
-
-      FMemory.Resize(Header.UserSize, Header.StaticSize, Header.HeapSize, Header.StackSize);
-      FMemory.Reset;
-
-      if Header.UserSize > 0 then
-      begin
-        BlockRead(F, FMemory[FMemory.UserAddress]^, Header.UserSize, BytesRead);
-
-        if Cardinal(BytesRead) <> Header.UserSize then
-        begin
-          DebugPrint('Unable to read data'#13#10);
-
-          Exit(False);
-        end;
-      end;
-
-      FROMFile := AROMFile;
-      Result   := True;
-
-      if Length(Header.ROM.Name) = 0 then
-        FMemory.Heap.LocalPath := ExtractFilePath(FROMFile) + ExtractFileName(FROMFile, True) + '.'
-      else
-        FMemory.Heap.LocalPath := ExtractFilePath(FROMFile) + Header.ROM.Name + '.';
-
-      InitEnvironment(@Header);
-
-      FCPU.Reset;
-    finally
-      CloseFile(F);
+      Exit;
     end;
+
+    if Length(Header.Harness.Name) > 0 then
+    begin
+      if Lowercase(Header.Harness.Name) <> Lowercase(HarnessName) then
+      begin
+        DebugPrint(AnsiString('Requires harness: "' + Header.Harness.Name + '" is "' + HarnessName + '"'#13#10));
+
+        Exit;
+      end;
+
+      if (Header.Harness.Major > HarnessMajor) or ((Header.Harness.Major = HarnessMajor) and (Header.Harness.Minor > HarnessMinor)) then
+      begin
+        DebugPrint(AnsiString('Requires harness version:' + IntToStr(Header.Harness.Major) + '.' + IntToStr(Header.Harness.Minor) + #13#10));
+
+        Exit;
+      end;
+    end;
+
+    if Header.UserSize = 0 then
+      Header.UserSize := FileSize(F) - SizeOf(TROMHeader);
+
+    FMemory.Resize(Header.UserSize, Header.StaticSize, Header.HeapSize, Header.StackSize);
+    FMemory.Reset;
+
+    if Header.UserSize > 0 then
+    begin
+      BlockRead(F, FMemory[FMemory.UserAddress]^, Header.UserSize, BytesRead);
+
+      if Cardinal(BytesRead) <> Header.UserSize then
+      begin
+        DebugPrint('Unable to read data'#13#10);
+
+        Exit(False);
+      end;
+    end;
+
+    FROMFile := AROMFile;
+    Result   := True;
+
+    if Length(Header.ROM.Name) = 0 then
+      FMemory.Heap.LocalPath := ExtractFilePath(FROMFile) + ExtractFileName(FROMFile, True) + '.'
+    else
+      FMemory.Heap.LocalPath := ExtractFilePath(FROMFile) + Header.ROM.Name + '.';
+
+    InitEnvironment(@Header);
+
+    FCPU.Reset;
   finally
-    FileMode := OldMode;
+    CloseFile(F);
   end;
 end;
 
@@ -687,8 +685,7 @@ procedure TCustomHarness<TSystemMemory>.SaveNVRAM;
 var
   NVData: PByte;
   F:      file;
-  FWrite: Cardinal;
-  FRead:  Integer;
+  FWrite: Integer;
 begin
   if Length(FRAMFile) = 0 then
     FRAMFile := FMemory.Heap.LocalPath + 'nvram';
@@ -709,11 +706,32 @@ begin
     Error('Failed save NVRAM');
 
   try
-    BlockWrite(F, NVData^, FMemory.StaticSize, FRead);
+    BlockWrite(F, NVData^, FMemory.StaticSize, FWrite);
   finally
     CloseFile(F);
   end;
 end;
+
+procedure TCustomHarness<TSystemMemory>.SoftReset;
+begin
+  FCPU.Halt;
+
+  SaveNVRAM;
+  Reset;
+end;
+
+procedure TCustomHarness<TSystemMemory>.HardReset;
+begin
+  FCPU.Halt;
+
+  SaveNVRAM;
+
+  if Length(FROMFile) > 0 then
+    LoadROM(FROMFile);
+
+  Reset;
+end;
+
 
 class function TCustomHarness<TSystemMemory>.GenTargetInc: String;
 var

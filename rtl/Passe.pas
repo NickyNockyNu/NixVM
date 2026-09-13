@@ -45,6 +45,11 @@ const
   _SysCall_VDUDrawTriangle = _VDU + 13;
   _SysCall_VDUFillTriangle = _VDU + 14;
 
+  _SysCall_VDUDrawText   = _VDU + 15;
+  _SysCall_VDUDrawTextEx = _VDU + 16;
+
+  _SysCall_VDUScroll = _VDU + 20;
+
   _CON = $C0;
 
   _SysCall_CONCls    = _CON + 0;
@@ -410,6 +415,11 @@ procedure FillEllipse(CX, CY, RX, RY: Integer; C: Byte); syscall _SysCall_VDUFil
 
 procedure DrawTriangle(X1, Y1, X2, Y2, X3, Y3: Integer; C: Byte); syscall _SysCall_VDUDrawTriangle;
 procedure FillTriangle(X1, Y1, X2, Y2, X3, Y3: Integer; C: Byte); syscall _SysCall_VDUFillTriangle;
+
+procedure DrawText  (X, Y: Integer; AText: String; C: Byte                                         ); syscall _SysCall_VDUDrawText;
+procedure DrawTextEx(X, Y: Integer; AText: String; C: Byte; AScaleX, AScaleY: Integer; AFlags: Byte); syscall _SysCall_VDUDrawTextEx;
+
+procedure VDUScroll(Dx, DY: Integer; C: Integer); syscall _SysCall_VDUScroll;
 
 procedure Cls; syscall _SysCall_CONCls;
 

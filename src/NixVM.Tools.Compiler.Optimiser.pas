@@ -71,7 +71,10 @@ begin
   if AItem.Kind <> TIRItem.TKind.Instruction then
     Exit;
 
-  if (AItem.OpCode = TCPUInstruction.TOpCode.call) or (AItem.OpCode = TCPUInstruction.TOpCode.syscall) then
+  if AItem.OpCode = TCPUInstruction.TOpCode.syscall then
+    Exit(AReg in [TRegisters.ID.R0..TRegisters.ID.R12]);
+
+  if AItem.OpCode = TCPUInstruction.TOpCode.call then
     Exit(AReg in [TRegisters.ID.R0..TRegisters.ID.R3]);
 
   if (AItem.OpCode = TCPUInstruction.TOpCode.push) and (AItem.RegB <> TRegisters.ID.Imm) then
